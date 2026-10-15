@@ -310,7 +310,7 @@ async function startServer() {
   if (fs.existsSync(indexPath)) {
     console.log(`[server] Serving static build from: ${distPath}`);
     app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
+    app.get(/(.*)/, (_req, res) => {
       res.sendFile(indexPath);
     });
   } else {
