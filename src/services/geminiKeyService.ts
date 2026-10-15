@@ -1,3 +1,4 @@
+import { getApiUrl } from '../lib/apiUtils';
 // Service for Gemini API Key Management, Multi-Key Rolling, and Database Persistence
 // Model target: Gemini 3.5 Flash (with multi-key auto-rolling & fallback cascade)
 
@@ -89,7 +90,7 @@ export const syncGeminiSettingsToDatabase = async (
 
   try {
     // 1. Sync to backend API endpoint which saves to database / server persistence
-    const res = await fetch('/api/gemini/settings', {
+    const res = await fetch(getApiUrl('/api/gemini/settings'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
@@ -117,7 +118,7 @@ export const syncGeminiSettingsToDatabase = async (
  */
 export const loadGeminiSettingsFromDatabase = async (): Promise<GeminiSettings> => {
   try {
-    const res = await fetch('/api/gemini/settings');
+    const res = await fetch(getApiUrl('/api/gemini/settings'));
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.settings && Array.isArray(data.settings.apiKeys) && data.settings.apiKeys.length > 0) {
@@ -151,7 +152,7 @@ export const testGeminiApiKey = async (
 
   // 1. Try server-side test endpoint first
   try {
-    const srvRes = await fetch('/api/gemini/test-key', {
+    const srvRes = await fetch(getApiUrl('/api/gemini/test-key'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: cleanKey, model: modelName })

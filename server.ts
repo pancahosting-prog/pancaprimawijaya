@@ -13,6 +13,19 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
+  // Prevent caching for all API routes
+  app.use("/api", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    next();
+  });
+
+  // Health check
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // Fonnte API Proxy
   app.post("/api/send-whatsapp", async (req, res) => {
     const { phone, message } = req.body;
@@ -60,13 +73,19 @@ async function startServer() {
   });
 
   app.post("/api/wa/connect", async (_req, res) => {
-    await waService.initBaileys();
-    res.json({
-      success: true,
-      message: "Proses inisialisasi Baileys WhatsApp dimulai.",
-      connectionState: waService.connectionState,
-      qrCodeBase64: waService.qrCodeBase64
-    });
+    try {
+      console.log("Connect request received for WhatsApp.");
+      await waService.initBaileys();
+      res.json({
+        success: true,
+        message: "Proses inisialisasi Baileys WhatsApp dimulai.",
+        connectionState: waService.connectionState,
+        qrCodeBase64: waService.qrCodeBase64
+      });
+    } catch (err: any) {
+      console.error("Connect request failed:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   app.get("/api/wa/chats", (_req, res) => {
@@ -223,7 +242,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   });
 }
 

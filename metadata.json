@@ -1,11 +1,6 @@
 {
-  "name": "My Panca BRM",
-  "description": "My Panca is a modern business management application that helps streamline operations, data management, and reporting in a single integrated system..",
-  "requestFramePermissions": [
-    "camera",
-    "microphone"
-  ],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "name": "MyPanca - WhatsApp AI & Smart CRM",
+  "description": "Integrated WhatsApp AI Assistant and CRM for managing team collaboration, tasks, and customer interactions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

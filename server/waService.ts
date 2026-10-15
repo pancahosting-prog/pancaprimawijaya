@@ -225,6 +225,7 @@ class WAService {
       return;
     }
 
+    console.log("Initializing Baileys WhatsApp connection...");
     this.connectionState = "connecting";
 
     try {
@@ -254,7 +255,13 @@ class WAService {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-          this.qrCodeBase64 = await QRCode.toDataURL(qr);
+          console.log("QR Code received from WhatsApp Baileys.");
+          try {
+            this.qrCodeBase64 = await QRCode.toDataURL(qr);
+            console.log("QR Code successfully converted to DataURL.");
+          } catch (qrErr) {
+            console.error("Failed to generate QR Code DataURL:", qrErr);
+          }
           this.connectionState = "disconnected";
         }
 
@@ -271,6 +278,7 @@ class WAService {
             } catch (err) {}
           }
         } else if (connection === "open") {
+          console.log("WhatsApp connection opened successfully!");
           this.connectionState = "connected";
           this.qrCodeBase64 = null;
           const user = this.socket?.user;

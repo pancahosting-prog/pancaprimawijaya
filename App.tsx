@@ -4797,7 +4797,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
 
              <button 
                 onClick={() => setShowTaskApp(true)}
-                className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition-colors shadow-xs"
+                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition-colors shadow-xs"
              >
                 <CheckCircle size={13} className="text-zinc-500" />
                 <span>Task App</span>
@@ -4966,6 +4966,28 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
              
              {/* Accordion Menu */}
              <div className="flex-1 overflow-y-auto overflow-x-hidden py-2">
+                {/* Tombol Task App di Sidebar Menu (Khusus Mobile & Akses Cepat) */}
+                <div className="px-2 mb-2.5">
+                    <button
+                       onClick={() => {
+                           setShowTaskApp(true);
+                           if (window.innerWidth < 1024) setIsMobileMenuOpen(false);
+                       }}
+                       className={`w-full py-2.5 px-3 rounded-lg cursor-pointer transition-all flex items-center text-xs font-semibold ${
+                           (!isSidebarCollapsed || isMobileMenuOpen) ? 'gap-2.5 justify-start' : 'justify-center px-0'
+                       } bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-white shadow-xs active:scale-[0.98] group`}
+                       title="Buka Task App"
+                    >
+                        <CheckCircle size={16} className="text-emerald-400 dark:text-emerald-600 shrink-0 group-hover:scale-110 transition-transform" />
+                        {(!isSidebarCollapsed || isMobileMenuOpen) && (
+                            <div className="flex items-center justify-between flex-1 min-w-0">
+                                <span className="truncate">Task App</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 dark:bg-zinc-200 text-zinc-300 dark:text-zinc-700 font-medium ml-1">Proyek</span>
+                            </div>
+                        )}
+                    </button>
+                </div>
+
                 {MENU_STRUCTURE.filter(menu => {
                     const isAdminCategory = ['Admin', 'Control Panel'].includes(menu.category);
                     if (isAdminCategory && currentUser?.role !== 'superadmin') return false;
@@ -5068,13 +5090,26 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                     );
                 })}
                 
-                <div className="mt-4 mb-6 border-t border-slate-200 pt-4">
+                <div className="mt-4 mb-6 border-t border-slate-200 dark:border-zinc-800 pt-4 px-1">
                     <div className="mb-2">
-                         <h3 className={`font-black uppercase text-slate-400 tracking-widest ${(!isSidebarCollapsed || isMobileMenuOpen) ? 'px-8 text-[10px]' : 'text-[8px] text-center'}`}>
-                             {(!isSidebarCollapsed || isMobileMenuOpen) ? 'TUTORIAL' : 'TUTORIAL'}
+                         <h3 className={`font-black uppercase text-slate-400 dark:text-zinc-500 tracking-widest ${(!isSidebarCollapsed || isMobileMenuOpen) ? 'px-3 text-[10px]' : 'text-[8px] text-center'}`}>
+                             {(!isSidebarCollapsed || isMobileMenuOpen) ? 'APLIKASI & PANDUAN' : 'APPS'}
                          </h3>
                     </div>
                     <div className="flex flex-col space-y-1">
+                        <button 
+                           onClick={() => {
+                               setShowTaskApp(true);
+                               if (window.innerWidth < 1024) setIsMobileMenuOpen(false);
+                           }}
+                           className={`w-full py-2 px-2.5 rounded-md cursor-pointer transition-colors flex items-center text-xs font-medium text-left ${(!isSidebarCollapsed || isMobileMenuOpen) ? 'gap-2.5' : 'justify-center px-0'} text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:text-zinc-900 dark:hover:text-zinc-100`}
+                           title="Buka Task App"
+                        >
+                            <CheckCircle size={15} className="text-emerald-500 dark:text-emerald-400 shrink-0" />
+                            {(!isSidebarCollapsed || isMobileMenuOpen) && (
+                                <span className="truncate">Task App</span>
+                            )}
+                        </button>
                         <button 
                            onClick={() => {
                                setActiveView('Tutorial');
