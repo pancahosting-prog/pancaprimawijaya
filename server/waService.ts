@@ -2,11 +2,13 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import QRCode from "qrcode";
+import { supabaseServer } from "./supabaseServer.js";
 
 // File storage paths for WA state
 const SESSION_DIR = path.resolve("./wa-session");
 const SETTINGS_FILE = path.resolve("./wa-ai-settings.json");
 const CHATS_FILE = path.resolve("./wa-chats.json");
+const CONNECTED_NUMBERS_FILE = path.resolve("./wa-connected-numbers.json");
 
 export interface WAChatMessage {
   id: string;
@@ -27,6 +29,7 @@ export interface WAChat {
   lastMessage: string;
   lastMessageTime: number;
   messages: WAChatMessage[];
+  connectedPhone?: string; // Nomor terhubung pemilik sesi chat
 }
 
 export interface WAISettings {
@@ -61,33 +64,26 @@ class WAService {
   public userPhone: string | null = null;
   public userName: string | null = null;
 
-  public chats: Map<string, WAChat> = new Map();
+  // Chats organized by connected phone number: Map<connectedPhone, Map<jid, WAChat>>
+  private chatsByPhone: Map<string, Map<string, WAChat>> = new Map();
+  private knownConnectedPhones: Set<string> = new Set();
+
   public aiSettings: WAISettings = {
     autoReplyEnabled: true,
     botName: "Customer Assistant AI",
-    tone: "Ramah, Ramah & Sangat Membantu",
+    tone: "Ramah & Solutif",
     greetingMessage: "Halo! Terima kasih telah menghubungi kami. Ada yang bisa saya bantu terkait produk & layanan kami?",
     fallbackMessage: "Mohon maaf, pesan Anda telah kami catat. Tim customer service kami akan segera menghubungi Anda kembali.",
     knowledgeBase: [
       {
         id: "kb-1",
-        productName: "Layanan Hosting & Domain Panca",
-        description: "Layanan cloud hosting super cepat dengan uptime 99.9% dan SSL gratis.",
-        price: "Mulai Rp 50.000 / bulan",
-        keywords: ["hosting", "domain", "cloud", "server", "harga"],
+        productName: "Layanan Produk & Transaksi Panca",
+        description: "Layanan pengadaan produk, penawaran harga, dan pemesanan barang resmi PT. Panca Prima Wijaya.",
+        price: "Hubungi Sales",
+        keywords: ["produk", "harga", "transaksi", "penawaran", "stok", "order"],
         faq: [
-          { q: "Berapa lama proses aktivasi?", a: "Aktivasi otomatis instan dalam 5 menit setelah konfirmasi pembayaran." },
-          { q: "Apakah dapat SSL gratis?", a: "Ya, SSL Let's Encrypt gratis sudah disertakan untuk semua paket." }
-        ]
-      },
-      {
-        id: "kb-2",
-        productName: "Aplikasi Manajemen Task & CRM",
-        description: "Sistem CRM dan manajemen tugas terpadu untuk efisiensi operasional tim.",
-        price: "Paket Pro Rp 150.000 / user / bulan",
-        keywords: ["crm", "task", "aplikasi", "fitur", "manajemen"],
-        faq: [
-          { q: "Apakah ada uji coba gratis?", a: "Tersedia uji coba gratis 14 hari tanpa kartu kredit." }
+          { q: "Bagaimana cara melakukan pemesanan?", a: "Pemesanan dapat dilakukan langsung melalui tim sales atau melalui quotation penawaran resmi kami." },
+          { q: "Apakah tersedia faktur pajak?", a: "Ya, kami menerbitkan faktur pajak resmi untuk setiap transaksi ber-PPN." }
         ]
       }
     ],
@@ -96,7 +92,47 @@ class WAService {
 
   constructor() {
     this.loadSettings();
-    this.loadChats();
+    this.loadKnownNumbers();
+    this.loadAllChats();
+  }
+
+  /**
+   * Helper to get cleaned phone string for the currently connected phone or fallback
+   */
+  public getConnectedPhoneKey(overridePhone?: string | null): string {
+    if (!overridePhone || overridePhone === "active") {
+      const raw = this.userPhone || "default";
+      return raw.replace(/[^a-zA-Z0-9]/g, "");
+    }
+    return overridePhone.replace(/[^a-zA-Z0-9]/g, "");
+  }
+
+  private loadKnownNumbers() {
+    try {
+      if (fs.existsSync(CONNECTED_NUMBERS_FILE)) {
+        const raw = fs.readFileSync(CONNECTED_NUMBERS_FILE, "utf-8");
+        const list: string[] = JSON.parse(raw);
+        list.forEach(n => this.knownConnectedPhones.add(n));
+      }
+    } catch (e) {
+      console.error("[waService] Error loading known connected numbers:", e);
+    }
+  }
+
+  private saveKnownNumbers() {
+    try {
+      const list = Array.from(this.knownConnectedPhones);
+      fs.writeFileSync(CONNECTED_NUMBERS_FILE, JSON.stringify(list, null, 2), "utf-8");
+    } catch (e) {
+      console.error("[waService] Error saving known connected numbers:", e);
+    }
+  }
+
+  private getChatFilePath(phone: string): string {
+    const clean = phone.replace(/[^a-zA-Z0-9]/g, "");
+    return clean === "default" 
+      ? CHATS_FILE 
+      : path.resolve(`./wa-chats-${clean}.json`);
   }
 
   private loadSettings() {
@@ -106,7 +142,7 @@ class WAService {
         this.aiSettings = { ...this.aiSettings, ...JSON.parse(raw) };
       }
     } catch (e) {
-      console.error("Error loading WA AI settings:", e);
+      console.error("[waService] Error loading WA AI settings:", e);
     }
   }
 
@@ -115,109 +151,241 @@ class WAService {
       this.aiSettings = { ...this.aiSettings, ...newSettings };
       fs.writeFileSync(SETTINGS_FILE, JSON.stringify(this.aiSettings, null, 2), "utf-8");
     } catch (e) {
-      console.error("Error saving WA AI settings:", e);
+      console.error("[waService] Error saving WA AI settings:", e);
     }
   }
 
-  private loadChats() {
+  /**
+   * Loads chats for all known connected numbers from local files & Supabase
+   */
+  private loadAllChats() {
+    // 1. Load default chat file
+    this.loadChatsForPhone("default");
+
+    // 2. Load any known numbers
+    this.knownConnectedPhones.forEach(phone => {
+      this.loadChatsForPhone(phone);
+    });
+
+    // 3. Scan directory for existing wa-chats-*.json files
     try {
-      if (fs.existsSync(CHATS_FILE)) {
-        const raw = fs.readFileSync(CHATS_FILE, "utf-8");
+      const files = fs.readdirSync(path.resolve("."));
+      files.forEach(f => {
+        if (f.startsWith("wa-chats-") && f.endsWith(".json")) {
+          const phone = f.replace("wa-chats-", "").replace(".json", "");
+          this.knownConnectedPhones.add(phone);
+          this.loadChatsForPhone(phone);
+        }
+      });
+      this.saveKnownNumbers();
+    } catch (err) {
+      console.error("[waService] Error scanning chat files:", err);
+    }
+
+    // 4. Asynchronously pull from Supabase if configured
+    this.syncAllChatsFromSupabase().catch(err => {
+      console.warn("[waService] Supabase initial chat sync notice:", err.message);
+    });
+  }
+
+  /**
+   * Load chats for a specific connected number
+   */
+  public loadChatsForPhone(phone: string) {
+    const cleanPhone = this.getConnectedPhoneKey(phone);
+    const filePath = this.getChatFilePath(cleanPhone);
+
+    let phoneMap = this.chatsByPhone.get(cleanPhone);
+    if (!phoneMap) {
+      phoneMap = new Map();
+      this.chatsByPhone.set(cleanPhone, phoneMap);
+    }
+
+    try {
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, "utf-8");
         const list: WAChat[] = JSON.parse(raw);
-        list.forEach(c => this.chats.set(c.id, c));
-      } else {
-        // Seed default sample chat data for rich UI experience
-        const sampleChats: WAChat[] = [
-          {
-            id: "6281234567890@s.whatsapp.net",
-            jid: "6281234567890@s.whatsapp.net",
-            name: "Budi Santoso (Client PT Maju)",
-            phone: "+62 812-3456-7890",
-            unreadCount: 1,
-            lastMessage: "Halo, mau tanya harga paket hosting pro berapa ya?",
-            lastMessageTime: Date.now() - 300000,
-            messages: [
-              {
-                id: "m1",
-                fromMe: false,
-                sender: "6281234567890@s.whatsapp.net",
-                senderName: "Budi Santoso",
-                text: "Selamat siang min",
-                timestamp: Date.now() - 600000,
-                status: "read"
-              },
-              {
-                id: "m2",
-                fromMe: true,
-                sender: "me",
-                text: "Selamat siang Pak Budi, ada yang bisa kami bantu hari ini?",
-                timestamp: Date.now() - 540000,
-                status: "read"
-              },
-              {
-                id: "m3",
-                fromMe: false,
-                sender: "6281234567890@s.whatsapp.net",
-                senderName: "Budi Santoso",
-                text: "Halo, mau tanya harga paket hosting pro berapa ya?",
-                timestamp: Date.now() - 300000,
-                status: "unread"
-              }
-            ]
-          },
-          {
-            id: "6289876543210@s.whatsapp.net",
-            jid: "6289876543210@s.whatsapp.net",
-            name: "Siti Rahmawati (CV Usaha Bersama)",
-            phone: "+62 898-7654-3210",
-            unreadCount: 0,
-            lastMessage: "Terima kasih informasinya min!",
-            lastMessageTime: Date.now() - 3600000,
-            messages: [
-              {
-                id: "m4",
-                fromMe: false,
-                sender: "6289876543210@s.whatsapp.net",
-                senderName: "Siti Rahmawati",
-                text: "Apakah CRM ini bisa dipakai untuk banyak user?",
-                timestamp: Date.now() - 4000000,
-                status: "read"
-              },
-              {
-                id: "m5",
-                fromMe: true,
-                sender: "me",
-                text: "Bisa sekali Bu Siti. Sistem mendukung multi-role untuk admin, sales, dan finance.",
-                timestamp: Date.now() - 3800000,
-                status: "read"
-              },
-              {
-                id: "m6",
-                fromMe: false,
-                sender: "6289876543210@s.whatsapp.net",
-                senderName: "Siti Rahmawati",
-                text: "Terima kasih informasinya min!",
-                timestamp: Date.now() - 3600000,
-                status: "read"
-              }
-            ]
-          }
-        ];
-        sampleChats.forEach(c => this.chats.set(c.id, c));
-        this.saveChats();
+        list.forEach(c => {
+          c.connectedPhone = cleanPhone;
+          phoneMap!.set(c.jid || c.id, c);
+        });
+        if (cleanPhone !== "default") {
+          this.knownConnectedPhones.add(cleanPhone);
+          this.saveKnownNumbers();
+        }
       }
     } catch (e) {
-      console.error("Error loading chats:", e);
+      console.error(`[waService] Error loading chats for phone ${cleanPhone}:`, e);
     }
+  }
+
+  /**
+   * Saves chats for a given connected phone number to local file and Supabase
+   */
+  public async saveChatsForPhone(phone?: string, singleChat?: WAChat) {
+    const cleanPhone = this.getConnectedPhoneKey(phone);
+    const phoneMap = this.chatsByPhone.get(cleanPhone);
+    if (!phoneMap) return;
+
+    const list = Array.from(phoneMap.values());
+    const filePath = this.getChatFilePath(cleanPhone);
+
+    // Save local file
+    try {
+      fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
+      if (cleanPhone !== "default") {
+        this.knownConnectedPhones.add(cleanPhone);
+        this.saveKnownNumbers();
+        // Also keep master wa-chats.json updated
+        fs.writeFileSync(CHATS_FILE, JSON.stringify(list, null, 2), "utf-8");
+      }
+    } catch (e) {
+      console.error(`[waService] Error writing chats file for ${cleanPhone}:`, e);
+    }
+
+    // Sync to Supabase cloud database if available
+    if (supabaseServer) {
+      try {
+        const chatsToSync = singleChat ? [singleChat] : list;
+        for (const c of chatsToSync) {
+          const cleanJid = c.jid || c.id;
+          await supabaseServer.from("wa_chats").upsert({
+            id: `${cleanPhone}_${cleanJid}`,
+            connected_phone: cleanPhone,
+            jid: cleanJid,
+            name: c.name || "",
+            phone: c.phone || "",
+            unread_count: c.unreadCount || 0,
+            last_message: c.lastMessage || "",
+            last_message_time: c.lastMessageTime || Date.now(),
+            messages: c.messages || [],
+            updated_at: new Date().toISOString()
+          });
+        }
+      } catch (dbErr: any) {
+        console.warn(`[waService] Supabase cloud sync error for ${cleanPhone}:`, dbErr.message);
+      }
+    }
+  }
+
+  /**
+   * Pull all chats from Supabase database to populate local cache
+   */
+  public async syncAllChatsFromSupabase(filterPhone?: string) {
+    if (!supabaseServer) return;
+
+    try {
+      let query = supabaseServer.from("wa_chats").select("*").order("last_message_time", { ascending: false });
+      if (filterPhone && filterPhone !== "all" && filterPhone !== "active") {
+        const clean = this.getConnectedPhoneKey(filterPhone);
+        query = query.eq("connected_phone", clean);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.warn("[waService] Supabase fetch error:", error.message);
+        return;
+      }
+
+      if (data && Array.isArray(data)) {
+        for (const row of data) {
+          const phone = row.connected_phone || "default";
+          let phoneMap = this.chatsByPhone.get(phone);
+          if (!phoneMap) {
+            phoneMap = new Map();
+            this.chatsByPhone.set(phone, phoneMap);
+          }
+
+          const chatObj: WAChat = {
+            id: row.jid,
+            jid: row.jid,
+            name: row.name || "",
+            phone: row.phone || "",
+            unreadCount: row.unread_count || 0,
+            lastMessage: row.last_message || "",
+            lastMessageTime: Number(row.last_message_time) || Date.now(),
+            messages: Array.isArray(row.messages) ? row.messages : [],
+            connectedPhone: phone
+          };
+
+          phoneMap.set(row.jid, chatObj);
+          this.knownConnectedPhones.add(phone);
+        }
+        this.saveKnownNumbers();
+        console.log(`[waService] Synced ${data.length} chats from Supabase across known numbers.`);
+      }
+    } catch (err: any) {
+      console.warn("[waService] Error syncing from Supabase:", err.message);
+    }
+  }
+
+  /**
+   * Backward compatible getter for default chats
+   */
+  public get chats(): Map<string, WAChat> {
+    const key = this.getConnectedPhoneKey();
+    let map = this.chatsByPhone.get(key);
+    if (!map) {
+      map = new Map();
+      this.chatsByPhone.set(key, map);
+    }
+    return map;
   }
 
   public saveChats() {
-    try {
-      const list = Array.from(this.chats.values());
-      fs.writeFileSync(CHATS_FILE, JSON.stringify(list, null, 2), "utf-8");
-    } catch (e) {
-      console.error("Error saving chats:", e);
+    this.saveChatsForPhone(this.getConnectedPhoneKey());
+  }
+
+  /**
+   * Get chats for a specific connected number or current active session or all numbers
+   */
+  public getChats(connectedPhone?: string): WAChat[] {
+    if (connectedPhone === "all") {
+      const allChatsMap = new Map<string, WAChat>();
+      this.chatsByPhone.forEach((phoneMap) => {
+        phoneMap.forEach((chat) => {
+          const existing = allChatsMap.get(chat.jid);
+          if (!existing || chat.lastMessageTime > existing.lastMessageTime) {
+            allChatsMap.set(chat.jid, chat);
+          }
+        });
+      });
+      return Array.from(allChatsMap.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
     }
+
+    const key = this.getConnectedPhoneKey(connectedPhone);
+    let map = this.chatsByPhone.get(key);
+
+    if ((!map || map.size === 0) && key !== "default") {
+      // If requested phone has no chats yet, check default
+      const defaultMap = this.chatsByPhone.get("default");
+      if (defaultMap && defaultMap.size > 0) {
+        return Array.from(defaultMap.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+      }
+    }
+
+    if (!map) return [];
+    return Array.from(map.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+  }
+
+  /**
+   * Returns metadata of all known connected numbers with chat counts
+   */
+  public getKnownNumbers(): { phone: string; active: boolean; chatCount: number }[] {
+    const activeClean = this.userPhone ? this.getConnectedPhoneKey(this.userPhone) : null;
+    const allPhones = new Set<string>(this.knownConnectedPhones);
+    if (activeClean) allPhones.add(activeClean);
+    allPhones.add("default");
+
+    return Array.from(allPhones).map(phone => {
+      const map = this.chatsByPhone.get(phone);
+      const chatCount = map ? map.size : 0;
+      return {
+        phone,
+        active: Boolean(activeClean && phone === activeClean),
+        chatCount
+      };
+    });
   }
 
   public async initBaileys() {
@@ -225,7 +393,6 @@ class WAService {
       return;
     }
 
-    console.log("Initializing Baileys WhatsApp connection...");
     this.connectionState = "connecting";
 
     try {
@@ -233,7 +400,6 @@ class WAService {
         fs.mkdirSync(SESSION_DIR, { recursive: true });
       }
 
-      // Dynamic import to avoid CJS/ESM bundling issues
       const baileys = await import("@whiskeysockets/baileys");
       const makeWASocket = baileys.default || baileys.makeWASocket;
       const useMultiFileAuthState = baileys.useMultiFileAuthState;
@@ -255,13 +421,7 @@ class WAService {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-          console.log("QR Code received from WhatsApp Baileys.");
-          try {
-            this.qrCodeBase64 = await QRCode.toDataURL(qr);
-            console.log("QR Code successfully converted to DataURL.");
-          } catch (qrErr) {
-            console.error("Failed to generate QR Code DataURL:", qrErr);
-          }
+          this.qrCodeBase64 = await QRCode.toDataURL(qr);
           this.connectionState = "disconnected";
         }
 
@@ -272,19 +432,26 @@ class WAService {
           if (shouldReconnect) {
             setTimeout(() => this.initBaileys(), 3000);
           } else {
-            // Clean session on logout
             try {
               fs.rmSync(SESSION_DIR, { recursive: true, force: true });
             } catch (err) {}
           }
         } else if (connection === "open") {
-          console.log("WhatsApp connection opened successfully!");
           this.connectionState = "connected";
           this.qrCodeBase64 = null;
           const user = this.socket?.user;
           this.userJid = user?.id || null;
-          this.userPhone = user?.id ? user.id.split(":")[0] : null;
+          this.userPhone = user?.id ? user.id.split(":")[0].replace(/[^0-9]/g, "") : null;
           this.userName = user?.name || "WhatsApp Business Bot";
+
+          console.log(`[waService] WhatsApp Connected! Nomor Terhubung: ${this.userPhone}`);
+          if (this.userPhone) {
+            const clean = this.getConnectedPhoneKey(this.userPhone);
+            this.knownConnectedPhones.add(clean);
+            this.saveKnownNumbers();
+            this.loadChatsForPhone(clean);
+            this.syncAllChatsFromSupabase(clean);
+          }
         }
       });
 
@@ -294,7 +461,7 @@ class WAService {
         for (const msg of m.messages) {
           if (!msg.message) continue;
           const remoteJid = msg.key.remoteJid;
-          if (!remoteJid || remoteJid.endsWith("@g.us")) continue; // Focus on 1-on-1 chats
+          if (!remoteJid || remoteJid.endsWith("@g.us")) continue; // 1-on-1 chats only
 
           const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
           if (!text) continue;
@@ -302,7 +469,14 @@ class WAService {
           const senderName = msg.pushName || remoteJid.split("@")[0];
           const isFromMe = Boolean(msg.key.fromMe);
 
-          let chat = this.chats.get(remoteJid);
+          const connectedPhone = this.getConnectedPhoneKey();
+          let phoneMap = this.chatsByPhone.get(connectedPhone);
+          if (!phoneMap) {
+            phoneMap = new Map();
+            this.chatsByPhone.set(connectedPhone, phoneMap);
+          }
+
+          let chat = phoneMap.get(remoteJid);
           if (!chat) {
             chat = {
               id: remoteJid,
@@ -312,9 +486,10 @@ class WAService {
               unreadCount: 0,
               lastMessage: text,
               lastMessageTime: Date.now(),
-              messages: []
+              messages: [],
+              connectedPhone
             };
-            this.chats.set(remoteJid, chat);
+            phoneMap.set(remoteJid, chat);
           }
 
           const newMsg: WAChatMessage = {
@@ -331,7 +506,9 @@ class WAService {
           chat.lastMessage = text;
           chat.lastMessageTime = Date.now();
           if (!isFromMe) chat.unreadCount += 1;
-          this.saveChats();
+
+          // Save to local file & Supabase for this connected phone
+          this.saveChatsForPhone(connectedPhone, chat);
 
           // Auto reply AI logic
           if (!isFromMe && this.aiSettings.autoReplyEnabled) {
@@ -340,9 +517,8 @@ class WAService {
         }
       });
     } catch (err) {
-      console.error("Failed to initialize Baileys:", err);
+      console.error("[waService] Failed to initialize Baileys:", err);
       this.connectionState = "disconnected";
-      // Generate fallback QR for UI testing if network / socket fails
       QRCode.toDataURL("https://mypanca-crm.app/wa-connect-" + Date.now()).then(qr => {
         this.qrCodeBase64 = qr;
       });
@@ -351,7 +527,6 @@ class WAService {
 
   public async handleAIAutoReply(jid: string, senderName: string, userMessage: string) {
     try {
-      // Build prompt using knowledge base
       const kbText = this.aiSettings.knowledgeBase
         .map(k => `Produk: ${k.productName}\nDeskripsi: ${k.description}\nHarga: ${k.price}\nFAQ:\n` + k.faq.map(f => `- Q: ${f.q}\n  A: ${f.a}`).join("\n"))
         .join("\n\n");
@@ -392,7 +567,6 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
           console.error("Gemini API call failed for WA Auto-Reply:", genErr);
         }
       } else {
-        // Keyword fallback matching
         const msgLower = userMessage.toLowerCase();
         let matched = false;
         for (const kb of this.aiSettings.knowledgeBase) {
@@ -407,29 +581,30 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
         }
       }
 
-      // Send via WhatsApp socket if connected
       if (this.socket && this.connectionState === "connected") {
         await this.socket.sendMessage(jid, { text: replyText });
       }
 
-      // Add to chat history
-      const chat = this.chats.get(jid);
-      if (chat) {
-        chat.messages.push({
-          id: "bot-" + Date.now(),
-          fromMe: true,
-          sender: "bot",
-          senderName: this.aiSettings.botName,
-          text: replyText,
-          timestamp: Date.now(),
-          status: "read"
-        });
-        chat.lastMessage = replyText;
-        chat.lastMessageTime = Date.now();
-        this.saveChats();
+      const connectedPhone = this.getConnectedPhoneKey();
+      let phoneMap = this.chatsByPhone.get(connectedPhone);
+      if (phoneMap) {
+        const chat = phoneMap.get(jid);
+        if (chat) {
+          chat.messages.push({
+            id: "bot-" + Date.now(),
+            fromMe: true,
+            sender: "bot",
+            senderName: this.aiSettings.botName,
+            text: replyText,
+            timestamp: Date.now(),
+            status: "read"
+          });
+          chat.lastMessage = replyText;
+          chat.lastMessageTime = Date.now();
+          this.saveChatsForPhone(connectedPhone, chat);
+        }
       }
 
-      // Add to AI logs
       this.aiSettings.logs.unshift({
         id: "log-" + Date.now(),
         timestamp: Date.now(),
@@ -441,12 +616,19 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
       if (this.aiSettings.logs.length > 50) this.aiSettings.logs.pop();
       this.saveSettings({});
     } catch (err) {
-      console.error("Error in handleAIAutoReply:", err);
+      console.error("[waService] Error in handleAIAutoReply:", err);
     }
   }
 
   public async sendMessage(jid: string, text: string): Promise<{ success: boolean; message: WAChatMessage }> {
-    let chat = this.chats.get(jid);
+    const connectedPhone = this.getConnectedPhoneKey();
+    let phoneMap = this.chatsByPhone.get(connectedPhone);
+    if (!phoneMap) {
+      phoneMap = new Map();
+      this.chatsByPhone.set(connectedPhone, phoneMap);
+    }
+
+    let chat = phoneMap.get(jid);
     if (!chat) {
       chat = {
         id: jid,
@@ -456,9 +638,10 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
         unreadCount: 0,
         lastMessage: text,
         lastMessageTime: Date.now(),
-        messages: []
+        messages: [],
+        connectedPhone
       };
-      this.chats.set(jid, chat);
+      phoneMap.set(jid, chat);
     }
 
     const msg: WAChatMessage = {
@@ -474,7 +657,7 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
     chat.lastMessage = text;
     chat.lastMessageTime = Date.now();
     chat.unreadCount = 0;
-    this.saveChats();
+    this.saveChatsForPhone(connectedPhone, chat);
 
     if (this.socket && this.connectionState === "connected") {
       try {

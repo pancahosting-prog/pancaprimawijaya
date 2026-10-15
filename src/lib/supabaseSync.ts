@@ -409,3 +409,102 @@ export const saveTutorialToSupabase = async (tut: any) => {
 export const deleteRecycledItemFromSupabase = async (id: string) => {
     return await withRetry(() => supabase.from('recycled_items').delete().eq('id', id));
 };
+
+// --- App Settings (Gemini API Key, Global Config) Cloud Persistence ---
+export const checkSupabaseTableStatus = async (tableName: string): Promise<{ isReady: boolean; error?: string }> => {
+    try {
+        const { error } = await supabase.from(tableName).select('*').limit(1);
+        if (error) {
+            return { isReady: false, error: error.message };
+        }
+        return { isReady: true };
+    } catch (err: any) {
+        return { isReady: false, error: err.message };
+    }
+};
+
+export const saveAppSettingToSupabase = async (key: string, value: any, updatedBy?: string) => {
+    const payload: any = {
+        key,
+        value,
+        updated_at: new Date().toISOString(),
+        updated_by: updatedBy || 'user'
+    };
+    const res = await withRetry(() => supabase.from('app_settings').upsert(payload));
+    if (res.error && res.error.message && res.error.message.includes('column "id"')) {
+        return await withRetry(() => supabase.from('app_settings').upsert({
+            ...payload,
+            id: key
+        }));
+    }
+    return res;
+};
+
+export const loadAppSettingFromSupabase = async (key: string) => {
+    const { data, error } = await withRetry(() => supabase.from('app_settings').select('value').eq('key', key).maybeSingle());
+    if (error) {
+        console.warn(`[SupabaseSync] Error loading app_settings (${key}):`, error.message);
+        return null;
+    }
+    return data?.value || null;
+};
+
+// --- WhatsApp Chats Cloud Persistence (By Connected Phone Number) ---
+export const saveWAChatToSupabase = async (chat: any, connectedPhone: string) => {
+    const cleanPhone = (connectedPhone || 'default').replace(/[^a-zA-Z0-9]/g, '');
+    const cleanJid = chat.jid || chat.id;
+    const docId = `${cleanPhone}_${cleanJid}`;
+
+    return await withRetry(() => supabase.from('wa_chats').upsert({
+        id: docId,
+        connected_phone: cleanPhone,
+        jid: cleanJid,
+        name: chat.name || '',
+        phone: chat.phone || '',
+        unread_count: chat.unreadCount || 0,
+        last_message: chat.lastMessage || '',
+        last_message_time: chat.lastMessageTime || Date.now(),
+        messages: chat.messages || [],
+        updated_at: new Date().toISOString()
+    }));
+};
+
+export const loadWAChatsFromSupabase = async (connectedPhone?: string) => {
+    try {
+        let query = supabase.from('wa_chats').select('*').order('last_message_time', { ascending: false });
+        if (connectedPhone && connectedPhone !== 'all' && connectedPhone !== 'active') {
+            const cleanPhone = connectedPhone.replace(/[^a-zA-Z0-9]/g, '');
+            query = query.eq('connected_phone', cleanPhone);
+        }
+        const { data, error } = await withRetry(() => query);
+        if (error) {
+            console.warn('[SupabaseSync] Could not load wa_chats from Supabase:', error.message);
+            return null;
+        }
+        return (data || []).map((row: any) => ({
+            id: row.jid,
+            jid: row.jid,
+            name: row.name,
+            phone: row.phone,
+            unreadCount: row.unread_count || 0,
+            lastMessage: row.last_message || '',
+            lastMessageTime: Number(row.last_message_time) || Date.now(),
+            messages: Array.isArray(row.messages) ? row.messages : [],
+            connectedPhone: row.connected_phone
+        }));
+    } catch (err: any) {
+        console.warn('[SupabaseSync] Error in loadWAChatsFromSupabase:', err.message);
+        return null;
+    }
+};
+
+export const loadKnownConnectedNumbersFromSupabase = async (): Promise<string[]> => {
+    try {
+        const { data, error } = await withRetry(() => supabase.from('wa_chats').select('connected_phone'));
+        if (error || !data) return [];
+        const unique = Array.from(new Set(data.map((r: any) => r.connected_phone).filter(Boolean)));
+        return unique as string[];
+    } catch {
+        return [];
+    }
+};

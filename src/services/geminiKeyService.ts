@@ -1,6 +1,6 @@
-import { getApiUrl } from '../lib/apiUtils';
 // Service for Gemini API Key Management, Multi-Key Rolling, and Database Persistence
 // Model target: Gemini 3.5 Flash (with multi-key auto-rolling & fallback cascade)
+import { saveAppSettingToSupabase, loadAppSettingFromSupabase } from '../lib/supabaseSync';
 
 export interface GeminiApiKeyConfig {
   id: string;
@@ -81,16 +81,37 @@ export const saveStoredGeminiSettings = (settings: GeminiSettings): void => {
 };
 
 /**
- * Persists Gemini settings both to database (backend endpoint / Supabase) and LocalStorage
+ * Persists Gemini settings both to database (Supabase Cloud & backend endpoint) and LocalStorage.
+ * Guarantees cross-device availability when Supabase table app_settings is installed.
  */
 export const syncGeminiSettingsToDatabase = async (
   settings: GeminiSettings
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{ success: boolean; message: string; isCloudSynced: boolean; errorDetail?: string }> => {
   saveStoredGeminiSettings(settings);
 
+  let isCloudSynced = false;
+  let cloudMsg = '';
+  let cloudError = '';
+
+  // 1. Direct Cloud Sync to Supabase Database (Persists across ALL devices)
   try {
-    // 1. Sync to backend API endpoint which saves to database / server persistence
-    const res = await fetch(getApiUrl('/api/gemini/settings'), {
+    const supabaseRes = await saveAppSettingToSupabase('gemini_settings', settings, 'gemini_settings_ui');
+    if (supabaseRes && !supabaseRes.error) {
+      isCloudSynced = true;
+      cloudMsg = 'Pengaturan & API Key berhasil disimpan ke Cloud Database Supabase (Aktif di semua perangkat).';
+      console.log('[GeminiKeyService] Saved to Supabase cloud successfully');
+    } else if (supabaseRes?.error) {
+      cloudError = supabaseRes.error.message || 'Tabel app_settings belum siap di database Supabase.';
+      console.warn('[GeminiKeyService] Supabase direct save returned error:', supabaseRes.error);
+    }
+  } catch (dbErr: any) {
+    cloudError = dbErr.message || 'Koneksi ke Supabase gagal.';
+    console.warn('[GeminiKeyService] Supabase direct save exception:', cloudError);
+  }
+
+  // 2. Sync to backend API endpoint (saves server backup & updates Baileys auto-reply)
+  try {
+    const res = await fetch('/api/gemini/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
@@ -98,43 +119,76 @@ export const syncGeminiSettingsToDatabase = async (
 
     if (res.ok) {
       const data = await res.json();
-      return {
-        success: true,
-        message: data.message || 'Pengaturan Gemini AI berhasil disimpan ke database sistem.'
-      };
+      if (data.cloudSaved) {
+        isCloudSynced = true;
+      }
+      if (!cloudMsg && data.message) {
+        cloudMsg = data.message;
+      }
     }
   } catch (err: any) {
     console.warn('[GeminiKeyService] Server persistence sync notice:', err.message);
   }
 
+  let finalMessage = '';
+  if (isCloudSynced) {
+    finalMessage = 'Pengaturan & API Key berhasil disimpan ke Cloud Database Supabase (Aktif di semua perangkat).';
+  } else if (cloudError) {
+    finalMessage = `Tersimpan secara lokal. Perhatian: Belum tersimpan di Database Supabase (${cloudError}). Harap jalankan Update Script SQL di Supabase agar aktif lintas perangkat.`;
+  } else {
+    finalMessage = cloudMsg || 'Pengaturan Gemini AI tersimpan di database lokal browser & server.';
+  }
+
   return {
     success: true,
-    message: 'Pengaturan Gemini AI tersimpan di database lokal (browser).'
+    isCloudSynced,
+    message: finalMessage,
+    errorDetail: cloudError || undefined
   };
 };
 
 /**
- * Loads Gemini settings from database / backend and updates local storage
+ * Loads Gemini settings from Supabase database / backend and updates local storage.
+ * Prioritizes Supabase cloud database so any new device gets the settings immediately.
  */
 export const loadGeminiSettingsFromDatabase = async (): Promise<GeminiSettings> => {
+  // 1. Check Supabase Cloud Database first (Source of Truth for multi-device sync)
   try {
-    const res = await fetch(getApiUrl('/api/gemini/settings'));
+    const cloudValue = await loadAppSettingFromSupabase('gemini_settings');
+    if (cloudValue && Array.isArray(cloudValue.apiKeys) && cloudValue.apiKeys.length > 0) {
+      const merged: GeminiSettings = {
+        ...DEFAULT_GEMINI_SETTINGS,
+        ...cloudValue,
+        apiKeys: cloudValue.apiKeys
+      };
+      saveStoredGeminiSettings(merged);
+      console.log('[GeminiKeyService] Successfully loaded Gemini settings from Supabase Cloud Database:', merged.apiKeys.length, 'keys');
+      return merged;
+    }
+  } catch (cloudErr) {
+    console.warn('[GeminiKeyService] Supabase load warning:', cloudErr);
+  }
+
+  // 2. Fallback to server endpoint
+  try {
+    const res = await fetch('/api/gemini/settings');
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.settings && Array.isArray(data.settings.apiKeys) && data.settings.apiKeys.length > 0) {
-        const local = getStoredGeminiSettings();
-        // If local has keys, keep local as primary or merge
         const merged: GeminiSettings = {
+          ...DEFAULT_GEMINI_SETTINGS,
           ...data.settings,
-          apiKeys: local.apiKeys.length > 0 ? local.apiKeys : data.settings.apiKeys
+          apiKeys: data.settings.apiKeys
         };
         saveStoredGeminiSettings(merged);
+        console.log('[GeminiKeyService] Successfully loaded Gemini settings from server API:', merged.apiKeys.length, 'keys');
         return merged;
       }
     }
   } catch (err) {
     console.warn('[GeminiKeyService] Failed loading from server, using local:', err);
   }
+
   return getStoredGeminiSettings();
 };
 
@@ -152,7 +206,7 @@ export const testGeminiApiKey = async (
 
   // 1. Try server-side test endpoint first
   try {
-    const srvRes = await fetch(getApiUrl('/api/gemini/test-key'), {
+    const srvRes = await fetch('/api/gemini/test-key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: cleanKey, model: modelName })

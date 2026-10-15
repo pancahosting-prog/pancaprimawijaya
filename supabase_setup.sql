@@ -156,9 +156,92 @@ CREATE TABLE purchase_order_items (
   harga NUMERIC(15, 2)
 );
 
--- Enable Row Level Security (RLS) - Basic Example
--- Note: You should refine these policies based on your auth logic
-ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all for authenticated users" ON companies FOR ALL USING (true);
+-- 11. Application Settings Table (For Gemini API Keys & Global System Config across all devices)
+CREATE TABLE IF NOT EXISTS public.app_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_by TEXT
+);
 
--- Repeat for other tables...
+-- JIKA TABEL SUDAH ADA SEBELUMNYA: Tambahkan kolom yang dibutuhkan secara aman
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS key TEXT;
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS value JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS updated_by TEXT;
+
+-- Pastikan kolom key berstatus unique jika tabel lama tidak memiliki primary key di 'key'
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conrelid = 'public.app_settings'::regclass 
+    AND (contype = 'p' OR contype = 'u')
+    AND pg_get_constraintdef(oid) LIKE '%key%'
+  ) THEN
+    BEGIN
+      ALTER TABLE public.app_settings ADD CONSTRAINT app_settings_key_unique UNIQUE (key);
+    EXCEPTION WHEN OTHERS THEN
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_app_settings_key ON public.app_settings(key);
+    END;
+  END IF;
+END $$;
+
+-- 12. WhatsApp Chats Table (Per Connected Phone Number)
+CREATE TABLE IF NOT EXISTS public.wa_chats (
+  id TEXT PRIMARY KEY,                       -- Format: {connected_phone}_{jid}
+  connected_phone TEXT NOT NULL,             -- Nomor WhatsApp terhubung (cth: 6281234567890)
+  jid TEXT NOT NULL,                         -- JID kontak lawan bicara
+  name TEXT,                                 -- Nama kontak
+  phone TEXT,                                -- Nomor telepon kontak
+  unread_count INT DEFAULT 0,
+  last_message TEXT,
+  last_message_time BIGINT,
+  messages JSONB DEFAULT '[]'::jsonb,        -- Array JSON riwayat pesan
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- JIKA TABEL SUDAH ADA SEBELUMNYA: Tambahkan kolom yang dibutuhkan
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS connected_phone TEXT;
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS jid TEXT;
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS unread_count INT DEFAULT 0;
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS last_message TEXT;
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS last_message_time BIGINT;
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS messages JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_wa_chats_connected_phone ON public.wa_chats(connected_phone);
+CREATE INDEX IF NOT EXISTS idx_wa_chats_last_message_time ON public.wa_chats(last_message_time DESC);
+CREATE INDEX IF NOT EXISTS idx_wa_chats_jid ON public.wa_chats(jid);
+
+-- Grant Table Permissions to anon, authenticated, and service_role
+GRANT ALL ON TABLE public.companies TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.suppliers TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.products TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.product_lots TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.customers TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.user_accounts TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.transactions TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.transaction_items TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.purchase_orders TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.purchase_order_items TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.app_settings TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.wa_chats TO anon, authenticated, service_role;
+
+-- Enable Row Level Security (RLS) & Policies
+ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.companies FOR ALL USING (true);
+
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all access to app_settings" ON public.app_settings;
+CREATE POLICY "Allow all access to app_settings" ON public.app_settings FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.wa_chats ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all access to wa_chats" ON public.wa_chats;
+CREATE POLICY "Allow all access to wa_chats" ON public.wa_chats FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
+
+

@@ -29,7 +29,7 @@ import { GeminiAIAssistant } from './src/components/GeminiAIAssistant';
 import { PancaMobileApp } from './src/components/panca-app/PancaMobileApp';
 import { GeminiSettingsSection } from './src/components/GeminiSettingsSection';
 import { WhatsAppView } from './src/components/WhatsAppView';
-import { callGeminiWithKeyRotation } from './src/services/geminiKeyService';
+import { callGeminiWithKeyRotation, loadGeminiSettingsFromDatabase } from './src/services/geminiKeyService';
 
 // --- Interfaces ---
 interface TutorialSection {
@@ -2548,6 +2548,8 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                 console.log('Fetching data from Supabase...');
                 const cloudData = await loadDataFromSupabase();
                 console.log('Cloud Data Fetched:', cloudData ? 'Successfully' : 'Failed');
+                // Auto-sync Gemini API Keys & Settings from Cloud Database to ensure cross-device availability
+                loadGeminiSettingsFromDatabase().catch((e) => console.warn('Gemini cloud settings load notice:', e));
                 if (cloudData) {
                     if (cloudData.transactions.length > 0) setTransactions(cloudData.transactions);
                     if (cloudData.customers.length > 0) setCustomers(cloudData.customers);

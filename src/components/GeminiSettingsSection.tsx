@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Key, Plus, Trash2, Eye, EyeOff, CheckCircle2, AlertCircle, 
-  RefreshCw, Sparkles, Shield, Cpu, Zap, Activity, Check, Copy
+  RefreshCw, Sparkles, Shield, Cpu, Zap, Activity, Check, Copy,
+  Database, Code, FileText, X, CloudCheck, Globe
 } from 'lucide-react';
 import { 
   GeminiApiKeyConfig, 
@@ -13,6 +14,11 @@ import {
   loadGeminiSettingsFromDatabase,
   testGeminiApiKey 
 } from '../services/geminiKeyService';
+import { SUPABASE_MIGRATION_SQL } from '../lib/supabaseMigrationSql';
+
+const SQL_MIGRATION_SCRIPT = SUPABASE_MIGRATION_SQL;
+
+import { checkSupabaseTableStatus } from '../lib/supabaseSync';
 
 export const GeminiSettingsSection: React.FC = () => {
   const [settings, setSettings] = useState<GeminiSettings>(() => getStoredGeminiSettings());
@@ -22,17 +28,46 @@ export const GeminiSettingsSection: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [saveCloudStatus, setSaveCloudStatus] = useState<'synced' | 'local_only' | null>(null);
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
+  const [isRefreshingCloud, setIsRefreshingCloud] = useState(false);
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [tableStatus, setTableStatus] = useState<{ isChecking: boolean; isReady: boolean; error?: string }>({
+    isChecking: true,
+    isReady: false
+  });
 
-  // Sync settings from server database on mount
-  useEffect(() => {
-    let mounted = true;
-    loadGeminiSettingsFromDatabase().then((serverSettings) => {
-      if (mounted && serverSettings && serverSettings.apiKeys.length > 0) {
+  const checkTable = async () => {
+    try {
+      const res = await checkSupabaseTableStatus('app_settings');
+      setTableStatus({ isChecking: false, isReady: res.isReady, error: res.error });
+    } catch (err: any) {
+      setTableStatus({ isChecking: false, isReady: false, error: err.message });
+    }
+  };
+
+  const fetchCloudSettings = async () => {
+    setIsRefreshingCloud(true);
+    await checkTable();
+    try {
+      const serverSettings = await loadGeminiSettingsFromDatabase();
+      if (serverSettings && serverSettings.apiKeys && serverSettings.apiKeys.length > 0) {
         setSettings(serverSettings);
+        setSaveMessage('Pengaturan berhasil dimuat dari Cloud Database Supabase!');
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
       }
-    });
-    return () => { mounted = false; };
+    } catch (err) {
+      console.warn('Gagal memuat dari cloud:', err);
+    } finally {
+      setIsRefreshingCloud(false);
+    }
+  };
+
+  // Sync settings from server/Supabase database on mount
+  useEffect(() => {
+    fetchCloudSettings();
   }, []);
 
   const toggleVisibility = (id: string) => {
@@ -110,7 +145,9 @@ export const GeminiSettingsSection: React.FC = () => {
       const res = await syncGeminiSettingsToDatabase(settings);
       setSaveMessage(res.message);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3500);
+      setSaveCloudStatus(res.isCloudSynced ? 'synced' : 'local_only');
+      await checkTable();
+      setTimeout(() => setSaveSuccess(false), 5000);
     } catch (err: any) {
       console.error('Failed to sync Gemini settings:', err);
     } finally {
@@ -156,6 +193,73 @@ export const GeminiSettingsSection: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Cloud Database Sync Status & Action Bar */}
+      <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 text-slate-700 flex-wrap">
+          <Database size={15} className="text-violet-600" />
+          <span className="font-semibold">Cloud Database Supabase:</span>
+          {tableStatus.isReady ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Tersinkronisasi Lintas Perangkat (Tabel app_settings Aktif)
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              Perlu Eksekusi Script SQL Supabase
+            </span>
+          )}
+          <span className="text-[11px] text-slate-400 hidden sm:inline">• Tabel: <code className="bg-slate-200/70 px-1 py-0.2 rounded font-mono text-[10px]">app_settings</code></span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={fetchCloudSettings}
+            disabled={isRefreshingCloud}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-white text-slate-700 font-semibold transition shadow-xs text-xs disabled:opacity-50 cursor-pointer"
+            title="Muat ulang pengaturan langsung dari database Supabase"
+          >
+            <RefreshCw size={13} className={isRefreshingCloud ? "animate-spin text-violet-600" : "text-slate-500"} />
+            <span>{isRefreshingCloud ? 'Memuat...' : 'Tarik dari Cloud'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsSqlModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 font-semibold transition shadow-xs text-xs cursor-pointer"
+            title="Lihat script SQL untuk Supabase"
+          >
+            <Code size={13} className="text-violet-600" />
+            <span>Script SQL Supabase</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Migration Alert Banner if Supabase table is not ready yet */}
+      {!tableStatus.isChecking && !tableStatus.isReady && (
+        <div className="bg-amber-50 border-b border-amber-200 px-6 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-start gap-2.5 text-amber-800">
+            <AlertCircle size={17} className="text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-amber-900">Tabel Database Belum Dibuat di Supabase (Penyebab API Key Belum Tersimpan)</p>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                Supabase Anda belum memiliki tabel <code className="bg-amber-100 px-1 rounded font-bold font-mono">app_settings</code>. 
+                Jalankan script update SQL di Supabase SQL Editor agar API Key otomatis aktif di perangkat lain (HP / tablet / browser lain).
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsSqlModalOpen(true)}
+            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shrink-0 shadow-xs transition cursor-pointer"
+          >
+            <Code size={13} />
+            <span>Buka & Salin Script SQL</span>
+          </button>
+        </div>
+      )}
 
       <div className="p-6 space-y-6">
         {/* Model Selection & Auto-Rolling Config */}
@@ -405,25 +509,119 @@ export const GeminiSettingsSection: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
             {saveSuccess && (
-              <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 text-xs font-bold animate-pulse">
-                <CheckCircle2 size={14} />
-                <span>{saveMessage || 'Tersimpan di Database & LocalStorage!'}</span>
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold ${
+                saveCloudStatus === 'synced'
+                  ? 'text-emerald-700 bg-emerald-50 border-emerald-300'
+                  : 'text-amber-800 bg-amber-50 border-amber-300'
+              }`}>
+                {saveCloudStatus === 'synced' ? (
+                  <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle size={15} className="text-amber-600 shrink-0" />
+                )}
+                <span>{saveMessage}</span>
+                {saveCloudStatus === 'local_only' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsSqlModalOpen(true)}
+                    className="ml-1.5 underline font-black text-amber-900 hover:text-black cursor-pointer"
+                  >
+                    Buka Script SQL
+                  </button>
+                )}
               </div>
             )}
             <button
               type="button"
               onClick={handleSaveAll}
               disabled={isSaving}
-              className="bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md shadow-violet-200 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-60 text-xs"
+              className="bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md shadow-violet-200 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-60 text-xs cursor-pointer"
             >
               <Check size={16} />
-              {isSaving ? 'Menyimpan...' : 'Simpan Pengaturan Gemini AI'}
+              {isSaving ? 'Menyimpan ke Cloud...' : 'Simpan Pengaturan Gemini AI'}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Modal Script SQL Supabase */}
+      {isSqlModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-900/50">
+              <div className="flex items-center gap-2">
+                <Database className="text-violet-600" size={18} />
+                <h3 className="font-bold text-sm text-slate-800 dark:text-zinc-100">Script SQL Update Supabase (app_settings & wa_chats)</h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsSqlModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 overflow-y-auto flex-1 text-xs">
+              <p className="text-slate-600 dark:text-zinc-300">
+                Jalankan script SQL ini di <strong>Supabase Dashboard &gt; SQL Editor &gt; New Query &gt; Run</strong> agar database Anda memiliki tabel <code>app_settings</code> (untuk API key aktif di semua perangkat) dan <code>wa_chats</code> (untuk riwayat chat per nomor terhubung):
+              </p>
+
+              <div className="relative">
+                <pre className="p-3 bg-zinc-950 text-emerald-400 rounded-xl font-mono text-[11px] overflow-x-auto max-h-72 border border-zinc-800 select-all leading-relaxed">
+                  {SQL_MIGRATION_SCRIPT}
+                </pre>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(SQL_MIGRATION_SCRIPT);
+                    setCopiedSql(true);
+                    setTimeout(() => setCopiedSql(false), 2500);
+                  }}
+                  className="absolute top-2 right-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs border border-zinc-700 shadow-sm transition cursor-pointer"
+                >
+                  {copiedSql ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                  <span>{copiedSql ? 'Tersalin!' : 'Salin SQL'}</span>
+                </button>
+              </div>
+
+              <div className="p-3 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/50 rounded-xl text-violet-800 dark:text-violet-300 text-[11px] space-y-1">
+                <p className="font-bold">💡 Petunjuk Singkat Penggunaan:</p>
+                <ol className="list-decimal list-inside space-y-0.5 text-violet-700 dark:text-violet-300">
+                  <li>Buka project Supabase Anda di browser.</li>
+                  <li>Klik menu <strong>SQL Editor</strong> di bilah navigasi kiri.</li>
+                  <li>Tempel (Paste) script SQL di atas lalu klik tombol hijau <strong>Run</strong>.</li>
+                  <li>Setelah selesai, kembali ke sini dan klik <strong>Simpan Pengaturan</strong>. Pengaturan dan API Key Anda kini otomatis aktif di semua perangkat!</li>
+                </ol>
+              </div>
+            </div>
+
+            <div className="p-3 border-t border-slate-100 dark:border-zinc-800 flex justify-end gap-2 bg-slate-50/50 dark:bg-zinc-900/50">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(SQL_MIGRATION_SCRIPT);
+                  setCopiedSql(true);
+                  setTimeout(() => setCopiedSql(false), 2500);
+                }}
+                className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+              >
+                {copiedSql ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedSql ? 'Berhasil Tersalin!' : 'Salin Script SQL'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(false)}
+                className="px-4 py-2 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-semibold rounded-xl text-xs transition cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

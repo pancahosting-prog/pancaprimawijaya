@@ -13,19 +13,6 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  // Prevent caching for all API routes
-  app.use("/api", (_req, res, next) => {
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    next();
-  });
-
-  // Health check
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
-
   // Fonnte API Proxy
   app.post("/api/send-whatsapp", async (req, res) => {
     const { phone, message } = req.body;
@@ -57,6 +44,7 @@ async function startServer() {
 
   // WhatsApp Baileys Endpoints
   const { waService } = await import("./server/waService.js").catch(() => import("./server/waService.ts"));
+  const { supabaseServer } = await import("./server/supabaseServer.js").catch(() => import("./server/supabaseServer.ts"));
   
   // Auto-initialize WhatsApp on server startup
   waService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp failed:", err));
@@ -68,29 +56,52 @@ async function startServer() {
       qrCodeBase64: waService.qrCodeBase64,
       userJid: waService.userJid,
       userPhone: waService.userPhone,
-      userName: waService.userName
+      userName: waService.userName,
+      knownNumbers: waService.getKnownNumbers()
     });
   });
 
   app.post("/api/wa/connect", async (_req, res) => {
-    try {
-      console.log("Connect request received for WhatsApp.");
-      await waService.initBaileys();
-      res.json({
-        success: true,
-        message: "Proses inisialisasi Baileys WhatsApp dimulai.",
-        connectionState: waService.connectionState,
-        qrCodeBase64: waService.qrCodeBase64
-      });
-    } catch (err: any) {
-      console.error("Connect request failed:", err);
-      res.status(500).json({ success: false, error: err.message });
-    }
+    await waService.initBaileys();
+    res.json({
+      success: true,
+      message: "Proses inisialisasi Baileys WhatsApp dimulai.",
+      connectionState: waService.connectionState,
+      qrCodeBase64: waService.qrCodeBase64,
+      userPhone: waService.userPhone
+    });
   });
 
-  app.get("/api/wa/chats", (_req, res) => {
-    const list = Array.from(waService.chats.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
-    res.json({ success: true, chats: list });
+  // Get Chats per Connected Phone Number
+  app.get("/api/wa/chats", (req, res) => {
+    const requestedPhone = req.query.connectedPhone as string | undefined;
+    const list = waService.getChats(requestedPhone);
+    const activeTargetPhone = requestedPhone || waService.userPhone || "default";
+    res.json({ 
+      success: true, 
+      connectedPhone: activeTargetPhone,
+      chats: list 
+    });
+  });
+
+  // List all connected numbers that have saved chat history
+  app.get("/api/wa/numbers", (_req, res) => {
+    res.json({
+      success: true,
+      activePhone: waService.userPhone,
+      numbers: waService.getKnownNumbers()
+    });
+  });
+
+  // Force sync chats from Supabase
+  app.post("/api/wa/sync-supabase", async (req, res) => {
+    const phone = req.body?.connectedPhone;
+    await waService.syncAllChatsFromSupabase(phone);
+    res.json({
+      success: true,
+      message: "Sinkronisasi riwayat chat dengan Supabase selesai.",
+      chats: waService.getChats(phone)
+    });
   });
 
   app.post("/api/wa/send", async (req, res) => {
@@ -119,16 +130,39 @@ async function startServer() {
   // Gemini Settings & Multi-Key Storage File
   const GEMINI_SETTINGS_FILE = path.resolve("./gemini-settings.json");
 
-  // Get Gemini Settings
+  // Get Gemini Settings (Checks Supabase Cloud first, then fallback to local file)
   app.get("/api/gemini/settings", async (_req, res) => {
     try {
       const fs = await import("fs/promises");
       let data: any = null;
-      try {
-        const raw = await fs.readFile(GEMINI_SETTINGS_FILE, "utf-8");
-        data = JSON.parse(raw);
-      } catch {
-        // file doesn't exist yet
+
+      // 1. Try Supabase cloud database first
+      if (supabaseServer) {
+        try {
+          const { data: dbRow, error } = await supabaseServer
+            .from("app_settings")
+            .select("value")
+            .eq("key", "gemini_settings")
+            .maybeSingle();
+
+          if (!error && dbRow?.value && Array.isArray(dbRow.value.apiKeys) && dbRow.value.apiKeys.length > 0) {
+            data = dbRow.value;
+            // Backup to local file
+            await fs.writeFile(GEMINI_SETTINGS_FILE, JSON.stringify(data, null, 2), "utf-8").catch(() => {});
+          }
+        } catch (dbErr) {
+          console.warn("[server] Supabase app_settings load notice:", dbErr);
+        }
+      }
+
+      // 2. Fallback to local file if not loaded from Supabase
+      if (!data) {
+        try {
+          const raw = await fs.readFile(GEMINI_SETTINGS_FILE, "utf-8");
+          data = JSON.parse(raw);
+        } catch {
+          // file doesn't exist yet
+        }
       }
 
       // If env has a default GEMINI_API_KEY and settings has no keys yet, seed it
@@ -160,13 +194,62 @@ async function startServer() {
     }
   });
 
-  // Save Gemini Settings
+  // Save Gemini Settings (Persists to local file AND Supabase Cloud Database)
   app.post("/api/gemini/settings", async (req, res) => {
     try {
       const fs = await import("fs/promises");
       const settings = req.body;
+      
+      // 1. Write to local file
       await fs.writeFile(GEMINI_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
-      res.json({ success: true, message: "Pengaturan Gemini berhasil disimpan ke database sistem." });
+
+      // 2. Persist to Supabase app_settings table
+      let cloudSaved = false;
+      let cloudError = "";
+      if (supabaseServer) {
+          let upsertRes = await supabaseServer.from("app_settings").upsert({
+            key: "gemini_settings",
+            value: settings,
+            updated_at: new Date().toISOString(),
+            updated_by: "server_api"
+          });
+          if (upsertRes.error && upsertRes.error.message && upsertRes.error.message.includes('column "id"')) {
+            upsertRes = await supabaseServer.from("app_settings").upsert({
+              id: "gemini_settings",
+              key: "gemini_settings",
+              value: settings,
+              updated_at: new Date().toISOString(),
+              updated_by: "server_api"
+            });
+          }
+          if (!upsertRes.error) {
+            cloudSaved = true;
+          } else {
+            cloudError = upsertRes.error.message;
+            console.warn("[server] Supabase app_settings error:", upsertRes.error.message);
+          }
+        } catch (dbErr: any) {
+          cloudError = dbErr.message;
+          console.warn("[server] Supabase app_settings upsert error:", dbErr.message);
+        }
+      }
+
+      // Update in-memory GEMINI_API_KEY for server bot if an active key exists
+      if (Array.isArray(settings?.apiKeys)) {
+        const activeKey = settings.apiKeys.find((k: any) => k.isActive && !k.isExhausted && k.key?.trim()?.length > 0);
+        if (activeKey?.key) {
+          process.env.GEMINI_API_KEY = activeKey.key.trim();
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        cloudSaved,
+        cloudError: cloudError || undefined,
+        message: cloudSaved 
+          ? "Pengaturan Gemini berhasil disimpan ke Cloud Database Supabase (Aktif di semua perangkat)." 
+          : "Pengaturan Gemini berhasil disimpan ke database sistem." 
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -242,7 +325,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
