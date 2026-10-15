@@ -225,7 +225,6 @@ class WAService {
       return;
     }
 
-    console.log("Initializing Baileys WhatsApp connection...");
     this.connectionState = "connecting";
 
     try {

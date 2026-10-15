@@ -13,11 +13,6 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  // Health check
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
-
   // Fonnte API Proxy
   app.post("/api/send-whatsapp", async (req, res) => {
     const { phone, message } = req.body;
@@ -228,7 +223,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 

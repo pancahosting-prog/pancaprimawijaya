@@ -18,7 +18,6 @@ import {
   ChevronLeft,
   MessageCircle
 } from 'lucide-react';
-import { getApiUrl } from '../lib/apiUtils';
 
 export interface WAChatMessage {
   id: string;
@@ -141,7 +140,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const fetchStatus = async () => {
     setIsLoadingStatus(true);
     try {
-      const res = await fetch(getApiUrl('/api/wa/status'));
+      const res = await fetch('/api/wa/status');
       if (res.ok) {
         const data = await res.json();
         setConnectionStatus({
@@ -161,7 +160,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   // Fetch Chats
   const fetchChats = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/wa/chats'));
+      const res = await fetch('/api/wa/chats');
       if (res.ok) {
         const data = await res.json();
         if (data.chats) {
@@ -182,7 +181,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   // Fetch AI Settings
   const fetchSettings = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/wa/settings'));
+      const res = await fetch('/api/wa/settings');
       if (res.ok) {
         const data = await res.json();
         if (data.settings) {
@@ -216,7 +215,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const handleInitConnection = async () => {
     setIsLoadingStatus(true);
     try {
-      const res = await fetch(getApiUrl('/api/wa/connect'), { method: 'POST' });
+      const res = await fetch('/api/wa/connect', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         setConnectionStatus(prev => ({
@@ -235,7 +234,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const handleLogoutWA = async () => {
     if (!confirm('Logout WA?')) return;
     try {
-      await fetch(getApiUrl('/api/wa/logout'), { method: 'POST' });
+      await fetch('/api/wa/logout', { method: 'POST' });
       fetchStatus();
     } catch (err) {
       console.error('Error logging out WA:', err);
@@ -251,7 +250,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     setReplyText('');
 
     try {
-      const res = await fetch(getApiUrl('/api/wa/send'), {
+      const res = await fetch('/api/wa/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jid: selectedChatJid, text: textToSend })
@@ -270,7 +269,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     try {
-      const res = await fetch(getApiUrl('/api/wa/settings'), {
+      const res = await fetch('/api/wa/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)
