@@ -1,0 +1,11 @@
+{
+  "name": "My Panca BRM",
+  "description": "My Panca is a modern business management application that helps streamline operations, data management, and reporting in a single integrated system..",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
