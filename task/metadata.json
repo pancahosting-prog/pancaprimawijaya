@@ -1,0 +1,6 @@
+{
+  "name": "MyPanca - Smart Task Management",
+  "description": "A high-fidelity task reporting and management application with calendar integration, team collaboration, and performance analytics powered by Supabase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
