@@ -2,7 +2,7 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import QRCode from "qrcode";
-import { supabaseServer } from "./supabaseServer.js";
+import { supabaseServer } from "./supabaseServer.ts";
 
 // File storage paths for WA state
 const SESSION_DIR = path.resolve("./wa-session");
