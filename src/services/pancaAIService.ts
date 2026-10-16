@@ -497,14 +497,14 @@ export const getConversationalGreetingResponse = (userName: string, query: strin
   }
 
   if (/apa kabar|gimana kabar/i.test(q)) {
-    return `Kabar baik, **${userName}**! 😊 Terima kasih sudah menyapa. Bagaimana dengan Anda? Ada data transaksi, omzet, atau stok produk yang ingin kita periksa bersama hari ini?`;
+    return `Kabar baik, **${userName}**! Terima kasih sudah menyapa. Ada data transaksi, omzet, atau stok produk yang ingin diperiksa bersama hari ini?`;
   }
 
   if (/siapa kamu|kamu siapa/i.test(q)) {
-    return `Halo **${userName}**! 👋 Saya adalah **Panca AI Assistant**, asisten virtual pintar terhubung langsung ke database PT. Panca Prima Wijaya (MyPanca CRM & ERP).\n\nSaya siap membantu Anda:\n- 📊 Memeriksa laporan omzet & penjualan\n- 🔎 Cek detail transaksi lama (**TRX-..**) maupun transaksi baru (**PP-..**)\n- 📦 Cek stok & spesifikasi katalog produk\n- 💰 Cek piutang tagihan pelanggan\n- 📝 Membantu menginput Customer Baru, Transaksi, & Penawaran secara bertahap (Form Wizard)\n\nSilakan tanyakan apa saja yang Anda butuhkan! 😊`;
+    return `Halo **${userName}**, Saya adalah **Panca AI Assistant**, asisten virtual yang terhubung ke database PT. Panca Prima Wijaya (MyPanca CRM & ERP).\n\nSaya dapat membantu Anda:\n- Memeriksa laporan omzet dan penjualan\n- Cek detail transaksi lama (TRX-..) maupun transaksi baru (PP-..)\n- Cek stok dan spesifikasi katalog produk\n- Cek piutang tagihan pelanggan\n- Membantu input Customer Baru, Transaksi, dan Penawaran secara bertahap\n\nSilakan tanyakan data yang Anda butuhkan.`;
   }
 
-  return `Halo **${userName}**! 👋 Silakan, tanyakan apa saja yang Anda butuhkan, saya siap membantu dengan senang hati! 😊\n\nMisalnya, Anda bisa menanyakan:\n- 📊 *"Berapa omzet bulan ini?"*\n- 🔎 *"Cek transaksi TRX-70"* atau *"Cek transaksi PP-001"*\n- 📦 *"Produk apa saja yang stoknya menipis?"*\n- 📝 *"Tambah customer baru"* atau *"Buat transaksi baru"*\n\nAda yang ingin kita periksa sekarang?`;
+  return `Halo **${userName}**. Silakan tanyakan data atau informasi yang Anda perlukan, saya siap membantu.\n\nContoh pertanyaan:\n- "Berapa omzet bulan ini?"\n- "Cek transaksi TRX-70" atau "Cek transaksi PP-001"\n- "Produk apa saja yang stoknya menipis?"\n- "Tambah customer baru" atau "Buat transaksi baru"\n\nAda data yang ingin diperiksa sekarang?`;
 };
 
 // Unified LLM Calling Function with Strict Data Reading Rules and Friendly Tone
@@ -528,19 +528,19 @@ export const queryPancaAI = async (
 
   const dataDigest = generatePancaDataDigest(ctx, userQuery);
 
-  const systemPrompt = `Anda adalah "Panca AI Assistant", asisten kecerdasan buatan terpadu yang ramah, hangat, profesional, dan analis data bisnis untuk PT. Panca Prima Wijaya (MyPanca CRM & ERP).
+  const systemPrompt = `Anda adalah "Panca AI Assistant", asisten kecerdasan buatan terpadu yang profesional, ramah, dan analis data bisnis untuk PT. Panca Prima Wijaya (MyPanca CRM & ERP).
 Nama Pengguna: ${userName}
 Peran Pengguna: ${ctx.currentUser?.role || 'Staff'}
 Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
 
 ================================================================================
-ATURAN UTAMA & PROTOKOL LAYANAN RAMAH (FRIENDLY & COMPLETE RESPONSE GUARANTEE):
+ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (NO-EMOJI CLUTTER GUARANTEE):
 ================================================================================
 
-1. NADA BICARA & TONE OF VOICE:
-   - Bersikaplah hangat, sopan, bersahabat, profesional, dan membantu (seperti Customer Service Senior yang cerdas dan solutif).
-   - Gunakan sapaan ramah "Bapak/Ibu" atau sebut nama "${userName}" secara alami.
-   - Hindari bahasa kaku/robotik. Gunakan gaya bahasa Indonesia yang mengalir, rapi, dan mudah dipahami.
+1. NADA BICARA & FORMAT RESPON:
+   - Bersikaplah sopan, profesional, membantu, dan lugas.
+   - Gunakan sapaan "Bapak/Ibu" atau sebut nama "${userName}" secara wajar.
+   - DILARANG MENGGUNAKAN BANYAK EMOJI ATAU SIMBOL DEKORATIF BERLEBIHAN. Jangan gunakan emoji di setiap baris, setiap poin, atau setiap sel tabel. Maksimal 0 sampai 1 emoji sederhana jika sangat diperlukan. Tampilan harus bersih dan elegan.
 
 2. PENGETAHUAN KODE TRANSAKSI LAMA (TRX) & BARU (PP):
    - Sistem MyPanca menggunakan 2 format nomor transaksi:
@@ -551,16 +551,16 @@ ATURAN UTAMA & PROTOKOL LAYANAN RAMAH (FRIENDLY & COMPLETE RESPONSE GUARANTEE):
 3. AKURASI UTAMA & DILARANG MEMOTONG JAWABAN:
    - JAWABAN ANDA HARUS DITULIS LENGKAP DARI AWAL SAMPAI AKHIR TANPA TERPOTONG DI TENGAH JALAN.
    - Utamakan AKURASI DATA berdasarkan database faktual yang dilampirkan.
-   - JANGAN MENGARANG DRAFT ATAU DATA TRANSAKSI JIKA TIDAK ADA DI DATABASE! Jika transaksi tidak ditemukan, jawab dengan jujur dan ramah:
-     "Maaf **${userName}**, nomor transaksi **[Nomor]** tidak ditemukan di database MyPanca. Bisakah Anda periksa kembali nomor transaksinya?"
+   - JANGAN MENGARANG DRAFT ATAU DATA TRANSAKSI JIKA TIDAK ADA DI DATABASE. Jika transaksi tidak ditemukan, jawab jujur:
+     "Maaf **${userName}**, nomor transaksi **[Nomor]** tidak ditemukan di database MyPanca. Silakan periksa kembali nomor transaksinya."
 
 4. SAJIKAN TABEL MARKDOWN DENGAN RAPI & TERSTRUKTUR:
-   - Ketika menyajikan daftar transaksi, piutang, produk, atau laporan, gunakan TABEL MARKDOWN LENGKAP dengan header yang jelas.
+   - Ketika menyajikan daftar transaksi, piutang, produk, atau laporan, gunakan TABEL MARKDOWN LENGKAP dengan header yang jelas tanpa hiasan emoji di judul/kolom.
    - Contoh Header Tabel Transaksi:
      | No. Transaksi | Tanggal | Pelanggan | Nominal Rp | Status Pesanan | Status Pembayaran | Sales Rep |
 
 5. KLARIFIKASI DAHULU JIKA PERTANYAAN TERLALU UMUM:
-   - Jika pengguna bertanya hal umum tanpa periode (seperti hanya "omset" atau "transaksi"), tanyakan periode bulan/tahun yang ingin diperiksa dengan ramah.
+   - Jika pengguna bertanya hal umum tanpa periode (seperti hanya "omset" atau "transaksi"), tanyakan periode bulan/tahun yang ingin diperiksa secara jelas.
 
 6. BILA PENGGUNA INGIN INPUT DATA BARU (CUSTOMER, TRANSAKSI, PENAWARAN):
    - Pandu pengguna mengisi data secara BERTAHAP (satu per satu sesuai kolom form asli), lalu di akhir tampilkan tabel pratinjau draft dan minta konfirmasi simpan.
@@ -593,7 +593,7 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
   // Greetings check
   const greetingList = ['halo', 'hello', 'hi', 'hai', 'pagi', 'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam', 'siang', 'sore', 'malam', 'ping', 'p', "assalamu'alaikum", 'assalamualaikum', 'salam'];
   if (greetingList.includes(trimmed) || trimmed === 'halo ai' || trimmed === 'hi ai') {
-    return `Halo, **${userName}**! 👋 Selamat ${new Date().getHours() < 12 ? 'pagi' : new Date().getHours() < 17 ? 'siang' : 'malam'}.\n\nSaya **Panca AI Assistant**, asisten virtual terhubung database PT. Panca Prima Wijaya.\n\nAda data atau informasi bisnis apa yang ingin saya bantu carikan hari ini? Misalnya:\n- 🔍 *"Cek transaksi TRX-70"* atau *"pembelian PT ABC"*\n- 📊 *"Berapa total omzet bulan ini?"*\n- 📦 *"Cek produk yang stoknya menipis"*\n- 💰 *"Tampilkan invoice yang belum lunas"*\n\nSilakan tanyakan apa saja! 😊`;
+    return `Halo, **${userName}**. Selamat ${new Date().getHours() < 12 ? 'pagi' : new Date().getHours() < 17 ? 'siang' : 'malam'}.\n\nSaya **Panca AI Assistant**, asisten virtual database PT. Panca Prima Wijaya.\n\nAda data atau informasi bisnis apa yang ingin dicarikan hari ini? Contoh:\n- "Cek transaksi TRX-70" atau "pembelian PT ABC"\n- "Berapa total omzet bulan ini?"\n- "Cek produk yang stoknya menipis"\n- "Tampilkan invoice yang belum lunas"\n\nSilakan tanyakan data yang Anda perlukan.`;
   }
 
   // Search by transaction code (e.g. TRX-70, QUO, PO)

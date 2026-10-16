@@ -29,18 +29,18 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
   onLogout,
 }) => {
   const recentTopics = [
-    { label: "👤 Tambah Customer Baru", prompt: "tambah customer baru" },
-    { label: "🛍️ Transaksi Baru", prompt: "tambah transaksi baru" },
-    { label: "📋 Penawaran Baru", prompt: "tambah penawaran baru" },
-    { label: "📊 Laporan Omzet", prompt: "Tolong buatkan ringkasan omzet dan total penjualan bulan ini." },
-    { label: "📦 Stok Menipis", prompt: "Cek produk apa saja yang stoknya menipis dan butuh restock." },
+    { label: "Tambah Customer", prompt: "tambah customer baru" },
+    { label: "Transaksi Baru", prompt: "tambah transaksi baru" },
+    { label: "Penawaran Baru", prompt: "tambah penawaran baru" },
+    { label: "Laporan Omzet", prompt: "Tolong buatkan ringkasan omzet dan total penjualan bulan ini." },
+    { label: "Stok Menipis", prompt: "Cek produk apa saja yang stoknya menipis dan butuh restock." },
   ];
 
   const trendingPrompts = [
-    { tag: "👤 Tambah Customer Baru", desc: "Input kontak & lead pelanggan ke database BRM", prompt: "tambah customer baru" },
-    { tag: "🛍️ Transaksi Baru", desc: "Input order & transaksi penjualan deal baru", prompt: "tambah transaksi baru" },
-    { tag: "📋 Penawaran Baru", desc: "Input quotation harga penawaran untuk pelanggan", prompt: "tambah penawaran baru" },
-    { tag: "📊 Ringkasan Omzet Bisnis", desc: "Cek omzet real deals & performa sales", prompt: "Tolong buatkan ringkasan omzet dan performa penjualan saat ini." },
+    { tag: "Tambah Customer Baru", desc: "Input kontak & lead pelanggan ke database CRM", prompt: "tambah customer baru" },
+    { tag: "Transaksi Baru", desc: "Input order & transaksi penjualan deal baru", prompt: "tambah transaksi baru" },
+    { tag: "Penawaran Baru", desc: "Input quotation harga penawaran untuk pelanggan", prompt: "tambah penawaran baru" },
+    { tag: "Ringkasan Omzet Bisnis", desc: "Cek omzet real deals & performa sales", prompt: "Tolong buatkan ringkasan omzet dan performa penjualan saat ini." },
   ];
 
   return (
@@ -56,8 +56,8 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
             className="relative group cursor-pointer"
             title="Klik foto profil untuk Keluar / Logout"
           >
-            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-500 p-0.5 shadow-md group-hover:scale-105 transition">
-              <div className="w-full h-full rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center text-violet-700 dark:text-violet-400 font-extrabold text-base">
+            <div className="w-12 h-12 rounded-full bg-slate-900 dark:bg-zinc-100 p-0.5 shadow-md group-hover:scale-105 transition">
+              <div className="w-full h-full rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center text-slate-900 dark:text-zinc-100 font-extrabold text-base">
                 {currentUser?.nama?.charAt(0) || 'U'}
               </div>
             </div>
@@ -77,7 +77,7 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
         {/* Notification Bell */}
         <button
           onClick={onOpenNotifications}
-          className="relative w-10 h-10 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-sm flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:text-violet-600 dark:hover:text-violet-400 hover:border-violet-200 dark:hover:border-violet-800 transition active:scale-95"
+          className="relative w-10 h-10 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center justify-center text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition active:scale-95"
         >
           <Bell className="w-5 h-5" />
           {unreadNotificationsCount > 0 && (
@@ -89,15 +89,15 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
       </div>
 
       {/* Main Greeting Banner */}
-      <div className="bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 text-white p-5 rounded-3xl shadow-lg shadow-violet-500/20">
+      <div className="bg-slate-900 text-white p-5 rounded-3xl shadow-lg border border-slate-800">
         <h3 className="text-lg font-extrabold leading-snug">
           Panca AI Assistant <br />
-          <span className="text-violet-200 font-bold">
+          <span className="text-slate-300 font-bold">
             Sistem CRM & ERP Terpadu
           </span>
         </h3>
-        <p className="mt-1 text-xs text-violet-100/90 leading-relaxed">
-          Asisten pintar terintegrasi dengan CRM, transaksi, stok, dan task proyek. Silakan pilih tindakan cepat di bawah!
+        <p className="mt-1 text-xs text-slate-400 leading-relaxed">
+          Asisten pintar terintegrasi dengan CRM, transaksi, stok, dan task proyek. Silakan pilih tindakan cepat di bawah.
         </p>
       </div>
 

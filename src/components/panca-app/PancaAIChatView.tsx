@@ -67,34 +67,34 @@ const TypewriterText: React.FC<{
         remarkPlugins={[remarkGfm]}
         components={{
           table: ({ children }) => (
-            <div className="my-3 overflow-x-auto rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs">
-              <table className="min-w-full divide-y divide-slate-200 dark:divide-zinc-800 text-xs text-left">
+            <div className="my-2.5 overflow-x-auto rounded-2xl bg-slate-100/60 dark:bg-zinc-800/40 p-1 shadow-2xs">
+              <table className="min-w-full text-xs text-left border-collapse">
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-slate-100/90 dark:bg-zinc-800/80 text-slate-700 dark:text-zinc-200 font-extrabold uppercase tracking-wider text-[11px]">
+            <thead className="bg-slate-200/60 dark:bg-zinc-800/80 text-slate-900 dark:text-zinc-100 font-extrabold text-[11px] border-b border-slate-200/80 dark:border-zinc-700/60">
               {children}
             </thead>
           ),
           tbody: ({ children }) => (
-            <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60 bg-white dark:bg-zinc-900">
+            <tbody className="bg-transparent divide-y divide-slate-200/30 dark:divide-zinc-800/30">
               {children}
             </tbody>
           ),
           tr: ({ children }) => (
-            <tr className="hover:bg-slate-50/80 dark:hover:bg-zinc-800/50 transition-colors">
+            <tr className="hover:bg-white/60 dark:hover:bg-zinc-800/60 transition-colors">
               {children}
             </tr>
           ),
           th: ({ children }) => (
-            <th className="px-3.5 py-2.5 font-bold text-slate-800 dark:text-zinc-200 border-b border-slate-200/80 dark:border-zinc-800 whitespace-nowrap">
+            <th className="px-3 py-2 font-bold text-slate-800 dark:text-zinc-200 whitespace-nowrap">
               {children}
             </th>
           ),
           td: ({ children }) => (
-            <td className="px-3.5 py-2.5 text-slate-700 dark:text-zinc-300 align-top whitespace-nowrap">
+            <td className="px-3 py-2 text-slate-700 dark:text-zinc-300 align-top whitespace-nowrap">
               {children}
             </td>
           ),
@@ -104,7 +104,7 @@ const TypewriterText: React.FC<{
           p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
           strong: ({ children }) => <strong className="font-extrabold text-slate-900 dark:text-zinc-100">{children}</strong>,
           code: ({ children }) => (
-            <code className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-violet-600 dark:text-violet-400 font-mono text-[11px] border border-slate-200/60 dark:border-zinc-700/60">
+            <code className="px-1.5 py-0.5 rounded-md bg-violet-50 dark:bg-zinc-800 text-violet-700 dark:text-violet-300 font-mono text-[11px]">
               {children}
             </code>
           )
@@ -183,7 +183,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       {
         id: '1',
         role: 'assistant',
-        content: `Halo, **${currentUser?.nama || 'Bapak/Ibu'}**! 👋 Selamat datang di **Panca AI Chat**.\n\nSaya siap melayani Anda melalui **teks maupun suara (voice chat)** untuk mencari informasi data transaksi (seperti **TRX-70**), status piutang, stok produk, serta tugas & proyek tim.\n\nTekan tombol mikrofon 🎙️ di bawah untuk mulai bicara, atau ketik langsung di kolom pesan!`,
+        content: `Halo, **${currentUser?.nama || 'Bapak/Ibu'}**. Selamat datang di **Panca AI Chat**.\n\nSaya siap melayani Anda melalui **teks maupun suara** untuk mencari informasi data transaksi (seperti **TRX-70** atau **PP-001**), status piutang, stok produk, serta tugas & proyek tim.\n\nTekan tombol mikrofon di bawah untuk mulai bicara, atau ketik langsung di kolom pesan!`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ];
@@ -1292,8 +1292,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="w-8 h-8 rounded-xl bg-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-            🤖
+          <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-extrabold text-xs shadow-xs">
+            P
           </div>
           <div>
             <h3 className="text-xs font-extrabold text-slate-900 dark:text-zinc-100 leading-tight">Panca AI Chat</h3>
@@ -1311,7 +1311,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             }}
             className={`p-2 rounded-xl transition active:scale-95 ${
               autoSpeak
-                ? 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 font-bold'
+                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold'
                 : 'text-slate-400 dark:text-zinc-400 hover:text-slate-600 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800'
             }`}
             title={autoSpeak ? "Suara AI Otomatis Aktif (Klik untuk Matikan)" : "Nyalakan Suara AI Otomatis"}
@@ -1331,7 +1331,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3.5">
         {messages.map((m) => {
           const isUser = m.role === 'user';
           const isSpeaking = speakingMessageId === m.id;
@@ -1339,25 +1339,13 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           return (
             <div
               key={m.id}
-              className={`flex gap-2.5 max-w-[92%] ${isUser ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}
+              className={`max-w-[88%] ${isUser ? 'ml-auto text-right' : 'mr-auto text-left'}`}
             >
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-1 shadow-xs ${
-                  isUser
-                    ? 'bg-gradient-to-tr from-violet-600 to-indigo-600 text-white'
-                    : isSpeaking 
-                      ? 'bg-rose-500 text-white animate-pulse'
-                      : 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300'
-                }`}
-              >
-                {isUser ? currentUser?.nama?.charAt(0) || 'U' : '🤖'}
-              </div>
-
               <div className="min-w-0">
                 <div
-                  className={`p-3.5 rounded-2xl text-xs leading-relaxed shadow-xs ${
+                  className={`p-3.5 rounded-2xl text-xs leading-relaxed shadow-2xs text-left ${
                     isUser
-                      ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-tr-none'
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-tr-none font-medium'
                       : 'bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 border border-slate-200/80 dark:border-zinc-800 rounded-tl-none prose prose-xs dark:prose-invert max-w-none'
                   }`}
                 >
@@ -1377,18 +1365,18 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
                       {/* Interactive Action Card for Draft Savings (Customer, Transaksi, Penawaran) */}
                       {m.draftData && (
-                        <div className="mt-3 pt-3 border-t border-slate-200 dark:border-zinc-800 not-prose">
+                        <div className="mt-3 not-prose">
                           {!m.draftData.isSaved ? (
                             <button
                               type="button"
                               onClick={() => handleConfirmDraftSave(m.id)}
-                              className="w-full py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-98 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                              className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 active:scale-98 text-white dark:text-zinc-900 font-extrabold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
                             >
                               <CheckCircle2 size={16} />
                               <span>Konfirmasi Simpan ke Database MyPanca</span>
                             </button>
                           ) : (
-                            <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 rounded-xl text-emerald-700 dark:text-emerald-300 font-extrabold text-xs flex items-center gap-2 shadow-xs">
+                            <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 rounded-xl text-emerald-700 dark:text-emerald-300 font-extrabold text-xs flex items-center gap-2 shadow-2xs">
                               <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
                               <span>Tersimpan di Database MyPanca</span>
                             </div>
@@ -1398,11 +1386,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
                       {/* Interactive Buttons for Product Specs */}
                       {(m.content.includes('Apakah Anda mau mengisi') || m.content.includes('spesifikasi produk ini sekarang')) && (
-                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-zinc-800 flex items-center gap-2 not-prose">
+                        <div className="mt-3 flex items-center gap-2 not-prose">
                           <button
                             type="button"
                             onClick={() => handleSendMessage("Ya, isi sekarang")}
-                            className="py-1.5 px-3 rounded-xl bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-bold text-xs transition flex items-center gap-1 cursor-pointer shadow-xs"
+                            className="py-1.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 active:scale-95 text-white dark:text-zinc-900 font-bold text-xs transition flex items-center gap-1 cursor-pointer shadow-xs"
                           >
                             <CheckCircle2 size={14} />
                             Ya, Isi Sekarang
@@ -1410,7 +1398,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleSendMessage("Tidak, terima kasih")}
-                            className="py-1.5 px-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
+                            className="py-1.5 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
                           >
                             <XCircle size={14} />
                             Tidak
@@ -1420,11 +1408,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
                       {/* Interactive Buttons for Transaction Details / Menunggak / Omzet */}
                       {((m.content.includes('Apakah Anda ingin') || m.content.includes('mau melihat')) && (m.content.includes('tampilkan rincian') || m.content.includes('melihat list') || m.content.includes('melihat rincian') || m.content.includes('daftar transaksinya') || m.content.includes('detail transaksinya') || m.content.includes('list transaksinya') || m.content.includes('rincian detail'))) && (
-                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-zinc-800 flex items-center gap-2 not-prose">
+                        <div className="mt-3 flex items-center gap-2 not-prose">
                           <button
                             type="button"
                             onClick={() => handleSendMessage("Ya, tampilkan list transaksinya")}
-                            className="py-1.5 px-3 rounded-xl bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-bold text-xs transition flex items-center gap-1 cursor-pointer shadow-xs"
+                            className="py-1.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 active:scale-95 text-white dark:text-zinc-900 font-bold text-xs transition flex items-center gap-1 cursor-pointer shadow-xs"
                           >
                             <CheckCircle2 size={14} />
                             Ya, Tampilkan List Transaksi
@@ -1432,7 +1420,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleSendMessage("Tidak, ringkasan saja cukup")}
-                            className="py-1.5 px-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
+                            className="py-1.5 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
                           >
                             <XCircle size={14} />
                             Tidak, Ringkasan Cukup
@@ -1451,14 +1439,14 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                       {/* Speak Button */}
                       <button
                         onClick={() => speakText(m.content, m.id)}
-                        className={`hover:text-violet-600 dark:hover:text-violet-400 transition flex items-center gap-0.5 ${
-                          isSpeaking ? 'text-violet-600 font-bold' : ''
+                        className={`hover:text-slate-900 dark:hover:text-white transition flex items-center gap-0.5 ${
+                          isSpeaking ? 'text-slate-900 dark:text-white font-bold' : ''
                         }`}
                         title={isSpeaking ? "Hentikan Suara" : "Dengarkan Jawaban AI"}
                       >
                         {isSpeaking ? (
                           <>
-                            <Square className="w-2.5 h-2.5 fill-violet-600 text-violet-600 animate-pulse" />
+                            <Square className="w-2.5 h-2.5 fill-slate-900 dark:fill-white text-slate-900 dark:text-white animate-pulse" />
                             <span>Stop</span>
                           </>
                         ) : (
@@ -1472,7 +1460,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                       {/* Copy Button */}
                       <button
                         onClick={() => copyToClipboard(m.content, m.id)}
-                        className="hover:text-violet-600 dark:hover:text-violet-400 transition flex items-center gap-0.5"
+                        className="hover:text-slate-900 dark:hover:text-white transition flex items-center gap-0.5"
                       >
                         {copiedId === m.id ? (
                           <>
@@ -1495,14 +1483,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         })}
 
         {isLoading && (
-          <div className="flex gap-2.5 mr-auto max-w-[85%]">
-            <div className="w-7 h-7 rounded-full bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
-              🤖
-            </div>
-            <div className="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 p-3 rounded-2xl rounded-tl-none flex items-center gap-1.5 shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" />
-              <span className="w-2 h-2 rounded-full bg-violet-500 animate-bounce [animation-delay:0.2s]" />
-              <span className="w-2 h-2 rounded-full bg-violet-500 animate-bounce [animation-delay:0.4s]" />
+          <div className="mr-auto max-w-[85%]">
+            <div className="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 p-3 rounded-2xl rounded-tl-none flex items-center gap-1.5 shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-slate-900 dark:bg-zinc-200 animate-bounce" />
+              <span className="w-2 h-2 rounded-full bg-slate-900 dark:bg-zinc-200 animate-bounce [animation-delay:0.2s]" />
+              <span className="w-2 h-2 rounded-full bg-slate-900 dark:bg-zinc-200 animate-bounce [animation-delay:0.4s]" />
               <span className="text-xs text-slate-400 dark:text-zinc-400 font-medium ml-1">Mencari data sistem...</span>
             </div>
           </div>
@@ -1510,11 +1495,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
         {/* EMBEDDED INTERACTIVE CRM FORM CARD WHEN ACTIVE SESSION IS OPEN */}
         {activeSession && (
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border-2 border-violet-500 shadow-2xl p-4 my-2 text-xs space-y-4 animate-in fade-in slide-in-from-bottom-3 duration-300">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-violet-200 dark:border-violet-800/80 shadow-xl p-4 my-2 text-xs space-y-3.5 animate-in fade-in slide-in-from-bottom-3 duration-300">
             {/* Header with Type Selector & Close Button */}
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                 <h4 className="font-extrabold text-slate-900 dark:text-zinc-100 text-sm tracking-tight">
                   {activeSession.type === 'customer' 
                     ? '👤 Form Input Customer Baru (CRM)' 
@@ -1542,11 +1527,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             {(activeSession.type === 'transaction' || activeSession.type === 'penawaran') && (
               <div className="space-y-3">
                 {/* Switch Document Type */}
-                <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-zinc-800/80 rounded-xl">
+                <div className="flex items-center gap-2 p-1 bg-slate-100/80 dark:bg-zinc-800/80 rounded-2xl">
                   <button
                     type="button"
                     onClick={() => updateActiveData('docType', 'transaction')}
-                    className={`flex-1 py-2 px-3 rounded-lg font-extrabold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 py-2 px-3 rounded-xl font-extrabold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
                       activeSession.type === 'transaction'
                         ? 'bg-violet-600 text-white shadow-xs'
                         : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900'
@@ -1570,7 +1555,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                 </div>
 
                 {/* 1. CUSTOMER SEARCH & SELECTOR */}
-                <div className="space-y-1.5 bg-slate-50 dark:bg-zinc-950/60 p-3 rounded-xl border border-slate-200/80 dark:border-zinc-800">
+                <div className="space-y-1.5 bg-slate-50/80 dark:bg-zinc-950/50 p-3 rounded-2xl border border-slate-200/50 dark:border-zinc-800/60">
                   <label className="font-extrabold text-slate-800 dark:text-zinc-200 text-xs flex items-center gap-1.5">
                     <User size={14} className="text-violet-600" />
                     <span>Pilih Pelanggan / Customer (Search Database):</span>
@@ -2000,16 +1985,16 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         <div className="px-3 py-2 bg-slate-50 dark:bg-zinc-950 border-t border-slate-200/80 dark:border-zinc-800 flex items-center gap-1.5 overflow-x-auto scrollbar-hide shrink-0">
           <span className="text-[10px] text-slate-400 dark:text-zinc-400 font-extrabold uppercase shrink-0">Cepat:</span>
           {[
-            { label: '👤 Tambah Customer Baru', prompt: 'tambah customer baru' },
-            { label: '🛍️ Transaksi Baru', prompt: 'tambah transaksi baru' },
-            { label: '📋 Penawaran Baru', prompt: 'tambah penawaran baru' },
-            { label: '📊 Omzet Bulan Ini', prompt: 'Omzet bulan ini' },
-            { label: '📦 Stok Menipis', prompt: 'Stok menipis' }
+            { label: 'Tambah Customer', prompt: 'tambah customer baru' },
+            { label: 'Transaksi Baru', prompt: 'tambah transaksi baru' },
+            { label: 'Penawaran Baru', prompt: 'tambah penawaran baru' },
+            { label: 'Omzet Bulan Ini', prompt: 'Omzet bulan ini' },
+            { label: 'Stok Menipis', prompt: 'Stok menipis' }
           ].map((chip, idx) => (
             <button
               key={idx}
               onClick={() => handleSendMessage(chip.prompt)}
-              className="px-3 py-1.5 bg-white dark:bg-zinc-900 hover:bg-violet-50 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-violet-700 dark:hover:text-violet-300 border border-slate-200 dark:border-zinc-800 rounded-full text-xs font-bold whitespace-nowrap shadow-xs transition active:scale-95 shrink-0"
+              className="px-3 py-1.5 bg-white dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-800 rounded-full text-xs font-bold whitespace-nowrap shadow-xs transition active:scale-95 shrink-0"
             >
               {chip.label}
             </button>
@@ -2021,7 +2006,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       <div className="bg-white dark:bg-zinc-900 p-3 border-t border-slate-200 dark:border-zinc-800 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] shrink-0 z-20">
         {/* Real-time Voice Listening Visualizer */}
         {isListening && (
-          <div className="mb-2.5 px-3.5 py-2.5 bg-gradient-to-r from-rose-500 via-purple-600 to-indigo-600 text-white rounded-2xl flex items-center justify-between text-xs shadow-lg animate-in slide-in-from-bottom-2">
+          <div className="mb-2.5 px-3.5 py-2.5 bg-slate-900 dark:bg-zinc-800 text-white rounded-2xl flex items-center justify-between text-xs shadow-lg animate-in slide-in-from-bottom-2">
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="relative flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
@@ -2029,14 +2014,14 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
               </span>
               <div className="min-w-0">
                 <p className="font-extrabold truncate">Mendengarkan suara Anda...</p>
-                <p className="text-[10px] text-violet-200 truncate">Silakan bicara sekarang (contoh: "Tambah customer baru")</p>
+                <p className="text-[10px] text-slate-300 truncate">Silakan bicara sekarang (contoh: "Tambah customer baru")</p>
               </div>
             </div>
 
             <button
               type="button"
               onClick={stopVoiceInput}
-              className="px-3 py-1.5 bg-white text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-extrabold shadow-xs active:scale-95 transition shrink-0"
+              className="px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-100 rounded-xl text-xs font-extrabold shadow-xs active:scale-95 transition shrink-0"
             >
               Selesai
             </button>
@@ -2068,8 +2053,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             onClick={startVoiceInput}
             className={`w-11 h-11 rounded-2xl flex items-center justify-center transition active:scale-90 shrink-0 ${
               isListening
-                ? 'bg-rose-500 text-white shadow-lg shadow-rose-300 ring-4 ring-rose-200 animate-pulse'
-                : 'bg-violet-100 dark:bg-violet-950/80 hover:bg-violet-200 dark:hover:bg-violet-900 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 shadow-xs'
+                ? 'bg-rose-500 text-white shadow-lg ring-4 ring-rose-200 animate-pulse'
+                : 'bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-700 shadow-xs'
             }`}
             title={isListening ? "Hentikan perekaman suara" : "Bicara dengan suara (Voice Search)"}
           >
@@ -2091,7 +2076,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
               className={`w-full rounded-2xl px-4 py-3 text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 outline-none transition border shadow-inner ${
                 isListening
                   ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-300 text-rose-900 dark:text-rose-200'
-                  : 'bg-slate-100 dark:bg-zinc-950 hover:bg-slate-100/80 focus:bg-white dark:focus:bg-zinc-950 border-slate-200 dark:border-zinc-800 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/40'
+                  : 'bg-slate-100 dark:bg-zinc-950 hover:bg-slate-100/80 focus:bg-white dark:focus:bg-zinc-950 border-slate-200 dark:border-zinc-800 focus:border-slate-800 focus:ring-2 focus:ring-slate-200 dark:focus:ring-zinc-800'
               }`}
             />
           </div>
@@ -2100,7 +2085,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           <button
             type="submit"
             disabled={!inputPrompt.trim() || isLoading}
-            className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white flex items-center justify-center shadow-md shadow-violet-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-90 shrink-0"
+            className="w-11 h-11 rounded-2xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-zinc-900 flex items-center justify-center shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-90 shrink-0"
             title="Kirim Pesan"
           >
             <Send className="w-4 h-4 ml-0.5" />

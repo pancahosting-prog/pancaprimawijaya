@@ -188,7 +188,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
         </div>
 
         {/* Bottom Navigation Bar */}
-        <div className="shrink-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-zinc-800 px-3 py-2 z-30 flex items-center justify-around shadow-[0_-4px_15px_rgba(0,0,0,0.05)]">
+        <div className="shrink-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200 dark:border-zinc-800 px-3 py-2 z-30 flex items-center justify-around shadow-[0_-4px_15px_rgba(0,0,0,0.05)]">
           {/* Menu Home / Beranda */}
           <button
             onClick={() => {
@@ -197,12 +197,12 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             }}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'home'
-                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
-                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
+                ? 'text-slate-900 dark:text-white font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'home' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
-              <HomeIcon className="w-5 h-5" />
+            <div className={`p-1.5 rounded-xl ${activeTab === 'home' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs' : ''}`}>
+              <HomeIcon className="w-4 h-4" />
             </div>
             <span className="text-[10px] mt-0.5">Home</span>
           </button>
@@ -212,12 +212,12 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             onClick={() => setActiveTab('ai')}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'ai'
-                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
-                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
+                ? 'text-slate-900 dark:text-white font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'ai' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
-              <Bot className="w-5 h-5" />
+            <div className={`p-1.5 rounded-xl ${activeTab === 'ai' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs' : ''}`}>
+              <Bot className="w-4 h-4" />
             </div>
             <span className="text-[10px] mt-0.5">AI</span>
           </button>
@@ -227,12 +227,12 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             onClick={() => setActiveTab('pesan')}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'pesan'
-                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
-                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
+                ? 'text-slate-900 dark:text-white font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'pesan' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
-              <MessageSquare className="w-5 h-5" />
+            <div className={`p-1.5 rounded-xl ${activeTab === 'pesan' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs' : ''}`}>
+              <MessageSquare className="w-4 h-4" />
             </div>
             <span className="text-[10px] mt-0.5">Pesan</span>
           </button>
@@ -242,12 +242,12 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             onClick={() => setActiveTab('notifikasi')}
             className={`relative flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'notifikasi'
-                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
-                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
+                ? 'text-slate-900 dark:text-white font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'notifikasi' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
-              <Bell className="w-5 h-5" />
+            <div className={`p-1.5 rounded-xl ${activeTab === 'notifikasi' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs' : ''}`}>
+              <Bell className="w-4 h-4" />
             </div>
             {unreadNotifCount > 0 && (
               <span className="absolute top-1 right-2 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
@@ -263,12 +263,12 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             }}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'file'
-                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
-                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
+                ? 'text-slate-900 dark:text-white font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'file' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
-              <HardDrive className="w-5 h-5" />
+            <div className={`p-1.5 rounded-xl ${activeTab === 'file' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs' : ''}`}>
+              <HardDrive className="w-4 h-4" />
             </div>
             <span className="text-[10px] mt-0.5">File</span>
           </button>
