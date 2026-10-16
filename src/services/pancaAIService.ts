@@ -150,6 +150,8 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
         tanggal: t.tanggal || '-',
         total: amt,
         followedUp: isFollowed,
+        lastFollowUpDate: (t as any).lastFollowUpDate || (t as any).tanggalFollowUp || 'Belum pernah',
+        notes: (t as any).notes || (t as any).catatan || 'Tidak ada catatan',
         sales: t.sales || t.salesName || '-'
       });
     } else if (isCanceled) {
@@ -259,9 +261,9 @@ ${agg.compTransactions.slice(0, 100).map(t => {
 * Total Kontak: ${agg.compCustomers.length} Pelanggan
 ${agg.compCustomers.slice(0, 60).map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales Rep: ${c.sales || '-'}, Status Lead: ${c.leadType || 'Aktif'})`).join('\n')}
 
---- [MENU 3: BRM - PENAWARAN (QUOTATIONS) - BUKAN OMZET] ---
+--- [MENU 3: BRM - PENAWARAN (QUOTATIONS) & FOLLOW-UP DETAIL] ---
 * Total Penawaran: ${agg.totalQuotes} penawaran (Nilai Total: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')})
-${agg.quoteList.slice(0, 20).map(q => `  - [${q.noTrx}] ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Follow-Up: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu Follow-Up'}`).join('\n')}
+${agg.quoteList.slice(0, 20).map(q => `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Status: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu'} | Terakhir Follow-Up: ${q.lastFollowUpDate} | Catatan: ${q.notes} | Sales: ${q.sales}`).join('\n')}
 
 --- [MENU 4: INVENTARIS & STOK PRODUK LENGKAP] ---
 * Total SKU: ${agg.compProducts.length} Produk

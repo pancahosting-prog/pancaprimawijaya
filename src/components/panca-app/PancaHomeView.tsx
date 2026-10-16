@@ -29,21 +29,22 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
   onLogout,
 }) => {
   const recentTopics = [
-    { label: "Laporan Omzet", prompt: "Tolong buatkan ringkasan omzet dan total penjualan bulan ini." },
-    { label: "Piutang Belum Lunas", prompt: "Cek daftar transaksi dan invoice yang belum lunas atau masih ada sisa piutang." },
-    { label: "Task Prioritas", prompt: "Tampilkan tugas dan task tim hari ini yang pending atau prioritas tinggi." },
-    { label: "Cek Stok Menipis", prompt: "Cek produk apa saja yang stoknya menipis dan butuh restock." },
+    { label: "👤 Tambah Customer Baru", prompt: "tambah customer baru" },
+    { label: "🛍️ Transaksi Baru", prompt: "tambah transaksi baru" },
+    { label: "📋 Penawaran Baru", prompt: "tambah penawaran baru" },
+    { label: "📊 Laporan Omzet", prompt: "Tolong buatkan ringkasan omzet dan total penjualan bulan ini." },
+    { label: "📦 Stok Menipis", prompt: "Cek produk apa saja yang stoknya menipis dan butuh restock." },
   ];
 
   const trendingPrompts = [
-    { tag: "#1 Ringkasan Omzet Bisnis", prompt: "Berapa total omzet real deals yang berhasil dibukukan saat ini?" },
-    { tag: "#2 Status Piutang & Tagihan", prompt: "Berapa total piutang yang belum terbayar dan siapa saja pelanggannya?" },
-    { tag: "#3 Pencarian Kode TRX-70", prompt: "Cek detail transaksi TRX-70 dan rincian item produknya." },
-    { tag: "#4 Task & Proyek Tim", prompt: "Bagaimana status tugas dan proyek tim di Task App saat ini?" },
+    { tag: "👤 Tambah Customer Baru", desc: "Input kontak & lead pelanggan ke database BRM", prompt: "tambah customer baru" },
+    { tag: "🛍️ Transaksi Baru", desc: "Input order & transaksi penjualan deal baru", prompt: "tambah transaksi baru" },
+    { tag: "📋 Penawaran Baru", desc: "Input quotation harga penawaran untuk pelanggan", prompt: "tambah penawaran baru" },
+    { tag: "📊 Ringkasan Omzet Bisnis", desc: "Cek omzet real deals & performa sales", prompt: "Tolong buatkan ringkasan omzet dan performa penjualan saat ini." },
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 pt-3 pb-6 text-slate-800 space-y-6">
+    <div className="flex-1 overflow-y-auto px-5 pt-3 pb-6 text-slate-800 dark:text-zinc-100 bg-slate-50 dark:bg-zinc-950 font-sans space-y-6">
       {/* PWA Install Banner (Automatic if not installed) */}
       <PWAInstallButton variant="banner" className="mb-2" />
 
@@ -56,18 +57,18 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
             title="Klik foto profil untuk Keluar / Logout"
           >
             <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-500 p-0.5 shadow-md group-hover:scale-105 transition">
-              <div className="w-full h-full rounded-full bg-white flex items-center justify-center text-violet-700 font-extrabold text-base">
+              <div className="w-full h-full rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center text-violet-700 dark:text-violet-400 font-extrabold text-base">
                 {currentUser?.nama?.charAt(0) || 'U'}
               </div>
             </div>
             {/* Logout icon overlay attached directly to profile image */}
-            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-rose-600 hover:bg-rose-700 text-white rounded-full border-2 border-white flex items-center justify-center shadow-md transition active:scale-90">
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-rose-600 hover:bg-rose-700 text-white rounded-full border-2 border-white dark:border-zinc-900 flex items-center justify-center shadow-md transition active:scale-90">
               <LogOut className="w-2.5 h-2.5" />
             </div>
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Welcome back</p>
-            <h2 className="text-base font-extrabold text-slate-900 leading-tight">
+            <p className="text-xs text-slate-400 dark:text-zinc-400 font-medium">Selamat Datang,</p>
+            <h2 className="text-base font-extrabold text-slate-900 dark:text-zinc-100 leading-tight">
               {currentUser?.nama || 'Pengguna Panca'}
             </h2>
           </div>
@@ -76,7 +77,7 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
         {/* Notification Bell */}
         <button
           onClick={onOpenNotifications}
-          className="relative w-10 h-10 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center justify-center text-slate-600 hover:text-violet-600 hover:border-violet-200 transition active:scale-95"
+          className="relative w-10 h-10 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-sm flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:text-violet-600 dark:hover:text-violet-400 hover:border-violet-200 dark:hover:border-violet-800 transition active:scale-95"
         >
           <Bell className="w-5 h-5" />
           {unreadNotificationsCount > 0 && (
@@ -88,36 +89,36 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
       </div>
 
       {/* Main Greeting Banner */}
-      <div className="bg-gradient-to-r from-violet-500/10 via-indigo-500/5 to-purple-500/10 p-4 rounded-3xl border border-violet-100/80">
-        <h3 className="text-lg font-extrabold text-slate-900 leading-snug">
-          Panca AI Here! <br />
-          <span className="bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent">
-            How can I help you?
+      <div className="bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 text-white p-5 rounded-3xl shadow-lg shadow-violet-500/20">
+        <h3 className="text-lg font-extrabold leading-snug">
+          Panca AI Assistant <br />
+          <span className="text-violet-200 font-bold">
+            Sistem CRM & ERP Terpadu
           </span>
         </h3>
-        <p className="mt-1 text-xs text-slate-500">
-          Asisten pintar terintegrasi dengan CRM, transaksi, stok, dan task proyek.
+        <p className="mt-1 text-xs text-violet-100/90 leading-relaxed">
+          Asisten pintar terintegrasi dengan CRM, transaksi, stok, dan task proyek. Silakan pilih tindakan cepat di bawah!
         </p>
       </div>
 
-      {/* Recent Queries Section */}
+      {/* Quick Prompts & Action Section */}
       <div>
         <div className="flex items-center justify-between mb-2.5">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Recent</h4>
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-400">Tindakan Cepat</h4>
           <button 
             onClick={onGoToAI} 
-            className="text-xs font-semibold text-violet-600 hover:text-violet-700 flex items-center gap-0.5"
+            className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:underline flex items-center gap-0.5"
           >
-            <span>+ See more</span>
+            <span>+ Buka AI Chat</span>
           </button>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-hide">
           {recentTopics.map((topic, i) => (
             <button
               key={i}
               onClick={() => onSelectPrompt(topic.prompt)}
-              className="px-3.5 py-2 bg-white hover:bg-violet-50 border border-slate-200/80 hover:border-violet-200 rounded-full text-xs font-medium text-slate-700 hover:text-violet-700 whitespace-nowrap shadow-sm transition active:scale-95 shrink-0"
+              className="px-3.5 py-2.5 bg-white dark:bg-zinc-900 hover:bg-violet-50 dark:hover:bg-zinc-800 border border-slate-200/80 dark:border-zinc-800 hover:border-violet-300 dark:hover:border-violet-700 rounded-2xl text-xs font-bold text-slate-800 dark:text-zinc-100 hover:text-violet-700 dark:hover:text-violet-300 whitespace-nowrap shadow-xs transition active:scale-95 shrink-0 flex items-center gap-1.5"
             >
               {topic.label}
             </button>
@@ -128,8 +129,8 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
       {/* Trending Prompt Section */}
       <div>
         <div className="flex items-center gap-1.5 mb-2.5">
-          <TrendingUp className="w-3.5 h-3.5 text-violet-600" />
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Trending prompt</h4>
+          <TrendingUp className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-400">Pilihan Cepat AI</h4>
         </div>
 
         <div className="grid grid-cols-2 gap-2.5">
@@ -137,13 +138,18 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
             <button
               key={i}
               onClick={() => onSelectPrompt(item.prompt)}
-              className="p-3 bg-white hover:bg-violet-50/70 border border-slate-200/80 hover:border-violet-200 rounded-2xl text-left shadow-sm transition active:scale-95 group flex flex-col justify-between"
+              className="p-3.5 bg-white dark:bg-zinc-900 hover:bg-violet-50/70 dark:hover:bg-zinc-800 border border-slate-200/80 dark:border-zinc-800 hover:border-violet-300 dark:hover:border-violet-700 rounded-2xl text-left shadow-xs transition active:scale-95 group flex flex-col justify-between"
             >
-              <span className="text-xs font-bold text-slate-800 group-hover:text-violet-700 leading-snug line-clamp-2">
-                {item.tag}
-              </span>
-              <span className="mt-2 text-[10px] text-violet-500 font-semibold flex items-center gap-1">
-                Tanyakan AI <ArrowRight className="w-2.5 h-2.5" />
+              <div>
+                <span className="text-xs font-extrabold text-slate-900 dark:text-zinc-100 group-hover:text-violet-600 dark:group-hover:text-violet-400 leading-snug line-clamp-1 block">
+                  {item.tag}
+                </span>
+                <p className="text-[10px] text-slate-400 dark:text-zinc-400 mt-1 line-clamp-2">
+                  {item.desc}
+                </p>
+              </div>
+              <span className="mt-3 text-[10px] text-violet-600 dark:text-violet-400 font-extrabold flex items-center gap-1">
+                Jalankan Sekarang <ArrowRight className="w-2.5 h-2.5" />
               </span>
             </button>
           ))}
@@ -154,37 +160,37 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
       <div>
         <div className="flex items-center gap-1.5 mb-3">
           <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">New Updates</h4>
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-400">Fitur & Layanan</h4>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           {/* Card 1: Summarise Data */}
-          <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-2xl bg-violet-100 text-violet-600 flex items-center justify-center mb-2.5">
+          <div className="bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-slate-200/80 dark:border-zinc-800 shadow-xs flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-2xl bg-violet-100 dark:bg-violet-950 text-violet-600 dark:text-violet-400 flex items-center justify-center mb-2.5">
               <FileText className="w-6 h-6" />
             </div>
-            <h5 className="text-xs font-bold text-slate-900">Summarise Data</h5>
-            <p className="text-[10px] text-slate-400 mt-0.5 mb-3">Ringkasan bisnis & invoice</p>
+            <h5 className="text-xs font-bold text-slate-900 dark:text-zinc-100">Ringkasan Bisnis</h5>
+            <p className="text-[10px] text-slate-400 dark:text-zinc-400 mt-0.5 mb-3">Rekap CRM, Omzet & Tagihan</p>
             <button
               onClick={() => onSelectPrompt("Tolong buatkan ringkasan lengkap data dari seluruh menu: CRM, Transaksi, Piutang, Stok, dan Task.")}
-              className="w-full py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold rounded-xl transition active:scale-95"
+              className="w-full py-2 bg-violet-50 dark:bg-violet-950/60 hover:bg-violet-100 dark:hover:bg-violet-900/60 text-violet-700 dark:text-violet-300 text-xs font-bold rounded-xl transition active:scale-95"
             >
-              Select
+              Pilih
             </button>
           </div>
 
           {/* Card 2: Upload File / Drive */}
-          <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center mb-2.5">
+          <div className="bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-slate-200/80 dark:border-zinc-800 shadow-xs flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-2.5">
               <Upload className="w-6 h-6" />
             </div>
-            <h5 className="text-xs font-bold text-slate-900">Drive & Upload</h5>
-            <p className="text-[10px] text-slate-400 mt-0.5 mb-3">Unggah & bagikan berkas</p>
+            <h5 className="text-xs font-bold text-slate-900 dark:text-zinc-100">Drive & File</h5>
+            <p className="text-[10px] text-slate-400 dark:text-zinc-400 mt-0.5 mb-3">Unggah & simpan dokumen</p>
             <button
               onClick={onOpenDriveUpload}
-              className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition active:scale-95"
+              className="w-full py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-xl transition active:scale-95"
             >
-              Select
+              Pilih
             </button>
           </div>
         </div>
@@ -194,10 +200,10 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
       <div className="pt-2">
         <button
           onClick={onGoToAI}
-          className="w-full py-4 px-6 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-extrabold rounded-2xl shadow-xl shadow-violet-200 flex items-center justify-center gap-2.5 transition active:scale-[0.98]"
+          className="w-full py-4 px-6 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-extrabold rounded-2xl shadow-xl shadow-violet-500/20 flex items-center justify-center gap-2.5 transition active:scale-[0.98]"
         >
-          <Sparkles className="w-5 h-5 text-violet-200 animate-pulse" />
-          <span className="text-sm tracking-wide">Generate Chat</span>
+          <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+          <span className="text-sm tracking-wide">Mulai Chat dengan Panca AI</span>
         </button>
       </div>
     </div>

@@ -10,12 +10,19 @@ import { supabaseService } from '../../../task/services/supabaseService';
 import { Task, Project, DrivePost } from '../../../task/types';
 import { queryPancaAI, PancaAIContext } from '../../services/pancaAIService';
 
+export interface DraftData {
+  type: 'customer' | 'transaction' | 'penawaran';
+  payload: Record<string, any>;
+  isSaved?: boolean;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   isNew?: boolean;
+  draftData?: DraftData;
 }
 
 const TypewriterText: React.FC<{
@@ -79,6 +86,10 @@ interface PancaAIChatViewProps {
   suppliers?: any[];
   purchaseOrders?: any[];
   employees?: any[];
+  setCustomers?: React.Dispatch<React.SetStateAction<any[]>>;
+  setTransactions?: React.Dispatch<React.SetStateAction<any[]>>;
+  setProducts?: React.Dispatch<React.SetStateAction<any[]>>;
+  syncToSupabase?: (table: string, data: any) => void;
   initialPrompt?: string;
   onBack: () => void;
 }
@@ -110,6 +121,10 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   suppliers = [],
   purchaseOrders = [],
   employees = [],
+  setCustomers,
+  setTransactions,
+  setProducts,
+  syncToSupabase,
   initialPrompt = '',
   onBack
 }) => {
@@ -134,6 +149,13 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isSuperAdmin = currentUser?.role?.toLowerCase() === 'superadmin';
+
+  // Active Session for guided multi-step form wizard (Customer, Transaksi, Penawaran)
+  const [activeSession, setActiveSession] = useState<{
+    type: 'customer' | 'transaction' | 'penawaran';
+    step: number;
+    data: Record<string, any>;
+  } | null>(null);
 
   // Voice Speech-to-Text states
   const [isListening, setIsListening] = useState(false);
@@ -541,14 +563,383 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       return res;
     }
 
-    // Default Fallback
-    let res = `### 📋 Ringkasan Data Bisnis Terhubung:\n\n`;
-    res += `- **Customer Terdaftar**: ${customers.length} pelanggan\n`;
-    res += `- **Transaksi**: ${transactions.length} transaksi tercatat\n`;
-    res += `- **Katalog Produk**: ${products.length} SKU produk\n`;
-    res += `- **Supplier**: ${suppliers.length} rekanan supplier\n`;
-    res += `\nSilakan ketikkan pencarian spesifik atau gunakan tombol mikrofon 🎙️ untuk berbicara!`;
-    return res;
+    return `Halo **${userName}**! Saya tidak menemukan data spesifik terkait **"${query}"**.\n\nBisa tolong sebutkan nama pelanggan, nomor transaksi (seperti **TRX-70**), produk, atau topik yang ingin Anda tanyakan?`;
+  };
+
+  // Guided multi-step session handler
+  const handleActiveSessionStep = (userText: string): { responseText: string; draftData?: DraftData; nextSession: typeof activeSession } | null => {
+    if (!activeSession) return null;
+
+    const lower = userText.toLowerCase().trim();
+    if (lower === 'batal' || lower === 'cancel' || lower === 'exit' || lower === 'stop') {
+      return {
+        responseText: '❌ **Proses input data telah dibatalkan.**\n\nAda data atau laporan lain yang bisa saya bantu carikan?',
+        nextSession: null
+      };
+    }
+
+    const data = { ...activeSession.data };
+
+    // 1. CUSTOMER GUIDED WIZARD
+    if (activeSession.type === 'customer') {
+      if (activeSession.step === 1) {
+        data.customerName = userText.trim();
+        return {
+          responseText: `### 👥 Input Customer Baru (Langkah 2 dari 3)\n\n- **Nama Customer**: **${data.customerName}** ✅\n\nSelanjutnya, silakan masukkan **Nomor WA / Telepon** dan **Kota / Wilayah** customer:\n*(Contoh: \`08123456789, Surabaya\`)*\n\n*(Ketik \`batal\` jika ingin membatalkan)*`,
+          nextSession: { type: 'customer', step: 2, data }
+        };
+      }
+
+      if (activeSession.step === 2) {
+        const parts = userText.split(',').map(s => s.trim());
+        const waMatch = userText.match(/(?:wa|phone|hp|telp|whatsapp)[\s:]*([0-9\-\+\s]{9,15})/i) || userText.match(/\b(08[0-9\s\-]{8,13})\b/);
+        data.wa = waMatch?.[1]?.replace(/[^0-9]/g, '') || parts.find(p => /08[0-9]{8,}/.test(p)) || '08123456789';
+        data.city = parts.find(p => !p.includes('08') && p !== parts[0]) || 'Surabaya';
+
+        return {
+          responseText: `### 👥 Input Customer Baru (Langkah 3 dari 3)\n\n- **Nama Customer**: **${data.customerName}** ✅\n- **No. WA / Telepon**: **${data.wa}** ✅\n- **Kota / Wilayah**: **${data.city}** ✅\n\nTerakhir, siapa **Nama PIC / Kontak Penanggung Jawab**?\n*(Contoh: Pak Budi atau ketik \`-\` jika sama dengan nama customer)*`,
+          nextSession: { type: 'customer', step: 3, data }
+        };
+      }
+
+      if (activeSession.step === 3) {
+        const pic = userText.trim() === '-' ? data.customerName : userText.trim();
+        data.pic = pic;
+        const salesName = currentUser?.nama || 'General Sales';
+
+        const draftPayload = {
+          nama: data.customerName,
+          perusahaan: data.customerName,
+          whatsapp: data.wa,
+          phone: data.wa,
+          kota: data.city,
+          sales: salesName,
+          pic: data.pic,
+          leadType: 'Belum Transaksi'
+        };
+
+        return {
+          responseText: `### 📝 PRATINJAU DRAFT FORM CUSTOMER BARU (SIAP DISIMPAN)\n\nSeluruh data customer baru telah berhasil terkumpul:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **Nama Customer** | **${data.customerName}** | ✅ Valid |\n| **No. WA / Telepon** | **${data.wa}** | ✅ Valid |\n| **Kota / Wilayah** | **${data.city}** | ✅ Valid |\n| **Nama PIC** | **${data.pic}** | ✅ Valid |\n| **Sales Penanggung Jawab** | **${salesName}** | ✅ Terhubung |\n| **Status Lead** | **Belum Transaksi** | 🟢 Aktif |\n\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
+          draftData: {
+            type: 'customer',
+            payload: draftPayload,
+            isSaved: false
+          },
+          nextSession: null
+        };
+      }
+    }
+
+    // 2. TRANSACTION GUIDED WIZARD
+    if (activeSession.type === 'transaction') {
+      if (activeSession.step === 1) {
+        data.customerName = userText.trim();
+        return {
+          responseText: `### 🛍️ Input Transaksi Penjualan Baru (Langkah 2 dari 4)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n\nSelanjutnya, **Item Produk / Barang** apa yang dibeli?\n*(Contoh: Fumiphos 5 box)*`,
+          nextSession: { type: 'transaction', step: 2, data }
+        };
+      }
+
+      if (activeSession.step === 2) {
+        data.productName = userText.trim();
+        return {
+          responseText: `### 🛍️ Input Transaksi Penjualan Baru (Langkah 3 dari 4)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n- **Produk Dibeli**: **${data.productName}** ✅\n\nSelanjutnya, berapa **Total Nominal Transaksi (Rp)**?\n*(Contoh: 15.000.000 atau 15 juta)*`,
+          nextSession: { type: 'transaction', step: 3, data }
+        };
+      }
+
+      if (activeSession.step === 3) {
+        let totalAmt = 1000000;
+        const rawAmt = userText.toLowerCase().trim();
+        if (rawAmt.includes('juta') || rawAmt.includes('jt')) {
+          const num = parseFloat(rawAmt.replace(/[^0-9.]/g, ''));
+          if (!isNaN(num)) totalAmt = num * 1000000;
+        } else {
+          const num = parseFloat(rawAmt.replace(/[^0-9]/g, ''));
+          if (!isNaN(num) && num > 0) totalAmt = num;
+        }
+
+        data.totalAmount = totalAmt;
+        return {
+          responseText: `### 🛍️ Input Transaksi Penjualan Baru (Langkah 4 dari 4)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n- **Produk Dibeli**: **${data.productName}** ✅\n- **Total Nominal**: **Rp ${data.totalAmount.toLocaleString('id-ID')}** ✅\n\nTerakhir! Apakah status pembayaran transaksi ini **Lunas** atau **Belum Lunas**?\n*(Ketik \`Lunas\` atau \`Belum Lunas\`)*`,
+          nextSession: { type: 'transaction', step: 4, data }
+        };
+      }
+
+      if (activeSession.step === 4) {
+        const isPaid = userText.toLowerCase().includes('lunas') && !userText.toLowerCase().includes('belum');
+        data.paymentStatus = isPaid ? 'Lunas' : 'Belum Lunas';
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        const draftPayload = {
+          noTrx: 'TRX-' + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000),
+          customerName: data.customerName,
+          tanggal: todayStr,
+          total: data.totalAmount,
+          status: 'Selesai',
+          paymentStatus: data.paymentStatus,
+          sales: currentUser?.nama || 'General Sales',
+          items: [{ nama: data.productName, qty: 1, harga: data.totalAmount }]
+        };
+
+        return {
+          responseText: `### 📝 PRATINJAU DRAFT FORM TRANSAKSI PENJUALAN (SIAP DISIMPAN)\n\nSeluruh data transaksi telah berhasil terkumpul:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **No. Transaksi** | **${draftPayload.noTrx}** | 🟢 Auto-Generate |\n| **Nama Pelanggan** | **${data.customerName}** | ✅ Valid |\n| **Item Produk** | **${data.productName}** | ✅ Valid |\n| **Total Nominal** | **Rp ${data.totalAmount.toLocaleString('id-ID')}** | ✅ Valid |\n| **Status Pembayaran** | **${data.paymentStatus}** | 💳 Tervalidasi |\n| **Sales** | **${draftPayload.sales}** | ✅ Terhubung |\n\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
+          draftData: {
+            type: 'transaction',
+            payload: draftPayload,
+            isSaved: false
+          },
+          nextSession: null
+        };
+      }
+    }
+
+    // 3. PENAWARAN GUIDED WIZARD
+    if (activeSession.type === 'penawaran') {
+      if (activeSession.step === 1) {
+        data.customerName = userText.trim();
+        return {
+          responseText: `### 📋 Input Penawaran Harga Baru (Langkah 2 dari 3)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n\nSelanjutnya, **Item / Produk** apa yang ditawarkan?\n*(Contoh: Fumiphos 5 box)*`,
+          nextSession: { type: 'penawaran', step: 2, data }
+        };
+      }
+
+      if (activeSession.step === 2) {
+        data.productName = userText.trim();
+        return {
+          responseText: `### 📋 Input Penawaran Harga Baru (Langkah 3 dari 3)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n- **Produk Ditawarkan**: **${data.productName}** ✅\n\nSelanjutnya, berapa **Total Nilai Penawaran (Rp)**?\n*(Contoh: 8.000.000 atau 8 juta)*`,
+          nextSession: { type: 'penawaran', step: 3, data }
+        };
+      }
+
+      if (activeSession.step === 3) {
+        let totalAmt = 1000000;
+        const rawAmt = userText.toLowerCase().trim();
+        if (rawAmt.includes('juta') || rawAmt.includes('jt')) {
+          const num = parseFloat(rawAmt.replace(/[^0-9.]/g, ''));
+          if (!isNaN(num)) totalAmt = num * 1000000;
+        } else {
+          const num = parseFloat(rawAmt.replace(/[^0-9]/g, ''));
+          if (!isNaN(num) && num > 0) totalAmt = num;
+        }
+
+        data.totalAmount = totalAmt;
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        const draftPayload = {
+          noTrx: 'QUO-' + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000),
+          customerName: data.customerName,
+          tanggal: todayStr,
+          total: data.totalAmount,
+          status: 'Penawaran',
+          paymentStatus: 'Belum Lunas',
+          sales: currentUser?.nama || 'General Sales',
+          items: [{ nama: data.productName, qty: 1, harga: data.totalAmount }]
+        };
+
+        return {
+          responseText: `### 📝 PRATINJAU DRAFT FORM PENAWARAN HARGA (SIAP DISIMPAN)\n\nSeluruh data penawaran telah berhasil terkumpul:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **No. Penawaran** | **${draftPayload.noTrx}** | 🟢 Auto-Generate |\n| **Nama Pelanggan** | **${data.customerName}** | ✅ Valid |\n| **Item Produk** | **${data.productName}** | ✅ Valid |\n| **Total Nilai Penawaran** | **Rp ${data.totalAmount.toLocaleString('id-ID')}** | ✅ Valid |\n| **Status** | **Penawaran Berjalan** | 📌 Default |\n| **Sales** | **${draftPayload.sales}** | ✅ Terhubung |\n\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
+          draftData: {
+            type: 'penawaran',
+            payload: draftPayload,
+            isSaved: false
+          },
+          nextSession: null
+        };
+      }
+    }
+
+    return null;
+  };
+
+  // Dedicated Intent & Command Handler (Customer, Transaksi, Penawaran)
+  const handleCommandOrIntent = (text: string): { responseText: string; draftData?: DraftData; nextSession?: typeof activeSession } | null => {
+    const lower = text.toLowerCase().trim();
+
+    // 1. Customer Input / Creation
+    if (
+      lower.startsWith('/input customer') || lower.startsWith('input customer') ||
+      lower.startsWith('/tambah customer') || lower.startsWith('tambah customer') ||
+      lower === 'tambah customer baru' || lower === 'customer baru'
+    ) {
+      const prefixRegex = /^(\/input customer|input customer|\/tambah customer|tambah customer|tambah customer baru|customer baru)/i;
+      const rawData = text.replace(prefixRegex, '').trim();
+
+      if (!rawData) {
+        return {
+          responseText: `### 👥 Input Customer Baru (Langkah 1 dari 3)\n\nMari kita isi data customer baru satu per satu!\n\nSilakan masukkan **Nama Pelanggan / Perusahaan**:\n*(Contoh: PT Jaya Abadi)*\n\n*(Ketik \`batal\` jika ingin membatalkan)*`,
+          nextSession: { type: 'customer', step: 1, data: {} }
+        };
+      }
+
+      const parts = rawData.split(',').map(s => s.trim());
+      const waMatch = rawData.match(/(?:wa|phone|hp|telp|whatsapp)[\s:]*([0-9\-\+\s]{9,15})/i) || rawData.match(/\b(08[0-9\s\-]{8,13})\b/);
+      
+      const name = parts[0] || 'Customer Baru';
+      const wa = waMatch?.[1]?.replace(/[^0-9]/g, '') || parts.find(p => /08[0-9]{8,}/.test(p)) || '08123456789';
+      const city = parts.find(p => !p.includes('08') && !p.toLowerCase().includes('sales') && !p.toLowerCase().includes('pic') && p !== parts[0]) || 'Surabaya';
+      const salesName = currentUser?.nama || 'General Sales';
+      const picName = name;
+
+      const draftPayload = {
+        nama: name,
+        perusahaan: name,
+        whatsapp: wa,
+        phone: wa,
+        kota: city,
+        sales: salesName,
+        pic: picName,
+        leadType: 'Belum Transaksi'
+      };
+
+      return {
+        responseText: `### 📝 DRAFT FORM CUSTOMER BARU (BRM CONTACTS)\n\nAI telah mengekstrak parameter data sesuai Form Asli MyPanca:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **Nama Customer** | **${name}** | ✅ Valid |\n| **No. WA / Telepon** | **${wa}** | ✅ Valid |\n| **Kota / Wilayah** | **${city}** | ✅ Valid |\n| **Sales Penanggung Jawab** | **${salesName}** | ✅ Terhubung |\n| **Status Lead** | **Belum Transaksi** | 🟢 Aktif |\n\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
+        draftData: {
+          type: 'customer',
+          payload: draftPayload,
+          isSaved: false
+        },
+        nextSession: null
+      };
+    }
+
+    // 2. Transaksi / Penawaran Input
+    if (
+      lower.startsWith('/input transaksi') || lower.startsWith('input transaksi') ||
+      lower.startsWith('/input penawaran') || lower.startsWith('input penawaran') ||
+      lower.startsWith('/tambah transaksi') || lower.startsWith('tambah transaksi') ||
+      lower.startsWith('/tambah penawaran') || lower.startsWith('tambah penawaran') ||
+      lower === 'transaksi baru' || lower === 'tambah transaksi baru' ||
+      lower === 'penawaran baru' || lower === 'tambah penawaran baru'
+    ) {
+      const isQuote = lower.includes('penawaran');
+      const prefixRegex = /^(\/input transaksi|input transaksi|\/input penawaran|input penawaran|\/tambah transaksi|tambah transaksi|\/tambah penawaran|tambah penawaran|tambah transaksi baru|transaksi baru|tambah penawaran baru|penawaran baru)/i;
+      const rawData = text.replace(prefixRegex, '').trim();
+
+      if (!rawData) {
+        return {
+          responseText: `### ${isQuote ? '📋 Input Penawaran Harga Baru' : '🛍️ Input Transaksi Penjualan Baru'} (Langkah 1 dari ${isQuote ? '3' : '4'})\n\nMari kita isi data ${isQuote ? 'penawaran' : 'transaksi'} baru satu per satu!\n\nSiapa **Nama Pelanggan** untuk ${isQuote ? 'penawaran' : 'transaksi'} ini?\n*(Contoh: PT Jaya Abadi)*\n\n*(Ketik \`batal\` jika ingin membatalkan)*`,
+          nextSession: { type: isQuote ? 'penawaran' : 'transaction', step: 1, data: {} }
+        };
+      }
+
+      const parts = rawData.split(',').map(s => s.trim());
+      const custName = parts[0] || 'Pelanggan Umum';
+      const prodName = parts[1] || 'Item Transaksi AI';
+      
+      const amtMatch = rawData.match(/(?:total|nominal|harga|rp)?\s*([0-9\.\,]+|[\d\s]+juta|[\d\s]+jt)/i);
+      let totalAmt = 1000000;
+      if (amtMatch?.[1]) {
+        const rawAmt = amtMatch[1].toLowerCase();
+        if (rawAmt.includes('juta') || rawAmt.includes('jt')) {
+          const num = parseFloat(rawAmt.replace(/[^0-9.]/g, ''));
+          if (!isNaN(num)) totalAmt = num * 1000000;
+        } else {
+          const num = parseFloat(rawAmt.replace(/[^0-9]/g, ''));
+          if (!isNaN(num) && num > 0) totalAmt = num;
+        }
+      }
+
+      const isPaid = lower.includes('lunas') && !lower.includes('belum lunas');
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      const draftPayload = {
+        noTrx: (isQuote ? 'QUO-' : 'TRX-') + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000),
+        customerName: custName,
+        tanggal: todayStr,
+        total: totalAmt,
+        status: isQuote ? 'Penawaran' : 'Selesai',
+        paymentStatus: isPaid ? 'Lunas' : 'Belum Lunas',
+        sales: currentUser?.nama || 'General Sales',
+        items: [{ nama: prodName, qty: 1, harga: totalAmt }]
+      };
+
+      return {
+        responseText: `### 📝 DRAFT FORM ${isQuote ? 'PENAWARAN' : 'TRANSAKSI PENJUALAN'} BARU\n\nAI telah mengekstrak parameter data sesuai Form Asli MyPanca:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **No. ${isQuote ? 'Penawaran' : 'Transaksi'}** | **${draftPayload.noTrx}** | 🟢 Auto-Generate |\n| **Nama Pelanggan** | **${custName}** | ✅ Valid |\n| **Item Produk** | **${prodName}** | ✅ Valid |\n| **Total Nominal** | **Rp ${totalAmt.toLocaleString('id-ID')}** | ✅ Valid |\n| **Status** | **${isQuote ? 'Penawaran Berjalan' : 'Selesai'}** | 📌 Status Fix |\n| **Status Pembayaran** | **${isPaid ? 'Lunas' : 'Belum Lunas'}** | 💳 Valid |\n| **Sales** | **${draftPayload.sales}** | ✅ Terhubung |\n\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
+        draftData: {
+          type: isQuote ? 'penawaran' : 'transaction',
+          payload: draftPayload,
+          isSaved: false
+        },
+        nextSession: null
+      };
+    }
+
+    return null;
+  };
+
+  const handleConfirmDraftSave = (messageId: string) => {
+    const targetMsg = messages.find(m => m.id === messageId);
+    if (!targetMsg || !targetMsg.draftData || targetMsg.draftData.isSaved) return;
+
+    const { type, payload } = targetMsg.draftData;
+    const activeCompanyId = activeCompany?.id || '1';
+
+    try {
+      if (type === 'customer') {
+        const newCust = {
+          id: 'CUST-' + Date.now(),
+          nama: payload.nama,
+          perusahaan: payload.perusahaan || payload.nama,
+          kota: payload.kota || 'Surabaya',
+          whatsapp: payload.whatsapp || '08123456789',
+          phone: payload.whatsapp || '08123456789',
+          sales: payload.sales || currentUser?.nama || 'General Sales',
+          leadType: payload.leadType || 'Belum Transaksi',
+          pic: payload.pic || payload.nama,
+          companyId: activeCompanyId,
+          company_id: activeCompanyId,
+          createdAt: new Date().toISOString()
+        };
+
+        if (setCustomers) setCustomers(prev => [newCust, ...prev]);
+        if (syncToSupabase) syncToSupabase('customers', newCust);
+
+        setMessages(prev => prev.map(m => {
+          if (m.id === messageId) {
+            return {
+              ...m,
+              content: m.content + `\n\n---\n🎉 **SUKSES TERSIMPAN KE DATABASE BRM CONTACTS!**\n\nData customer **${newCust.nama}** (${newCust.kota}) telah resmi tersimpan ke database MyPanca.`,
+              draftData: { ...m.draftData!, isSaved: true }
+            };
+          }
+          return m;
+        }));
+      } else if (type === 'transaction' || type === 'penawaran') {
+        const newTrx = {
+          id: 'TRX-' + Date.now(),
+          noTrx: payload.noTrx || ('TRX-' + Date.now()),
+          customerName: payload.customerName,
+          tanggal: payload.tanggal || new Date().toISOString().split('T')[0],
+          total: payload.total || 1000000,
+          nilaiProyek: payload.total || 1000000,
+          status: payload.status || 'Selesai',
+          paymentStatus: payload.paymentStatus || 'Belum Lunas',
+          sales: payload.sales || currentUser?.nama || 'General Sales',
+          items: payload.items || [{ nama: 'Item AI', qty: 1, harga: payload.total || 1000000 }],
+          companyId: activeCompanyId,
+          company_id: activeCompanyId,
+          createdAt: new Date().toISOString()
+        };
+
+        if (setTransactions) setTransactions(prev => [newTrx, ...prev]);
+        if (syncToSupabase) syncToSupabase('transactions', newTrx);
+
+        setMessages(prev => prev.map(m => {
+          if (m.id === messageId) {
+            return {
+              ...m,
+              content: m.content + `\n\n---\n🎉 **SUKSES TERSIMPAN KE DATABASE TRANSAKSI!**\n\nNomor **${newTrx.noTrx}** (${newTrx.customerName} - Rp ${newTrx.total.toLocaleString('id-ID')}) telah resmi tersimpan.`,
+              draftData: { ...m.draftData!, isSaved: true }
+            };
+          }
+          return m;
+        }));
+      }
+    } catch (e) {
+      console.error("Draft Save Error:", e);
+      alert("Gagal menyimpan data ke database. Silakan coba kembali.");
+    }
   };
 
   const handleSendMessage = async (textToSend?: string) => {
@@ -568,6 +959,43 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
     setMessages(prev => [...prev, userMessage]);
     setInputPrompt('');
+
+    // 1. Check for activeSession step processing first
+    if (activeSession) {
+      const stepRes = handleActiveSessionStep(query.trim());
+      if (stepRes) {
+        setActiveSession(stepRes.nextSession || null);
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: stepRes.responseText,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          draftData: stepRes.draftData,
+          isNew: true
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        return;
+      }
+    }
+
+    // 2. Check for draft command / intent initiation
+    const cmdResult = handleCommandOrIntent(query.trim());
+    if (cmdResult) {
+      if (cmdResult.nextSession !== undefined) {
+        setActiveSession(cmdResult.nextSession);
+      }
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: cmdResult.responseText,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        draftData: cmdResult.draftData,
+        isNew: true
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -613,9 +1041,9 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 text-slate-800 relative">
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 font-sans relative">
       {/* Top Header */}
-      <div className="bg-white px-4 py-3 border-b border-slate-200/80 flex items-center justify-between shadow-sm shrink-0 z-10">
+      <div className="bg-white dark:bg-zinc-900 px-4 py-3 border-b border-slate-200/80 dark:border-zinc-800 flex items-center justify-between shadow-xs shrink-0 z-10">
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => {
@@ -623,17 +1051,17 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
               stopVoiceInput();
               onBack();
             }}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition active:scale-95"
+            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center text-slate-600 dark:text-zinc-300 transition active:scale-95"
             title="Kembali ke Beranda"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="w-8 h-8 rounded-xl bg-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
+          <div className="w-8 h-8 rounded-xl bg-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
             🤖
           </div>
           <div>
-            <h3 className="text-xs font-extrabold text-slate-900 leading-tight">Panca AI Chat</h3>
-            <p className="text-[10px] text-slate-400">Teks & Suara (Voice Assistant)</p>
+            <h3 className="text-xs font-extrabold text-slate-900 dark:text-zinc-100 leading-tight">Panca AI Chat</h3>
+            <p className="text-[10px] text-slate-400 dark:text-zinc-400">Teks, Suara & Input Data Cepat</p>
           </div>
         </div>
 
@@ -647,8 +1075,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             }}
             className={`p-2 rounded-xl transition active:scale-95 ${
               autoSpeak
-                ? 'bg-violet-100 text-violet-700 font-bold'
-                : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                ? 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 font-bold'
+                : 'text-slate-400 dark:text-zinc-400 hover:text-slate-600 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800'
             }`}
             title={autoSpeak ? "Suara AI Otomatis Aktif (Klik untuk Matikan)" : "Nyalakan Suara AI Otomatis"}
           >
@@ -658,7 +1086,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           {/* Clear Chat */}
           <button
             onClick={clearChat}
-            className="p-2 text-slate-400 hover:text-rose-500 rounded-xl hover:bg-rose-50 transition active:scale-95"
+            className="p-2 text-slate-400 dark:text-zinc-400 hover:text-rose-500 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition active:scale-95"
             title="Bersihkan Percakapan"
           >
             <Trash2 className="w-4 h-4" />
@@ -678,12 +1106,12 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
               className={`flex gap-2.5 max-w-[92%] ${isUser ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}
             >
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-1 shadow-sm ${
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-1 shadow-xs ${
                   isUser
                     ? 'bg-gradient-to-tr from-violet-600 to-indigo-600 text-white'
                     : isSpeaking 
                       ? 'bg-rose-500 text-white animate-pulse'
-                      : 'bg-violet-100 text-violet-700'
+                      : 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300'
                 }`}
               >
                 {isUser ? currentUser?.nama?.charAt(0) || 'U' : '🤖'}
@@ -691,10 +1119,10 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
               <div className="min-w-0">
                 <div
-                  className={`p-3.5 rounded-2xl text-xs leading-relaxed shadow-sm ${
+                  className={`p-3.5 rounded-2xl text-xs leading-relaxed shadow-xs ${
                     isUser
                       ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-tr-none'
-                      : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-none prose prose-xs max-w-none'
+                      : 'bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 border border-slate-200/80 dark:border-zinc-800 rounded-tl-none prose prose-xs dark:prose-invert max-w-none'
                   }`}
                 >
                   {isUser ? (
@@ -711,9 +1139,30 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                         }}
                       />
 
+                      {/* Interactive Action Card for Draft Savings (Customer, Transaksi, Penawaran) */}
+                      {m.draftData && (
+                        <div className="mt-3 pt-3 border-t border-slate-200 dark:border-zinc-800 not-prose">
+                          {!m.draftData.isSaved ? (
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmDraftSave(m.id)}
+                              className="w-full py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-98 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              <CheckCircle2 size={16} />
+                              <span>Konfirmasi Simpan ke Database MyPanca</span>
+                            </button>
+                          ) : (
+                            <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 rounded-xl text-emerald-700 dark:text-emerald-300 font-extrabold text-xs flex items-center gap-2 shadow-xs">
+                              <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span>Tersimpan di Database MyPanca</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Interactive Buttons for Product Specs */}
                       {(m.content.includes('Apakah Anda mau mengisi') || m.content.includes('spesifikasi produk ini sekarang')) && (
-                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 not-prose">
+                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-zinc-800 flex items-center gap-2 not-prose">
                           <button
                             type="button"
                             onClick={() => handleSendMessage("Ya, isi sekarang")}
@@ -725,7 +1174,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleSendMessage("Tidak, terima kasih")}
-                            className="py-1.5 px-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
+                            className="py-1.5 px-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
                           >
                             <XCircle size={14} />
                             Tidak
@@ -735,7 +1184,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
                       {/* Interactive Buttons for Transaction Details / Menunggak / Omzet */}
                       {((m.content.includes('Apakah Anda ingin') || m.content.includes('mau melihat')) && (m.content.includes('tampilkan rincian') || m.content.includes('melihat list') || m.content.includes('melihat rincian') || m.content.includes('daftar transaksinya') || m.content.includes('detail transaksinya') || m.content.includes('list transaksinya') || m.content.includes('rincian detail'))) && (
-                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 not-prose">
+                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-zinc-800 flex items-center gap-2 not-prose">
                           <button
                             type="button"
                             onClick={() => handleSendMessage("Ya, tampilkan list transaksinya")}
@@ -747,7 +1196,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleSendMessage("Tidak, ringkasan saja cukup")}
-                            className="py-1.5 px-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
+                            className="py-1.5 px-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-semibold text-xs transition flex items-center gap-1 cursor-pointer"
                           >
                             <XCircle size={14} />
                             Tidak, Ringkasan Cukup
@@ -758,7 +1207,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                   )}
                 </div>
 
-                <div className={`flex items-center gap-2 mt-1 px-1 text-[10px] text-slate-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                <div className={`flex items-center gap-2 mt-1 px-1 text-[10px] text-slate-400 dark:text-zinc-500 ${isUser ? 'justify-end' : 'justify-start'}`}>
                   <span>{m.timestamp}</span>
 
                   {!isUser && (
@@ -766,7 +1215,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                       {/* Speak Button */}
                       <button
                         onClick={() => speakText(m.content, m.id)}
-                        className={`hover:text-violet-600 transition flex items-center gap-0.5 ${
+                        className={`hover:text-violet-600 dark:hover:text-violet-400 transition flex items-center gap-0.5 ${
                           isSpeaking ? 'text-violet-600 font-bold' : ''
                         }`}
                         title={isSpeaking ? "Hentikan Suara" : "Dengarkan Jawaban AI"}
@@ -787,7 +1236,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                       {/* Copy Button */}
                       <button
                         onClick={() => copyToClipboard(m.content, m.id)}
-                        className="hover:text-violet-600 transition flex items-center gap-0.5"
+                        className="hover:text-violet-600 dark:hover:text-violet-400 transition flex items-center gap-0.5"
                       >
                         {copiedId === m.id ? (
                           <>
@@ -811,14 +1260,14 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
         {isLoading && (
           <div className="flex gap-2.5 mr-auto max-w-[85%]">
-            <div className="w-7 h-7 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold shrink-0 shadow-sm">
+            <div className="w-7 h-7 rounded-full bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
               🤖
             </div>
-            <div className="bg-white border border-slate-200/80 p-3 rounded-2xl rounded-tl-none flex items-center gap-1.5 shadow-sm">
+            <div className="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 p-3 rounded-2xl rounded-tl-none flex items-center gap-1.5 shadow-xs">
               <span className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" />
               <span className="w-2 h-2 rounded-full bg-violet-500 animate-bounce [animation-delay:0.2s]" />
               <span className="w-2 h-2 rounded-full bg-violet-500 animate-bounce [animation-delay:0.4s]" />
-              <span className="text-xs text-slate-400 font-medium ml-1">Mencari data sistem...</span>
+              <span className="text-xs text-slate-400 dark:text-zinc-400 font-medium ml-1">Mencari data sistem...</span>
             </div>
           </div>
         )}
@@ -828,22 +1277,28 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
       {/* Quick Prompts Bar if input is empty */}
       {!inputPrompt && !isListening && (
-        <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-200/50 flex items-center gap-1.5 overflow-x-auto scrollbar-hide shrink-0">
-          <span className="text-[10px] text-slate-400 font-bold shrink-0">Cepat:</span>
-          {['TRX-70', 'Omzet bulan ini', 'Stok menipis', 'Task hari ini'].map((chip, idx) => (
+        <div className="px-3 py-2 bg-slate-50 dark:bg-zinc-950 border-t border-slate-200/80 dark:border-zinc-800 flex items-center gap-1.5 overflow-x-auto scrollbar-hide shrink-0">
+          <span className="text-[10px] text-slate-400 dark:text-zinc-400 font-extrabold uppercase shrink-0">Cepat:</span>
+          {[
+            { label: '👤 Tambah Customer Baru', prompt: 'tambah customer baru' },
+            { label: '🛍️ Transaksi Baru', prompt: 'tambah transaksi baru' },
+            { label: '📋 Penawaran Baru', prompt: 'tambah penawaran baru' },
+            { label: '📊 Omzet Bulan Ini', prompt: 'Omzet bulan ini' },
+            { label: '📦 Stok Menipis', prompt: 'Stok menipis' }
+          ].map((chip, idx) => (
             <button
               key={idx}
-              onClick={() => handleSendMessage(chip)}
-              className="px-2.5 py-1 bg-white hover:bg-violet-50 text-slate-600 hover:text-violet-700 border border-slate-200 rounded-full text-[11px] whitespace-nowrap shadow-xs transition active:scale-95 shrink-0"
+              onClick={() => handleSendMessage(chip.prompt)}
+              className="px-3 py-1.5 bg-white dark:bg-zinc-900 hover:bg-violet-50 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-violet-700 dark:hover:text-violet-300 border border-slate-200 dark:border-zinc-800 rounded-full text-xs font-bold whitespace-nowrap shadow-xs transition active:scale-95 shrink-0"
             >
-              {chip}
+              {chip.label}
             </button>
           ))}
         </div>
       )}
 
       {/* Input Bar Section (ALWAYS 100% VISIBLE & PROMINENT) */}
-      <div className="bg-white p-3 border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] shrink-0 z-20">
+      <div className="bg-white dark:bg-zinc-900 p-3 border-t border-slate-200 dark:border-zinc-800 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] shrink-0 z-20">
         {/* Real-time Voice Listening Visualizer */}
         {isListening && (
           <div className="mb-2.5 px-3.5 py-2.5 bg-gradient-to-r from-rose-500 via-purple-600 to-indigo-600 text-white rounded-2xl flex items-center justify-between text-xs shadow-lg animate-in slide-in-from-bottom-2">
@@ -854,14 +1309,14 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
               </span>
               <div className="min-w-0">
                 <p className="font-extrabold truncate">Mendengarkan suara Anda...</p>
-                <p className="text-[10px] text-violet-200 truncate">Silakan bicara sekarang (contoh: "Cek transaksi TRX-70")</p>
+                <p className="text-[10px] text-violet-200 truncate">Silakan bicara sekarang (contoh: "Tambah customer baru")</p>
               </div>
             </div>
 
             <button
               type="button"
               onClick={stopVoiceInput}
-              className="px-3 py-1.5 bg-white text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-extrabold shadow-sm active:scale-95 transition shrink-0"
+              className="px-3 py-1.5 bg-white text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-extrabold shadow-xs active:scale-95 transition shrink-0"
             >
               Selesai
             </button>
@@ -870,7 +1325,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
         {/* Speech Error Banner if any */}
         {speechError && (
-          <div className="mb-2 p-2.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs flex items-center justify-between gap-2 animate-in fade-in">
+          <div className="mb-2 p-2.5 bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 rounded-xl text-xs flex items-center justify-between gap-2 animate-in fade-in">
             <div className="flex items-center gap-1.5 min-w-0">
               <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
               <span className="truncate">{speechError}</span>
@@ -894,7 +1349,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             className={`w-11 h-11 rounded-2xl flex items-center justify-center transition active:scale-90 shrink-0 ${
               isListening
                 ? 'bg-rose-500 text-white shadow-lg shadow-rose-300 ring-4 ring-rose-200 animate-pulse'
-                : 'bg-violet-100 hover:bg-violet-200 text-violet-700 border border-violet-200 shadow-sm'
+                : 'bg-violet-100 dark:bg-violet-950/80 hover:bg-violet-200 dark:hover:bg-violet-900 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 shadow-xs'
             }`}
             title={isListening ? "Hentikan perekaman suara" : "Bicara dengan suara (Voice Search)"}
           >
@@ -912,11 +1367,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
               type="text"
               value={inputPrompt}
               onChange={(e) => setInputPrompt(e.target.value)}
-              placeholder={isListening ? "Sedang mendengarkan suara Anda..." : "Tanyakan apa saja (contoh: TRX-70)..."}
-              className={`w-full rounded-2xl px-4 py-3 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition border shadow-inner ${
+              placeholder={isListening ? "Sedang mendengarkan suara Anda..." : "Tanyakan AI atau tambah customer / transaksi baru..."}
+              className={`w-full rounded-2xl px-4 py-3 text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 outline-none transition border shadow-inner ${
                 isListening
-                  ? 'bg-rose-50/50 border-rose-300 text-rose-900'
-                  : 'bg-slate-100 hover:bg-slate-100/80 focus:bg-white border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100'
+                  ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-300 text-rose-900 dark:text-rose-200'
+                  : 'bg-slate-100 dark:bg-zinc-950 hover:bg-slate-100/80 focus:bg-white dark:focus:bg-zinc-950 border-slate-200 dark:border-zinc-800 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/40'
               }`}
             />
           </div>
@@ -925,7 +1380,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           <button
             type="submit"
             disabled={!inputPrompt.trim() || isLoading}
-            className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white flex items-center justify-center shadow-md shadow-violet-200 disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-90 shrink-0"
+            className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white flex items-center justify-center shadow-md shadow-violet-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-90 shrink-0"
             title="Kirim Pesan"
           >
             <Send className="w-4 h-4 ml-0.5" />

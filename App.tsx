@@ -4743,7 +4743,12 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
         suppliers={suppliers}
         purchaseOrders={purchaseOrders}
         employees={employees}
+        setCustomers={setCustomers}
+        setTransactions={setTransactions}
+        syncToSupabase={syncToSupabase}
         onOpenDesktopCRM={handleClosePancaApp}
+        onOpenTaskApp={() => setShowTaskApp(true)}
+        onLogout={handleLogout}
       />
     );
   }

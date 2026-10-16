@@ -2846,7 +2846,6 @@ ${dataDigest}`;
         role: 'assistant',
         content: aiResponseText,
         timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-        draftData: inputCmdRes.draftData,
         isNew: true
       };
 

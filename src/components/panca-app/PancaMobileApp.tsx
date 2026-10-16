@@ -26,6 +26,10 @@ interface PancaMobileAppProps {
   suppliers?: any[];
   purchaseOrders?: any[];
   employees?: any[];
+  setCustomers?: React.Dispatch<React.SetStateAction<any[]>>;
+  setTransactions?: React.Dispatch<React.SetStateAction<any[]>>;
+  setProducts?: React.Dispatch<React.SetStateAction<any[]>>;
+  syncToSupabase?: (table: string, data: any) => void;
   onOpenDesktopCRM?: () => void;
   onLogout?: () => void;
 }
@@ -39,6 +43,10 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
   suppliers = [],
   purchaseOrders = [],
   employees = [],
+  setCustomers,
+  setTransactions,
+  setProducts,
+  syncToSupabase,
   onOpenDesktopCRM,
   onLogout
 }) => {
@@ -87,7 +95,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
   // Render Splash Screen if active
   if (showSplash) {
     return (
-      <div className="min-h-screen w-full bg-slate-900 flex items-center justify-center p-0 sm:p-4">
+      <div className="min-h-screen w-full bg-slate-900 dark:bg-zinc-950 flex items-center justify-center p-0 sm:p-4">
         <SplashScreen
           onNext={handleNextFromSplash}
           onOpenWebCRM={navigateToDesktop}
@@ -97,26 +105,26 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
   }
 
   return (
-    <div className="min-h-screen w-full bg-slate-900 flex items-center justify-center p-0 sm:p-4 font-sans select-none">
+    <div className="min-h-screen w-full bg-slate-900 dark:bg-zinc-950 flex items-center justify-center p-0 sm:p-4 font-sans select-none">
       {/* Mobile Screen Shell Frame */}
-      <div className="relative w-full max-w-md h-screen sm:h-[844px] bg-slate-50 flex flex-col overflow-hidden sm:rounded-[40px] shadow-2xl border-0 sm:border-8 sm:border-slate-800">
+      <div className="relative w-full max-w-md h-screen sm:h-[844px] bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 flex flex-col overflow-hidden sm:rounded-[40px] shadow-2xl border-0 sm:border-8 sm:border-slate-800 dark:sm:border-zinc-800">
         
         {/* Top Status Bar Simulation */}
-        <div className="pt-3 px-6 pb-1 bg-white border-b border-slate-100 flex items-center justify-between text-slate-700 text-xs font-semibold shrink-0">
+        <div className="pt-3 px-6 pb-1 bg-white dark:bg-zinc-900 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between text-slate-700 dark:text-zinc-300 text-xs font-semibold shrink-0">
           <span className="tracking-tight font-bold">8:15</span>
 
           {/* Quick Switch to Desktop & PWA Install Button */}
           <div className="flex items-center gap-2">
-            <PWAInstallButton variant="pill" className="!bg-violet-50 !text-violet-700 !border-violet-200" />
+            <PWAInstallButton variant="pill" className="!bg-violet-50 dark:!bg-violet-950 !text-violet-700 dark:!text-violet-300 !border-violet-200 dark:!border-violet-800" />
             <button
               onClick={navigateToDesktop}
-              className="text-[10px] font-bold text-slate-400 hover:text-slate-600 flex items-center gap-0.5 px-2 py-1 rounded-full bg-slate-100 transition active:scale-95"
+              className="text-[10px] font-bold text-slate-400 dark:text-zinc-400 hover:text-slate-600 dark:hover:text-zinc-200 flex items-center gap-0.5 px-2 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 transition active:scale-95"
               title="Buka Web CRM Utama"
             >
               <span>Web CRM</span>
               <ExternalLink className="w-2.5 h-2.5" />
             </button>
-            <div className="flex items-center gap-1.5 text-slate-600 pl-1">
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-400 pl-1">
               <Signal className="w-3.5 h-3.5" />
               <Wifi className="w-3.5 h-3.5" />
               <Battery className="w-4 h-4" />
@@ -148,6 +156,10 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
               suppliers={suppliers}
               purchaseOrders={purchaseOrders}
               employees={employees}
+              setCustomers={setCustomers}
+              setTransactions={setTransactions}
+              setProducts={setProducts}
+              syncToSupabase={syncToSupabase}
               initialPrompt={pendingPromptForAI}
               onBack={() => {
                 setPendingPromptForAI('');
@@ -175,8 +187,8 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
           )}
         </div>
 
-        {/* Bottom Navigation Bar (4 Menus requested: AI, Pesan, Notifikasi, File + Home button) */}
-        <div className="shrink-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-3 py-2 z-30 flex items-center justify-around shadow-[0_-4px_15px_rgba(0,0,0,0.05)]">
+        {/* Bottom Navigation Bar */}
+        <div className="shrink-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-zinc-800 px-3 py-2 z-30 flex items-center justify-around shadow-[0_-4px_15px_rgba(0,0,0,0.05)]">
           {/* Menu Home / Beranda */}
           <button
             onClick={() => {
@@ -185,11 +197,11 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             }}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'home'
-                ? 'text-violet-600 font-extrabold'
-                : 'text-slate-400 hover:text-slate-600'
+                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'home' ? 'bg-violet-100' : ''}`}>
+            <div className={`p-1 rounded-xl ${activeTab === 'home' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
               <HomeIcon className="w-5 h-5" />
             </div>
             <span className="text-[10px] mt-0.5">Home</span>
@@ -200,11 +212,11 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             onClick={() => setActiveTab('ai')}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'ai'
-                ? 'text-violet-600 font-extrabold'
-                : 'text-slate-400 hover:text-slate-600'
+                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'ai' ? 'bg-violet-100' : ''}`}>
+            <div className={`p-1 rounded-xl ${activeTab === 'ai' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
               <Bot className="w-5 h-5" />
             </div>
             <span className="text-[10px] mt-0.5">AI</span>
@@ -215,11 +227,11 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             onClick={() => setActiveTab('pesan')}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'pesan'
-                ? 'text-violet-600 font-extrabold'
-                : 'text-slate-400 hover:text-slate-600'
+                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'pesan' ? 'bg-violet-100' : ''}`}>
+            <div className={`p-1 rounded-xl ${activeTab === 'pesan' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
               <MessageSquare className="w-5 h-5" />
             </div>
             <span className="text-[10px] mt-0.5">Pesan</span>
@@ -230,11 +242,11 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             onClick={() => setActiveTab('notifikasi')}
             className={`relative flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'notifikasi'
-                ? 'text-violet-600 font-extrabold'
-                : 'text-slate-400 hover:text-slate-600'
+                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'notifikasi' ? 'bg-violet-100' : ''}`}>
+            <div className={`p-1 rounded-xl ${activeTab === 'notifikasi' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
               <Bell className="w-5 h-5" />
             </div>
             {unreadNotifCount > 0 && (
@@ -251,11 +263,11 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             }}
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-2xl transition active:scale-95 ${
               activeTab === 'file'
-                ? 'text-violet-600 font-extrabold'
-                : 'text-slate-400 hover:text-slate-600'
+                ? 'text-violet-600 dark:text-violet-400 font-extrabold'
+                : 'text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300'
             }`}
           >
-            <div className={`p-1 rounded-xl ${activeTab === 'file' ? 'bg-violet-100' : ''}`}>
+            <div className={`p-1 rounded-xl ${activeTab === 'file' ? 'bg-violet-100 dark:bg-violet-950' : ''}`}>
               <HardDrive className="w-5 h-5" />
             </div>
             <span className="text-[10px] mt-0.5">File</span>
