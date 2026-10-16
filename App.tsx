@@ -8472,8 +8472,8 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
       {showDrawer && (
         <div className="fixed inset-0 z-[60] flex justify-end">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setShowDrawer(null)} />
-          <div className={`relative w-full ${showDrawer === 'inputResi' ? 'max-w-xl' : (showDrawer === 'printPenawaran' || (showDrawer === 'printInvoice' && printDocType === 'PI')) ? 'max-w-4xl' : showDrawer === 'printInvoice' ? 'max-w-xl' : 'lg:max-w-xl'} bg-card text-card-foreground border-l border-border h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-250`}>
-            <div className="flex justify-between items-center px-6 py-4 border-b border-border bg-card">
+          <div className={`relative w-full ${showDrawer === 'inputResi' ? 'max-w-xl' : (showDrawer === 'printPenawaran' || (showDrawer === 'printInvoice' && printDocType === 'PI')) ? 'max-w-4xl' : showDrawer === 'printInvoice' ? 'max-w-xl' : 'lg:max-w-xl'} bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border-l border-slate-200 dark:border-slate-800 h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-250`}>
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
               <h3 className="text-base font-semibold tracking-tight text-foreground">
                 {showDrawer === 'trx' ? (currentTrx.status === 'Penawaran' ? 'Penawaran Baru' : 'Transaksi Baru') : 
                   showDrawer === 'trxDetail' ? (currentTrx.status === 'Penawaran' ? 'Detail Penawaran' : 'Detail Transaksi') :
@@ -9786,7 +9786,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
               {showDrawer === 'custDetail' && (
                   <div className="space-y-6">
                       {/* Action Buttons */}
-                      <div className="flex items-center justify-between gap-2 p-3 bg-card border border-border rounded-xl shadow-xs">
+                      <div className="flex items-center justify-between gap-2 p-3 bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xs">
                           <div className="flex items-center gap-2">
                               {currentCust.phone && (
                                   <a 
@@ -9832,7 +9832,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                       </div>
 
                       {/* Profile Header */}
-                      <div className="bg-card p-5 rounded-xl border border-border shadow-xs">
+                      <div className="bg-slate-50 dark:bg-slate-800/90 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
                           <div className="flex justify-between items-start mb-4">
                                 <div className="flex items-center gap-3">
                                     <div className="w-14 h-14 bg-violet-100 dark:bg-violet-950/80 text-violet-600 dark:text-violet-300 rounded-full flex items-center justify-center font-bold text-xl shadow-inner border border-violet-200 dark:border-violet-800">
@@ -9896,14 +9896,14 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                           
                           <div className="mt-6 pt-5 border-t border-border">
                               <label className="text-[10px] uppercase font-black text-muted-foreground tracking-widest">Additional Notes</label>
-                              <div className="text-xs text-foreground/90 italic mt-2 leading-relaxed bg-muted/40 p-3 rounded-lg border border-border shadow-xs">
+                              <div className="text-xs text-foreground/90 italic mt-2 leading-relaxed bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-xs">
                                   {currentCust.keterangan || 'No additional notes available for this contact.'}
                               </div>
                           </div>
                       </div>
 
                       {/* Transaction History */}
-                      <div className="bg-card p-5 rounded-xl border border-border shadow-xs">
+                      <div className="bg-slate-50 dark:bg-slate-800/90 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
                           <h5 className="font-black text-xs uppercase tracking-widest text-foreground mb-4 flex items-center gap-2">
                               <Activity size={16} className="text-violet-500"/> Riwayat Transaksi
                           </h5>
