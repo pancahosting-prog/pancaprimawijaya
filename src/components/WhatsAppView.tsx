@@ -32,6 +32,7 @@ import {
   checkSupabaseTableStatus 
 } from '../lib/supabaseSync';
 import { SUPABASE_MIGRATION_SQL } from '../lib/supabaseMigrationSql';
+import { getApiUrl } from '../lib/apiUtils';
 
 export interface WAChatMedia {
   type: 'image' | 'document' | 'video' | 'audio';
@@ -184,7 +185,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const fetchStatus = async () => {
     setIsLoadingStatus(true);
     try {
-      const res = await fetch('/api/wa/status');
+      const res = await fetch(getApiUrl('/api/wa/status'));
       if (res.ok) {
         const data = await res.json();
         setConnectionStatus({
@@ -221,7 +222,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       if (activeFilter && activeFilter !== 'all' && activeFilter !== 'active') {
         url += `?connectedPhone=${encodeURIComponent(activeFilter)}`;
       }
-      const res = await fetch(url);
+      const res = await fetch(getApiUrl(url));
       if (res.ok) {
         const data = await res.json();
         if (data.chats) {
@@ -279,7 +280,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   // Fetch AI Settings
   const fetchSettings = async () => {
     try {
-      const res = await fetch('/api/wa/settings');
+      const res = await fetch(getApiUrl('/api/wa/settings'));
       if (res.ok) {
         const data = await res.json();
         if (data.settings) {
@@ -313,7 +314,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const handleInitConnection = async () => {
     setIsLoadingStatus(true);
     try {
-      const res = await fetch('/api/wa/connect', { method: 'POST' });
+      const res = await fetch(getApiUrl('/api/wa/connect'), { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         setConnectionStatus(prev => ({
@@ -332,7 +333,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const handleLogoutWA = async () => {
     if (!confirm('Logout WA?')) return;
     try {
-      await fetch('/api/wa/logout', { method: 'POST' });
+      await fetch(getApiUrl('/api/wa/logout'), { method: 'POST' });
       fetchStatus();
     } catch (err) {
       console.error('Error logging out WA:', err);
@@ -409,7 +410,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     });
 
     try {
-      const res = await fetch('/api/wa/send', {
+      const res = await fetch(getApiUrl('/api/wa/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -432,7 +433,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     try {
-      const res = await fetch('/api/wa/settings', {
+      const res = await fetch(getApiUrl('/api/wa/settings'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)

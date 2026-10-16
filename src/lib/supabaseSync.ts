@@ -430,12 +430,22 @@ export const saveAppSettingToSupabase = async (key: string, value: any, updatedB
         updated_at: new Date().toISOString(),
         updated_by: updatedBy || 'user'
     };
-    const res = await withRetry(() => supabase.from('app_settings').upsert(payload));
-    if (res.error && res.error.message && res.error.message.includes('column "id"')) {
-        return await withRetry(() => supabase.from('app_settings').upsert({
-            ...payload,
-            id: key
-        }));
+
+    // 1. Try upsert with onConflict target 'key'
+    let res = await withRetry(() => supabase.from('app_settings').upsert(payload, { onConflict: 'key' }));
+
+    // 2. If unique constraint violation or missing column id occurs, fallback to select -> update/insert
+    if (res?.error && (res.error.message.includes('unique constraint') || res.error.message.includes('duplicate key') || res.error.message.includes('column "id"'))) {
+        const { data: existing } = await supabase.from('app_settings').select('key').eq('key', key).maybeSingle();
+        if (existing) {
+            res = await withRetry(() => supabase.from('app_settings').update({
+                value: payload.value,
+                updated_at: payload.updated_at,
+                updated_by: payload.updated_by
+            }).eq('key', key));
+        } else {
+            res = await withRetry(() => supabase.from('app_settings').insert(payload));
+        }
     }
     return res;
 };

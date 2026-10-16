@@ -14,6 +14,16 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
+  // Disable caching for HTML responses to ensure instant UI updates on refresh
+  app.use((req, res, next) => {
+    if (req.path === "/" || req.path.endsWith(".html") || req.headers.accept?.includes("text/html")) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    }
+    next();
+  });
+
   // Fonnte API Proxy
   app.post("/api/send-whatsapp", async (req, res) => {
     const { phone, message } = req.body;
@@ -106,11 +116,11 @@ async function startServer() {
   });
 
   app.post("/api/wa/send", async (req, res) => {
-    const { jid, text, media } = req.body;
-    if (!jid || (!text && !media)) {
-      return res.status(400).json({ success: false, error: "JID dan teks atau lampiran file/gambar diperlukan." });
+    const { jid, text } = req.body;
+    if (!jid || !text) {
+      return res.status(400).json({ success: false, error: "JID dan teks pesan diperlukan." });
     }
-    const result = await waService.sendMessage(jid, text || "", media);
+    const result = await waService.sendMessage(jid, text);
     res.json(result);
   });
 
@@ -209,12 +219,46 @@ async function startServer() {
       let cloudError = "";
       if (supabaseServer) {
         try {
-          const { error } = await supabaseServer.from("app_settings").upsert({
-            key: "gemini_settings",
-            value: settings,
-            updated_at: new Date().toISOString(),
-            updated_by: "server_api"
-          });
+          // 1. Try upsert specifying onConflict: 'key'
+          let { error } = await supabaseServer.from("app_settings").upsert(
+            {
+              key: "gemini_settings",
+              value: settings,
+              updated_at: new Date().toISOString(),
+              updated_by: "server_api"
+            },
+            { onConflict: "key" }
+          );
+
+          // 2. Fallback: If unique constraint error occurs, update existing row or insert
+          if (error && (error.message.includes("unique constraint") || error.message.includes("duplicate key"))) {
+            const { data: existing } = await supabaseServer
+              .from("app_settings")
+              .select("key")
+              .eq("key", "gemini_settings")
+              .maybeSingle();
+
+            if (existing) {
+              const updateRes = await supabaseServer
+                .from("app_settings")
+                .update({
+                  value: settings,
+                  updated_at: new Date().toISOString(),
+                  updated_by: "server_api"
+                })
+                .eq("key", "gemini_settings");
+              error = updateRes.error;
+            } else {
+              const insertRes = await supabaseServer.from("app_settings").insert({
+                key: "gemini_settings",
+                value: settings,
+                updated_at: new Date().toISOString(),
+                updated_by: "server_api"
+              });
+              error = insertRes.error;
+            }
+          }
+
           if (!error) {
             cloudSaved = true;
           } else {
@@ -309,8 +353,19 @@ async function startServer() {
 
   if (fs.existsSync(indexPath)) {
     console.log(`[server] Serving static build from: ${distPath}`);
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      setHeaders: (res, filepath) => {
+        if (filepath.endsWith('.html')) {
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
+        }
+      }
+    }));
     app.get(/(.*)/, (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(indexPath);
     });
   } else {
