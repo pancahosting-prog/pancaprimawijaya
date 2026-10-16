@@ -12977,7 +12977,14 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
 
       {/* Floating AI Hub (Kanan Bawah - Panca AI App & Gemini AI) */}
       {isLoggedIn && (
-        <div className="fixed bottom-6 right-6 z-50" ref={floatingAiRef}>
+        <div 
+          className={`fixed bottom-6 right-6 z-50 ${
+            (['WA Chat', 'WA Setting AI', 'WA Perangkat', 'WhatsApp'].includes(activeView) || activeTab === 'whatsapp' || activeTab === 'WhatsApp') 
+              ? 'hidden md:block' 
+              : ''
+          }`} 
+          ref={floatingAiRef}
+        >
           {/* Popup Menu when clicking Floating AI */}
           {showFloatingAiMenu && (
             <div className="absolute bottom-16 right-0 mb-2 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150">

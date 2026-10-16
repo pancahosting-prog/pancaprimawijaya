@@ -18,7 +18,12 @@ import {
   ChevronLeft,
   MessageCircle,
   Code,
-  Copy
+  Copy,
+  Paperclip,
+  Image as ImageIcon,
+  FileText,
+  Download,
+  Maximize2
 } from 'lucide-react';
 import { 
   loadWAChatsFromSupabase, 
@@ -28,6 +33,15 @@ import {
 } from '../lib/supabaseSync';
 import { SUPABASE_MIGRATION_SQL } from '../lib/supabaseMigrationSql';
 
+export interface WAChatMedia {
+  type: 'image' | 'document' | 'video' | 'audio';
+  data?: string;
+  url?: string;
+  mimetype?: string;
+  fileName?: string;
+  fileSize?: number;
+}
+
 export interface WAChatMessage {
   id: string;
   fromMe: boolean;
@@ -36,6 +50,7 @@ export interface WAChatMessage {
   text: string;
   timestamp: number;
   status?: string;
+  media?: WAChatMedia;
 }
 
 export interface WAChat {
@@ -119,6 +134,18 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const [selectedChatJid, setSelectedChatJid] = useState<string | null>(null);
   const [replyText, setReplyText] = useState<string>('');
   const [isSending, setIsSending] = useState<boolean>(false);
+
+  // File & Image Attachments
+  const [attachedMedia, setAttachedMedia] = useState<{
+    type: 'image' | 'document';
+    data: string; // base64 data url
+    fileName?: string;
+    fileSize?: number;
+    mimetype?: string;
+  } | null>(null);
+  const [previewImageModal, setPreviewImageModal] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Settings AI
   const [settings, setSettings] = useState<WAISettings>({
@@ -312,19 +339,84 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     }
   };
 
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'document') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      alert('Ukuran file maksimal 15MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachedMedia({
+        type,
+        data: reader.result as string,
+        fileName: file.name,
+        fileSize: file.size,
+        mimetype: file.type || (type === 'image' ? 'image/jpeg' : 'application/octet-stream')
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!selectedChatJid || !replyText.trim() || isSending) return;
+    if (!selectedChatJid || (!replyText.trim() && !attachedMedia) || isSending) return;
 
     setIsSending(true);
     const textToSend = replyText.trim();
+    const mediaToSend = attachedMedia;
     setReplyText('');
+    setAttachedMedia(null);
+
+    // Optimistically update chat in UI
+    const tempMsg: WAChatMessage = {
+      id: "out-" + Date.now(),
+      fromMe: true,
+      sender: "me",
+      text: textToSend,
+      timestamp: Date.now(),
+      status: "read",
+      media: mediaToSend || undefined
+    };
+
+    setChats(prevChats => {
+      return prevChats.map(c => {
+        if (c.jid === selectedChatJid) {
+          const updatedMessages = [...c.messages, tempMsg];
+          const updatedChat = {
+            ...c,
+            lastMessage: textToSend || (mediaToSend?.type === 'image' ? '📷 [Foto]' : `📄 [${mediaToSend?.fileName || 'Dokumen'}]`),
+            lastMessageTime: Date.now(),
+            messages: updatedMessages
+          };
+          // Sync to Supabase in background
+          saveWAChatToSupabase(updatedChat, selectedConnectedPhone !== 'all' ? selectedConnectedPhone : (connectionStatus.userPhone || 'default')).catch(console.warn);
+          return updatedChat;
+        }
+        return c;
+      });
+    });
 
     try {
       const res = await fetch('/api/wa/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jid: selectedChatJid, text: textToSend })
+        body: JSON.stringify({ 
+          jid: selectedChatJid, 
+          text: textToSend,
+          media: mediaToSend || undefined
+        })
       });
 
       if (res.ok) {
@@ -571,7 +663,49 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                               : 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 rounded-tl-none'
                           }`}
                         >
-                          <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                          {/* Image Attachment Rendering */}
+                          {m.media && m.media.type === 'image' && (
+                            <div className="mb-2 rounded-xl overflow-hidden cursor-pointer group relative max-w-xs sm:max-w-sm">
+                              <img
+                                src={m.media.data || m.media.url}
+                                alt="Foto WhatsApp"
+                                className="w-full max-h-72 object-cover rounded-xl transition duration-200 group-hover:scale-[1.02]"
+                                onClick={() => setPreviewImageModal(m.media?.data || m.media?.url || null)}
+                              />
+                              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none">
+                                <span className="p-1.5 px-2.5 rounded-lg bg-black/70 text-white text-xs flex items-center gap-1 font-bold shadow">
+                                  <Maximize2 size={13} /> Lihat Foto
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Document File Attachment Rendering */}
+                          {m.media && m.media.type === 'document' && (
+                            <div className="mb-2 p-3 bg-black/5 dark:bg-white/10 rounded-xl border border-black/10 dark:border-white/15 flex items-center justify-between gap-3 max-w-xs sm:max-w-sm">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                  <FileText size={18} />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold truncate text-zinc-900 dark:text-zinc-100">{m.media.fileName || 'Dokumen'}</p>
+                                  <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">{formatFileSize(m.media.fileSize)}</p>
+                                </div>
+                              </div>
+                              {m.media.data && (
+                                <a
+                                  href={m.media.data}
+                                  download={m.media.fileName || 'dokumen'}
+                                  className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition shrink-0 shadow-sm"
+                                  title="Unduh File"
+                                >
+                                  <Download size={14} />
+                                </a>
+                              )}
+                            </div>
+                          )}
+
+                          {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
                           <div className="flex items-center justify-end gap-1 mt-1">
                             <span className={`text-[9px] font-bold ${
                               m.fromMe ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400'
@@ -586,19 +720,85 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     <div ref={messagesEndRef} />
                   </div>
 
-                  {/* Chat Input Bar */}
-                  <form onSubmit={handleSendMessage} className="p-3 md:p-4 bg-zinc-100 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0">
+                  {/* Attachment Preview Strip */}
+                  {attachedMedia && (
+                    <div className="px-4 py-2 bg-emerald-50 dark:bg-zinc-800/90 border-t border-emerald-200 dark:border-zinc-700 flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {attachedMedia.type === 'image' ? (
+                          <img src={attachedMedia.data} alt="Pratinjau" className="w-11 h-11 object-cover rounded-xl border border-emerald-300 dark:border-zinc-600 shadow-sm" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                            <FileText size={20} />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-zinc-800 dark:text-zinc-100 truncate">
+                            {attachedMedia.type === 'image' ? (attachedMedia.fileName || 'Foto WhatsApp') : (attachedMedia.fileName || 'Dokumen')}
+                          </p>
+                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                            {formatFileSize(attachedMedia.fileSize)} • Siap dikirim
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAttachedMedia(null)}
+                        className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-600 dark:text-zinc-300 flex items-center justify-center transition"
+                        title="Hapus Lampiran"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Chat Input Bar with File & Image Attachments */}
+                  <form onSubmit={handleSendMessage} className="p-2.5 md:p-3 bg-zinc-100 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-1.5 md:gap-2 shrink-0">
+                    {/* Hidden Native File Inputs */}
+                    <input
+                      type="file"
+                      ref={imageInputRef}
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleFileSelect(e, 'image')}
+                    />
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="*/*"
+                      className="hidden"
+                      onChange={(e) => handleFileSelect(e, 'document')}
+                    />
+
+                    {/* Attachment Action Buttons */}
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      className="p-2.5 text-zinc-500 hover:text-emerald-600 dark:text-zinc-400 dark:hover:text-emerald-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl transition-colors shrink-0"
+                      title="Kirim Foto / Gambar"
+                    >
+                      <ImageIcon size={20} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2.5 text-zinc-500 hover:text-emerald-600 dark:text-zinc-400 dark:hover:text-emerald-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl transition-colors shrink-0"
+                      title="Kirim File Dokumen (PDF, Excel, Word, dll.)"
+                    >
+                      <Paperclip size={20} />
+                    </button>
+
                     <input
                       type="text"
-                      placeholder="Ketik pesan..."
+                      placeholder={attachedMedia ? "Tambahkan keterangan (opsional)..." : "Ketik pesan..."}
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
-                      className="flex-1 px-4 py-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-medium outline-none focus:border-zinc-900 transition-colors"
+                      className="flex-1 px-4 py-2.5 md:py-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-medium outline-none focus:border-emerald-600 dark:focus:border-emerald-500 transition-colors"
                     />
                     <button
                       type="submit"
-                      disabled={!replyText.trim() || isSending}
-                      className="p-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-40 transition-all active:scale-95 shadow-sm shrink-0"
+                      disabled={(!replyText.trim() && !attachedMedia) || isSending}
+                      className="p-2.5 md:p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl disabled:opacity-40 transition-all active:scale-95 shadow-sm shrink-0"
+                      title="Kirim"
                     >
                       <Send size={18} />
                     </button>
@@ -831,6 +1031,45 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Lightbox Preview Foto */}
+      {previewImageModal && (
+        <div 
+          className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setPreviewImageModal(null)}
+        >
+          <div 
+            className="relative max-w-4xl max-h-[90vh] bg-zinc-950 rounded-2xl overflow-hidden shadow-2xl flex flex-col border border-zinc-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-3 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
+              <span className="text-xs font-bold text-zinc-300">Pratinjau Foto WhatsApp</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewImageModal}
+                  download="whatsapp-foto.jpg"
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow"
+                >
+                  <Download size={14} /> Unduh
+                </a>
+                <button
+                  onClick={() => setPreviewImageModal(null)}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="p-2 flex items-center justify-center overflow-auto max-h-[80vh]">
+              <img
+                src={previewImageModal}
+                alt="Pratinjau Besar"
+                className="max-h-[75vh] w-auto object-contain rounded-lg"
+              />
             </div>
           </div>
         </div>

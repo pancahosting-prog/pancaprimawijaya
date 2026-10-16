@@ -10,6 +10,15 @@ const SETTINGS_FILE = path.resolve("./wa-ai-settings.json");
 const CHATS_FILE = path.resolve("./wa-chats.json");
 const CONNECTED_NUMBERS_FILE = path.resolve("./wa-connected-numbers.json");
 
+export interface WAChatMedia {
+  type: 'image' | 'document' | 'video' | 'audio';
+  data?: string;
+  url?: string;
+  mimetype?: string;
+  fileName?: string;
+  fileSize?: number;
+}
+
 export interface WAChatMessage {
   id: string;
   fromMe: boolean;
@@ -18,6 +27,7 @@ export interface WAChatMessage {
   text: string;
   timestamp: number;
   status?: string;
+  media?: WAChatMedia;
 }
 
 export interface WAChat {
@@ -463,8 +473,26 @@ class WAService {
           const remoteJid = msg.key.remoteJid;
           if (!remoteJid || remoteJid.endsWith("@g.us")) continue; // 1-on-1 chats only
 
-          const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-          if (!text) continue;
+          let text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+          let incomingMedia: WAChatMedia | undefined = undefined;
+
+          if (msg.message.imageMessage) {
+            text = msg.message.imageMessage.caption || "📷 [Foto]";
+            incomingMedia = {
+              type: "image",
+              mimetype: msg.message.imageMessage.mimetype || "image/jpeg"
+            };
+          } else if (msg.message.documentMessage) {
+            const fileName = msg.message.documentMessage.fileName || "Dokumen";
+            text = msg.message.documentMessage.caption || `📄 [${fileName}]`;
+            incomingMedia = {
+              type: "document",
+              fileName,
+              mimetype: msg.message.documentMessage.mimetype || "application/octet-stream"
+            };
+          }
+
+          if (!text && !incomingMedia) continue;
 
           const senderName = msg.pushName || remoteJid.split("@")[0];
           const isFromMe = Boolean(msg.key.fromMe);
@@ -499,7 +527,8 @@ class WAService {
             senderName,
             text,
             timestamp: Date.now(),
-            status: "unread"
+            status: "unread",
+            media: incomingMedia
           };
 
           chat.messages.push(newMsg);
@@ -620,13 +649,15 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
     }
   }
 
-  public async sendMessage(jid: string, text: string): Promise<{ success: boolean; message: WAChatMessage }> {
+  public async sendMessage(jid: string, text: string, media?: WAChatMedia): Promise<{ success: boolean; message: WAChatMessage }> {
     const connectedPhone = this.getConnectedPhoneKey();
     let phoneMap = this.chatsByPhone.get(connectedPhone);
     if (!phoneMap) {
       phoneMap = new Map();
       this.chatsByPhone.set(connectedPhone, phoneMap);
     }
+
+    const displaySummary = text || (media?.type === 'image' ? '📷 [Foto]' : `📄 [${media?.fileName || 'Dokumen'}]`);
 
     let chat = phoneMap.get(jid);
     if (!chat) {
@@ -636,7 +667,7 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
         name: jid.split("@")[0],
         phone: "+" + jid.split("@")[0],
         unreadCount: 0,
-        lastMessage: text,
+        lastMessage: displaySummary,
         lastMessageTime: Date.now(),
         messages: [],
         connectedPhone
@@ -648,20 +679,40 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
       id: "out-" + Date.now(),
       fromMe: true,
       sender: "me",
-      text,
+      text: text || "",
       timestamp: Date.now(),
-      status: "read"
+      status: "read",
+      media
     };
 
     chat.messages.push(msg);
-    chat.lastMessage = text;
+    chat.lastMessage = displaySummary;
     chat.lastMessageTime = Date.now();
     chat.unreadCount = 0;
     this.saveChatsForPhone(connectedPhone, chat);
 
     if (this.socket && this.connectionState === "connected") {
       try {
-        await this.socket.sendMessage(jid, { text });
+        if (media && media.data) {
+          const rawBase64 = media.data.includes(",") ? media.data.split(",")[1] : media.data;
+          const buffer = Buffer.from(rawBase64, "base64");
+          if (media.type === "image") {
+            await this.socket.sendMessage(jid, {
+              image: buffer,
+              caption: text || "",
+              mimetype: media.mimetype || "image/jpeg"
+            });
+          } else {
+            await this.socket.sendMessage(jid, {
+              document: buffer,
+              mimetype: media.mimetype || "application/octet-stream",
+              fileName: media.fileName || "dokumen",
+              caption: text || ""
+            });
+          }
+        } else {
+          await this.socket.sendMessage(jid, { text });
+        }
       } catch (err) {
         console.error("Failed to send WA message via Baileys socket:", err);
       }

@@ -246,24 +246,24 @@ ${Object.entries(agg.monthlyOmzetMap).map(([m, data]) => `* Periode ${m}: Total 
 ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.count} trx deals | Total Omzet: Rp ${d.omzet.toLocaleString('id-ID')}`).join('\n') || '  (Belum ada data sales)'}
 
 * Top Pelanggan dengan Nilai Belanja Terbesar:
-${Object.entries(agg.customerSpendMap).sort((a, b) => b[1].total - a[1].total).slice(0, 8).map(([c, d], i) => `  ${i + 1}. ${c}: ${d.count} transaksi | Total Belanja: Rp ${d.total.toLocaleString('id-ID')}`).join('\n') || '  (Belum ada)'}
+${Object.entries(agg.customerSpendMap).sort((a, b) => b[1].total - a[1].total).slice(0, 15).map(([c, d], i) => `  ${i + 1}. ${c}: ${d.count} transaksi | Total Belanja: Rp ${d.total.toLocaleString('id-ID')}`).join('\n') || '  (Belum ada)'}
 
-* Rincian Transaksi Terbaru (Daftar Real):
-${agg.compTransactions.slice(0, 20).map(t => {
+* Rincian Transaksi Lengkap (Database Real MyPanca - Semua Transaksi Terbaca):
+${agg.compTransactions.slice(0, 100).map(t => {
   const amt = getTransactionAmount(t);
-  const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName} (${it.qty || 1} unit)`).join(', ') : '';
-  return `  - [${t.noTrx || t.id}] Tanggal: ${t.tanggal || '-'} | Pelanggan: ${t.customerName || t.customer || '-'} | Nilai: Rp ${amt.toLocaleString('id-ID')} | Status: ${t.status || 'Selesai'} | Bayar: ${t.paymentStatus || 'Lunas'} | Sales: ${t.sales || t.salesName || '-'} | Item: [${itemsStr || 'N/A'}]`;
+  const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} unit @ Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : '';
+  return `  - [${t.noTrx || t.id}] Tanggal: ${t.tanggal || '-'} | Pelanggan: ${t.customerName || t.customer || '-'} | Total Nilai: Rp ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales: ${t.sales || t.salesName || '-'} | Item: [${itemsStr || 'N/A'}]`;
 }).join('\n')}
 
---- [MENU 2: BRM - DAFTAR KONTAK & PELANGGAN] ---
+--- [MENU 2: BRM - DAFTAR KONTAK & PELANGGAN LENGKAP] ---
 * Total Kontak: ${agg.compCustomers.length} Pelanggan
-${agg.compCustomers.slice(0, 25).map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales Rep: ${c.sales || '-'}, Lead: ${c.leadType || 'Aktif'})`).join('\n')}
+${agg.compCustomers.slice(0, 60).map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales Rep: ${c.sales || '-'}, Status Lead: ${c.leadType || 'Aktif'})`).join('\n')}
 
 --- [MENU 3: BRM - PENAWARAN (QUOTATIONS) - BUKAN OMZET] ---
 * Total Penawaran: ${agg.totalQuotes} penawaran (Nilai Total: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')})
-${agg.quoteList.slice(0, 10).map(q => `  - [${q.noTrx}] ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Follow-Up: ${q.followedUp ? 'Sudah' : 'Menunggu'}`).join('\n')}
+${agg.quoteList.slice(0, 20).map(q => `  - [${q.noTrx}] ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Follow-Up: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu Follow-Up'}`).join('\n')}
 
---- [MENU 4: INVENTARIS & STOK PRODUK] ---
+--- [MENU 4: INVENTARIS & STOK PRODUK LENGKAP] ---
 * Total SKU: ${agg.compProducts.length} Produk
 * KATALOG & SPESIFIKASI PRODUK LENGKAP:
 ${agg.compProducts.map(p => {
@@ -283,16 +283,16 @@ ${agg.compProducts.map(p => {
 }).join('\n')}
 * Produk Stok Menipis (< batas aman):
 ${agg.lowStockProducts.map(p => `  - ⚠️ ${p.nama} (Kode: ${p.kode || '-'}): sisa ${p.stok || 0} ${p.satuan || 'unit'} (Min: ${p.minStok || 10}) | Harga: Rp ${(p.hargaJual || 0).toLocaleString('id-ID')}`).join('\n') || '  - ✅ Semua stok produk dalam batas aman.'}
-* Produk Terlaris:
-${Object.entries(agg.soldProductQuantities).sort((a, b) => b[1].qty - a[1].qty).slice(0, 8).map(([name, d], i) => `  ${i + 1}. ${name}: ${d.qty} unit terjual | Pendapatan: Rp ${d.revenue.toLocaleString('id-ID')}`).join('\n')}
+* Produk Terlaris All-Time:
+${Object.entries(agg.soldProductQuantities).sort((a, b) => b[1].qty - a[1].qty).slice(0, 10).map(([name, d], i) => `  ${i + 1}. ${name}: ${d.qty} unit terjual | Pendapatan: Rp ${d.revenue.toLocaleString('id-ID')}`).join('\n')}
 
 --- [MENU 5: FINANCE - PIUTANG USAHA (TAGIHAN BELUM LUNAS)] ---
-* Total Piutang: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan belum lunas)
-${agg.unpaidInvoicesList.slice(0, 15).map(u => `  - Invoice [${u.noTrx}] Pelanggan: ${u.customer} | Tanggal: ${u.tanggal} | Total: Rp ${u.total.toLocaleString('id-ID')} | Sisa Tagihan: Rp ${u.sisa.toLocaleString('id-ID')} | Sales: ${u.sales}`).join('\n') || '  - Tidak ada piutang tertunggak.'}
+* Total Piutang Usaha: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan belum lunas)
+${agg.unpaidInvoicesList.slice(0, 40).map(u => `  - Invoice [${u.noTrx}] Pelanggan: ${u.customer} | Tanggal: ${u.tanggal} | Total: Rp ${u.total.toLocaleString('id-ID')} | Sisa Tagihan: Rp ${u.sisa.toLocaleString('id-ID')} | Sales: ${u.sales}`).join('\n') || '  - ✅ Tidak ada piutang tertunggak.'}
 
 --- [MENU 6: PURCHASING & SUPPLIER] ---
 * Total Supplier: ${agg.allSuppliers.length} vendor | Total PO: ${agg.allPOs.length} PO (Total Nilai: Rp ${agg.totalPOAmount.toLocaleString('id-ID')})
-${agg.allPOs.slice(0, 8).map(po => `  - PO [${po.noPO || po.id}] Vendor: ${po.supplierName || '-'} | Tanggal: ${po.tanggal || po.tanggalPembelian || '-'} | Total: Rp ${(Number(po.total) || 0).toLocaleString('id-ID')} | Status: ${po.status || 'Draft'}`).join('\n')}
+${agg.allPOs.slice(0, 15).map(po => `  - PO [${po.noPO || po.id}] Vendor: ${po.supplierName || '-'} | Tanggal: ${po.tanggal || po.tanggalPembelian || '-'} | Total: Rp ${(Number(po.total) || 0).toLocaleString('id-ID')} | Status: ${po.status || 'Draft'}`).join('\n')}
 
 --- [MENU 7: HR - KARYAWAN & TIM] ---
 * Total Karyawan: ${agg.allEmployees.length} staf
@@ -565,17 +565,21 @@ ATURAN WAJIB & PROTOKOL PERCAKAPAN BISNIS (INTERACTIVE & CONTEXT-AWARE AI):
        -> TANYAKAN DULU:
           "Baik **${userName}**, apakah Anda ingin melihat **total seluruh tagihan belum lunas**, atau tagihan untuk **pelanggan tertentu**?"
 
-2. JAWABAN HARUS SESUAI KONTEKS & JANGAN LANGSUNG MENGIRIMKAN DETAIL JIKA TIDAK DIMINTA:
-   - Jawablah secara fokus, ringkas, dan tepat pada intinya (high-level summary) terlebih dahulu.
-   - JANGAN LANGSUNG MENGIRIMKAN TABEL DETAIL PANJANG, RINCIAN ITEM PER ITEM, ATAU CATATAN EKSTRA JIKA PENGGUNA HANYA MENANYAKAN ANGKA/TOTAL/STATUS!
-   - Contoh Kasus Nyata: Jika pengguna bertanya "omset bulan agustus 2026" (atau setelah menjawab klarifikasi bulan):
-     * Jawab ringkas intinya terlebih dahulu:
-       "Total omzet transaksi pesanan selesai pada bulan **Agustus 2026** adalah **Rp 15.000.000** (dari 1 transaksi: PT Indofood CBP Sukses Makmur).\n\nApakah Anda ingin saya tampilkan rincian detail transaksinya?"
-     * HANYA kirimkan tabel rincian transaksi jika pengguna meminta (misalnya: "ya", "tampilkan detailnya", "rincian", "breakdown").
-   - Jangan menyertakan informasi yang tidak ditanyakan (misal user tanya omset, jangan tiba-tiba menyertakan data stok dan PO supplier jika tidak diminta).
+2. KEMAMPUAN PENGETAHUAN DATA DETAIL & TABEL LENGKAP (SETARA VERSI DESKTOP):
+   - JIKA PENGGUNA MEMINTA DETAIL, RINCIAN, ATAU MENJAWAB KONFIRMASI (Contoh: "ya", "iya", "tampilkan", "rincian", "rinciannya", "breakdown", "tabel", "jelaskan", "semua transaksi", "siapa saja"):
+     * ANDA WAJIB LANGSUNG MENYAJIKAN DATA LENGKAP SECARA DETAIL & TERSTRUKTUR PERSIS SEPERTI KEMAMPUAN VERSI DESKTOP!
+     * SAJIKAN TABEL MARKDOWN YANG RAPI DAN LENGKAP (Kolom: No. Transaksi / Dokumen, Tanggal, Nama Pelanggan, Item Barang, Total Nilai Rp, Status Pesanan, Status Pembayaran, Sales Rep).
+     * BERIKAN ANALISIS MENDALAM: total nominal, perbandingan transaksi, rincian barang, dan persentase lunas/belum lunas!
+     * DILARANG KERAS hanya memberikan jawaban singkat satu kalimat atau menahan data jika pengguna sudah meminta detail atau mengonfirmasi!
+   - JIKA PERTANYAAN AWAL PENGGUNA SUDAH SPESIFIK:
+     (Contoh: "omset bulan agustus 2026", "transaksi trx-70", "stok menipis", "piutang pt indofood", "daftar penawaran"):
+     * Berikan ringkasan angka kunci di paragraf pertama, LALU LANGSUNG SAJIKAN TABEL RINCIAN LENGKAPNYA di bawahnya tanpa perlu ditanya ulang.
+   - JIKA PERTANYAAN AWAL TERLALU UMUM (Hanya "omset" atau "transaksi" tanpa bulan/tahun):
+     * Tanyakan periode atau nama objek yang ingin dicek terlebih dahulu secara ramah.
 
 3. RIWAYAT PERCAKAPAN (MULTI-TURN MEMORY):
-   - Sambungkan konteks percakapan dengan pesan-pesan sebelumnya. Jika Anda baru saja bertanya: "ingin cek omzet bulan apa?" dan pengguna menjawab: "Agustus 2026", Anda harus langsung memahami bahwa itu adalah jawaban untuk omzet bulan Agustus 2026!
+   - Sambungkan konteks percakapan dengan pesan-pesan sebelumnya. Jika Anda baru saja bertanya: "ingin cek omzet bulan apa?" dan pengguna menjawab: "Agustus 2026", Anda harus langsung memahami bahwa itu adalah jawaban untuk omzet bulan Agustus 2026 dan menyajikan omzet serta rincian lengkapnya!
+   - Jika Anda baru saja bertanya: "Apakah Anda ingin saya tampilkan rincian detail transaksinya?" dan pengguna menjawab "ya" atau "tampilkan", Anda WAJIB langsung menyajikan tabel rincian transaksi bulan/objek yang sedang dibicarakan!
 
 4. WAJIB BACA & ANALISIS DATA SISTEM SECARA TELITI:
    - Sebelum menyusun jawaban, Anda WAJIB memeriksa seluruh bagian "DATA REAL-TIME SISTEM DARI SEMUA MENU" yang dilampirkan di bawah.
@@ -597,14 +601,13 @@ ATURAN WAJIB & PROTOKOL PERCAKAPAN BISNIS (INTERACTIVE & CONTEXT-AWARE AI):
        2. Tanyakan langsung: "**Apakah Anda mau mengisi data spesifikasi produk ini sekarang?**"
 
 8. PROTOKOL KHUSUS PERTANYAAN PIUTANG / TAGIHAN / MENUNGGAK / TERTUNGGAK:
-   - Jika pengguna bertanya: "apa ada yang menunggak?", "siapa yang menunggak?", "apakah ada tagihan belum lunas?", "siapa saja yang punya piutang/utang?", dsb.
-   - DILARANG KERAS LANGSUNG MENGIRIMKAN TABEL / DAFTAR SEMUA TRANSAKSI SEKALIGUS ("jebret semua data")!
-   - KANTONGI & SAJIKAN RINGKASAN HIGH-LEVEL TERLEBIH DAHULU:
+   - Jika pengguna bertanya umum: "apa ada yang menunggak?", "siapa yang menunggak?", "apakah ada tagihan belum lunas?":
      1. Tampilkan total nominal piutang tertunggak (misal: **Rp X**) dan total jumlah tagihan belum lunas (misal: **Y tagihan**).
      2. Tampilkan jumlah pelanggan yang menunggak serta sorotan 1-2 nama pelanggan utama.
      3. AKHIRI BERSAMA PERTANYAAN PROAKTIF:
         "**Apakah Anda ingin saya tampilkan rincian daftar lengkap transaksinya?**"
-   - HANYA tampilkan tabel rincian transaksi tertunggak jika pengguna menjawab "Ya", "Tampilkan listnya", "Iya mau melihat", atau menekan tombol interaktif!
+   - BEGITU PENGGUNA MEMINTA ATAU MENGONFIRMASI ("ya", "tampilkan", "rincian", "siapa saja"):
+     -> LANGSUNG SAJIKAN TABEL RINCIAN PIUTANG LENGKAP (No. Invoice, Nama Pelanggan, Tanggal, Total Tagihan, Sisa Piutang, Sales Rep Penanggung Jawab) secara detail!
 
 9. LARANGAN KERAS MEMOTONG JAWABAN:
    - JAWABAN ANDA HARUS LENGKAP DAN DITULIS SAMPAI SELESAI SECARA UTUH KESELURUHAN DARI AWAL HINGGA TERAKHIR.
@@ -618,14 +621,11 @@ ${dataDigest}
     { role: 'system', content: systemPrompt }
   ];
 
-  // Keep up to 6 turns of history
-  const recentHistory = history.slice(-6);
-  recentHistory.forEach(m => {
-    payloadMessages.push({
-      role: m.role,
-      content: m.role === 'assistant' && m.content.length > 350 ? m.content.slice(0, 350) + '... (ringkasan)' : m.content
-    });
-  });
+  // Keep up to 6 turns of history for multi-turn conversational context
+  const recentHistory = history.slice(-6).map(m => ({
+    role: m.role as 'user' | 'assistant',
+    content: m.content
+  }));
 
   // Call Google Gemini API with multi-key auto-rolling
   return await callGeminiWithKeyRotation({
