@@ -37,7 +37,7 @@ export const getTransactionAmount = (t: any): number => {
   return 0;
 };
 
-// Compile real-time aggregations from all modules
+// // Compile real-time aggregations from all modules
 export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string = '') => {
   const currentCompId = ctx.activeCompany?.id || '1';
   const isSuperAdmin = ctx.currentUser?.role?.toLowerCase() === 'superadmin';
@@ -224,81 +224,71 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
   };
 };
 
-// Generate full real-time database digest
+// Generate full real-time database digest with exact TRX and PP match support
 export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string = ''): string => {
   const agg = compileSystemAggregations(ctx, queryText);
   const isSuperAdmin = ctx.currentUser?.role?.toLowerCase() === 'superadmin';
   const queryLower = queryText.toLowerCase();
 
-  let digest = `=== DATA REAL-TIME SISTEM DARI SEMUA MENU (PT. PANCA PRIMA WIJAYA) ===
+  let digest = `=== DATABASE REAL-TIME SISTEM MYPANCA (PT. PANCA PRIMA WIJAYA) ===
 - Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
-- Total Transaksi Real Deals: ${agg.compTransactions.filter(t => !['Penawaran', 'Pesanan Batal'].includes(t.status || '')).length} Transaksi
+- Total Seluruh Transaksi: ${agg.compTransactions.length} Transaksi Tercatat
+- Skema Nomor Transaksi: Transaksi LAMA memakai "TRX-..." | Transaksi BARU memakai "PP-..."
 - Total Omzet Real (Selesai/Lunas): Rp ${agg.totalOmzetLunas.toLocaleString('id-ID')}
-- Total Pelanggan/Customer Terdaftar: ${agg.compCustomers.length} Pelanggan
+- Total Pelanggan Terdaftar: ${agg.compCustomers.length} Pelanggan
 - Total SKU Produk: ${agg.compProducts.length} SKU (Stok Menipis: ${agg.lowStockProducts.length} SKU)
 - Total Piutang Belum Lunas: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan belum lunas)
 
 --- [REKAP OMZET PER BULAN] ---
 ${Object.entries(agg.monthlyOmzetMap).map(([m, data]) => `* Periode ${m}: Total Omzet Selesai Rp ${data.omzetSelesai.toLocaleString('id-ID')} (${data.totalDeals} transaksi: ${data.customers.join(', ')})`).join('\n') || '* (Belum ada data bulanan)'}
 
---- [MENU 1: TRADE & TRANSAKSI PENJUALAN REAL] ---
+--- [MENU 1: TRANSAKSI PENJUALAN LENGKAP (LAMA TRX & BARU PP)] ---
 * Status Pesanan Breakdown: ${Object.entries(agg.tradeStatusCounts).map(([k, v]) => `${k}: ${v} transaksi`).join(' | ')}
 * Status Pembayaran: ${Object.entries(agg.paymentStatusCounts).map(([k, v]) => `${k}: ${v} transaksi`).join(' | ')}
-* Performa Sales Rep (Omzet Real Deals):
+* Performa Sales Rep:
 ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.count} trx deals | Total Omzet: Rp ${d.omzet.toLocaleString('id-ID')}`).join('\n') || '  (Belum ada data sales)'}
 
-* Top Pelanggan dengan Nilai Belanja Terbesar:
+* Top Pelanggan dengan Belanja Terbesar:
 ${Object.entries(agg.customerSpendMap).sort((a, b) => b[1].total - a[1].total).slice(0, 15).map(([c, d], i) => `  ${i + 1}. ${c}: ${d.count} transaksi | Total Belanja: Rp ${d.total.toLocaleString('id-ID')}`).join('\n') || '  (Belum ada)'}
 
-* Rincian Transaksi Lengkap (Database Real MyPanca - Semua Transaksi Terbaca):
-${agg.compTransactions.slice(0, 100).map(t => {
+* Daftar Transaksi Real Database (Setiap Transaksi Terbaca Presisi):
+${agg.compTransactions.map(t => {
   const amt = getTransactionAmount(t);
   const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} unit @ Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : '';
-  return `  - [${t.noTrx || t.id}] Tanggal: ${t.tanggal || '-'} | Pelanggan: ${t.customerName || t.customer || '-'} | Total Nilai: Rp ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales: ${t.sales || t.salesName || '-'} | Item: [${itemsStr || 'N/A'}]`;
+  return `  - [${t.noTrx || t.id}] Tanggal: ${t.tanggal || '-'} | Pelanggan: ${t.customerName || t.customer || '-'} | Total Nilai: Rp ${amt.toLocaleString('id-ID')} | Status: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales: ${t.sales || t.salesName || '-'} | Item: [${itemsStr || 'N/A'}]`;
 }).join('\n')}
 
---- [MENU 2: BRM - DAFTAR KONTAK & PELANGGAN LENGKAP] ---
+--- [MENU 2: DAFTAR KONTAK & PELANGGAN LENGKAP] ---
 * Total Kontak: ${agg.compCustomers.length} Pelanggan
-${agg.compCustomers.slice(0, 60).map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales Rep: ${c.sales || '-'}, Status Lead: ${c.leadType || 'Aktif'})`).join('\n')}
+${agg.compCustomers.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales: ${c.sales || '-'}, Status: ${c.leadType || 'Aktif'})`).join('\n')}
 
---- [MENU 3: BRM - PENAWARAN (QUOTATIONS) & FOLLOW-UP DETAIL] ---
+--- [MENU 3: PENAWARAN (QUOTATIONS) & FOLLOW-UP DETAIL] ---
 * Total Penawaran: ${agg.totalQuotes} penawaran (Nilai Total: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')})
-${agg.quoteList.slice(0, 20).map(q => `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Status: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu'} | Terakhir Follow-Up: ${q.lastFollowUpDate} | Catatan: ${q.notes} | Sales: ${q.sales}`).join('\n')}
+${agg.quoteList.map(q => `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Status: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu'} | Terakhir: ${q.lastFollowUpDate} | Catatan: ${q.notes} | Sales: ${q.sales}`).join('\n')}
 
---- [MENU 4: INVENTARIS & STOK PRODUK LENGKAP] ---
+--- [MENU 4: KATALOG & STOK PRODUK] ---
 * Total SKU: ${agg.compProducts.length} Produk
-* KATALOG & SPESIFIKASI PRODUK LENGKAP:
 ${agg.compProducts.map(p => {
   const specStr = p.specifications || p.deskripsi || p.description || 'Belum diisi';
   const mainFunc = p.mainFunction || 'Belum diisi';
   const mainApp = p.mainApplication || 'Belum diisi';
   const dim = (p.panjang || p.lebar || p.tinggi) ? `${p.panjang || 0} x ${p.lebar || 0} x ${p.tinggi || 0} cm` : 'Belum diisi';
   const weight = p.berat ? `${p.berat} kg` : 'Belum diisi';
-  const remarks = p.remarks || 'Belum diisi';
-  return `  - SKU [${p.kode || p.id}] ${p.nama} (Kategori: ${p.kategori || 'Umum'}, Stok: ${p.stok || 0} ${p.satuan || 'unit'}) | Harga: Rp ${(p.hargaJual || 0).toLocaleString('id-ID')}
-    * Fungsi Utama: ${mainFunc}
-    * Aplikasi Utama: ${mainApp}
-    * Spesifikasi Detail: ${specStr}
-    * Dimensi (P x L x T): ${dim}
-    * Berat: ${weight}
-    * Remarks / Catatan: ${remarks}`;
+  return `  - SKU [${p.kode || p.id}] ${p.nama} (Stok: ${p.stok || 0} ${p.satuan || 'unit'}) | Harga: Rp ${(p.hargaJual || 0).toLocaleString('id-ID')}
+    * Fungsi: ${mainFunc} | Aplikasi: ${mainApp} | Dimensi: ${dim} | Berat: ${weight} | Spesifikasi: ${specStr}`;
 }).join('\n')}
-* Produk Stok Menipis (< batas aman):
-${agg.lowStockProducts.map(p => `  - ⚠️ ${p.nama} (Kode: ${p.kode || '-'}): sisa ${p.stok || 0} ${p.satuan || 'unit'} (Min: ${p.minStok || 10}) | Harga: Rp ${(p.hargaJual || 0).toLocaleString('id-ID')}`).join('\n') || '  - ✅ Semua stok produk dalam batas aman.'}
-* Produk Terlaris All-Time:
-${Object.entries(agg.soldProductQuantities).sort((a, b) => b[1].qty - a[1].qty).slice(0, 10).map(([name, d], i) => `  ${i + 1}. ${name}: ${d.qty} unit terjual | Pendapatan: Rp ${d.revenue.toLocaleString('id-ID')}`).join('\n')}
 
 --- [MENU 5: FINANCE - PIUTANG USAHA (TAGIHAN BELUM LUNAS)] ---
-* Total Piutang Usaha: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan belum lunas)
-${agg.unpaidInvoicesList.slice(0, 40).map(u => `  - Invoice [${u.noTrx}] Pelanggan: ${u.customer} | Tanggal: ${u.tanggal} | Total: Rp ${u.total.toLocaleString('id-ID')} | Sisa Tagihan: Rp ${u.sisa.toLocaleString('id-ID')} | Sales: ${u.sales}`).join('\n') || '  - ✅ Tidak ada piutang tertunggak.'}
+* Total Piutang: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan)
+${agg.unpaidInvoicesList.map(u => `  - Invoice [${u.noTrx}] Pelanggan: ${u.customer} | Tanggal: ${u.tanggal} | Total: Rp ${u.total.toLocaleString('id-ID')} | Sisa: Rp ${u.sisa.toLocaleString('id-ID')} | Sales: ${u.sales}`).join('\n') || '  - ✅ Tidak ada piutang tertunggak.'}
 
 --- [MENU 6: PURCHASING & SUPPLIER] ---
-* Total Supplier: ${agg.allSuppliers.length} vendor | Total PO: ${agg.allPOs.length} PO (Total Nilai: Rp ${agg.totalPOAmount.toLocaleString('id-ID')})
-${agg.allPOs.slice(0, 15).map(po => `  - PO [${po.noPO || po.id}] Vendor: ${po.supplierName || '-'} | Tanggal: ${po.tanggal || po.tanggalPembelian || '-'} | Total: Rp ${(Number(po.total) || 0).toLocaleString('id-ID')} | Status: ${po.status || 'Draft'}`).join('\n')}
+* Total Supplier: ${agg.allSuppliers.length} vendor | PO: ${agg.allPOs.length} PO (Total: Rp ${agg.totalPOAmount.toLocaleString('id-ID')})
+${agg.allPOs.map(po => `  - PO [${po.noPO || po.id}] Vendor: ${po.supplierName || '-'} | Tanggal: ${po.tanggal || po.tanggalPembelian || '-'} | Total: Rp ${(Number(po.total) || 0).toLocaleString('id-ID')} | Status: ${po.status || 'Draft'}`).join('\n')}
 
 --- [MENU 7: HR - KARYAWAN & TIM] ---
 * Total Karyawan: ${agg.allEmployees.length} staf
-${agg.allEmployees.map(e => `  - ${e.nama} | Posisi/Jabatan: ${e.role || '-'} | WA: ${e.whatsapp || '-'}${isSuperAdmin && e.gaji ? ` | Gaji: Rp ${Number(e.gaji).toLocaleString('id-ID')}` : ''}`).join('\n')}
+${agg.allEmployees.map(e => `  - ${e.nama} | Jabatan: ${e.role || '-'} | WA: ${e.whatsapp || '-'}${isSuperAdmin && e.gaji ? ` | Gaji: Rp ${Number(e.gaji).toLocaleString('id-ID')}` : ''}`).join('\n')}
 `;
 
   // Include Task App data if available (SuperAdmin / Team)
@@ -306,28 +296,28 @@ ${agg.allEmployees.map(e => `  - ${e.nama} | Posisi/Jabatan: ${e.role || '-'} | 
     const tasks = ctx.taskAppData.tasks || [];
     const projects = ctx.taskAppData.projects || [];
     digest += `\n--- [MENU 8: TASK APP & PROYEK TIM] ---
-* Total Task: ${tasks.length} task (${tasks.filter(t => t.status === 'Selesai').length} Selesai, ${tasks.filter(t => t.status !== 'Selesai').length} Berjalan/Pending)
-${tasks.slice(0, 15).map(t => `  - Task: "${t.title}" | Status: ${t.status} | Prioritas: ${t.priority || 'Medium'} | Progress: ${t.progress || 0}% | PIC: ${t.employeeName || t.owner || '-'}`).join('\n')}
-* Total Proyek Database: ${projects.length} proyek
-${projects.slice(0, 10).map(p => `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.clientName || '-'} | Status: ${p.status} | Lead: ${p.leadEngineer || '-'}`).join('\n')}
+* Total Task: ${tasks.length} task (${tasks.filter(t => t.status === 'Selesai').length} Selesai)
+${tasks.map(t => `  - Task: "${t.title}" | Status: ${t.status} | Prioritas: ${t.priority || 'Medium'} | Progress: ${t.progress || 0}% | PIC: ${t.employeeName || t.owner || '-'}`).join('\n')}
+* Total Proyek: ${projects.length} proyek
+${projects.map(p => `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.clientName || '-'} | Status: ${p.status} | Lead: ${p.leadEngineer || '-'}`).join('\n')}
 `;
   }
 
-  // Dynamic Keyword Search Injection for Precision Context
-  const keywords = queryLower.split(/\s+/).filter(w => w.length >= 2 && !['berapa', 'siapa', 'apakah', 'gimana', 'tolong', 'minta', 'data', 'pada', 'yang', 'untuk', 'dari', 'cek', 'lihat'].includes(w));
-  if (keywords.length > 0) {
-    const matchedTrx = agg.compTransactions.filter(t => {
-      const full = `${t.noTrx || ''} ${t.id || ''} ${t.customerName || ''} ${t.customer || ''} ${t.sales || ''} ${t.status || ''}`.toLowerCase();
-      return keywords.some(k => full.includes(k));
-    });
+  // Exact Match Search Normalization for TRX and PP codes
+  const normalizedQuery = queryLower.replace(/[^a-z0-9]/g, '');
+  const matchedTrxExact = agg.compTransactions.filter(t => {
+    const code = (t.noTrx || t.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cust = (t.customerName || t.customer || '').toLowerCase();
+    return (code && normalizedQuery.includes(code)) || (code && code.includes(normalizedQuery)) || (cust && queryLower.includes(cust));
+  });
 
-    if (matchedTrx.length > 0) {
-      digest += `\n=== PENCARIAN RELEVAN TERHADAP KATA KUNCI PERTANYAAN ("${queryText}") ===\n`;
-      matchedTrx.slice(0, 10).forEach(t => {
-        const amt = getTransactionAmount(t);
-        digest += `* TRANSAKSI COCOK [${t.noTrx || t.id}]: Pelanggan: ${t.customerName || t.customer || '-'} | Tanggal: ${t.tanggal} | Nominal: Rp ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status} | Pembayaran: ${t.paymentStatus} | Sales: ${t.sales || '-'}\n`;
-      });
-    }
+  if (matchedTrxExact.length > 0) {
+    digest += `\n=== PENCARIAN SANGAT SPESIFIK & PRESISI LENGKAP UNTUK ("${queryText}") ===\n`;
+    matchedTrxExact.forEach(t => {
+      const amt = getTransactionAmount(t);
+      const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} x Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : 'N/A';
+      digest += `* TRANSAKSI KUNCI COCOK [${t.noTrx || t.id}]: Pelanggan: ${t.customerName || t.customer || '-'} | Tanggal: ${t.tanggal || '-'} | Nominal Rp: ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales Rep: ${t.sales || t.salesName || '-'} | Items: [${itemsStr}]\n`;
+    });
   }
 
   return digest;
@@ -357,7 +347,7 @@ export const detectLackingContext = (
   ];
   
   const hasTimeQualifier = monthKeywords.some(m => q.includes(m));
-  const hasSpecificId = /trx[-_ ]?\d+|inv[-_ ]?\d+|po[-_ ]?\d+/i.test(q);
+  const hasSpecificId = /(trx|pp)[-_ ]?\d+|inv[-_ ]?\d+|po[-_ ]?\d+/i.test(q);
   const isDetailRequest = /^(ya|boleh|tampilkan|lihat|rincian|detail|rinci|breakdown|sebutkan|tunjukin)/i.test(q);
 
   // If last assistant message was asking for period and user provides an answer:
@@ -375,7 +365,7 @@ export const detectLackingContext = (
   // 1. Omzet / Penjualan without period or customer or ID
   const isOmzetTopic = /\b(omset|omzet|penjualan|revenue|pendapatan|sales)\b/i.test(q);
   if (isOmzetTopic && !hasTimeQualifier && !hasSpecificId) {
-    const isGeneralOmzet = /^(omset|omzet|berapa omset|berapa omzet|total omset|total omzet|omsetnya|omzetnya|cek omset|cek omzet|penjualan|total penjualan|laporan penjualan|omset kita|omzet kita|omset perusahaan|omzet perusahaan|berapa penjualan|info omset|info omzet|omset saat ini|omzet saat ini)[\?\.\!]?$/i.test(q)
+    const isGeneralOmzet = /^(omset|omzet|berapa omset|berapa omzet|total omset|total omzet|omsetnya|omsetnya|cek omset|cek omset|penjualan|total penjualan|laporan penjualan|omset kita|omset kita|omset perusahaan|omset perusahaan|berapa penjualan|info omset|info omset|omset saat ini|omset saat ini)[\?\.\!]?$/i.test(q)
       || (!q.includes('pt ') && !q.includes('cv ') && q.split(' ').length <= 5 && !hasTimeQualifier);
     
     if (isGeneralOmzet) {
@@ -396,7 +386,7 @@ export const detectLackingContext = (
       return {
         lacksContext: true,
         topic: 'transaksi',
-        clarificationQuestion: 'Anda ingin memeriksa transaksi dengan nomor berapa (seperti **TRX-70**), transaksi untuk **bulan tertentu**, atau status pesanan tertentu (selesai/pengiriman)?'
+        clarificationQuestion: 'Anda ingin memeriksa transaksi dengan nomor berapa (seperti **TRX-70** atau **PP-001**), transaksi untuk **bulan tertentu**, atau status pesanan tertentu?'
       };
     }
   }
@@ -443,13 +433,11 @@ export const detectLackingContext = (
 };
 
 // Conversational Openings & Human Greetings Detector
-// Ensures flexible, natural, warm human-like chat when user sends "saya mau tanya", "mau nanya nih", "halo", etc.
 export const isConversationalGreeting = (query: string): boolean => {
   const q = query.trim().toLowerCase().replace(/[?!.,;:~]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!q) return true;
 
-  // If query contains specific IDs, transaction numbers, or company entities, it's NOT a generic greeting
-  const hasSpecificContext = /trx[-_ ]?\d+|inv[-_ ]?\d+|po[-_ ]?\d+|agustus|september|oktober|november|desember|januari|februari|maret|april|mei|juni|juli|2024|2025|2026|rp\b|indofood|mayora/i.test(q);
+  const hasSpecificContext = /(trx|pp)[-_ ]?\d+|inv[-_ ]?\d+|po[-_ ]?\d+|agustus|september|oktober|november|desember|januari|februari|maret|april|mei|juni|juli|2024|2025|2026|rp\b|indofood|mayora/i.test(q);
   if (hasSpecificContext) return false;
 
   const hasBusinessDataTerm = /\b(omset|omzet|transaksi|stok|stock|piutang|tagihan|laporan|produk|customer|pelanggan|karyawan|supplier|vendor|po|invoice|harga|gaji|penjualan)\b/i.test(q);
@@ -470,7 +458,6 @@ export const isConversationalGreeting = (query: string): boolean => {
     return true;
   }
 
-  // Common Indonesian conversational question openings
   const openingPhrases = [
     'saya mau tanya', 'saya mau nanya', 'saya mau nanya nih', 'saya mau tanya nih',
     'saya mau tanya dong', 'saya mau nanya dong', 'mau tanya', 'mau nanya',
@@ -489,7 +476,6 @@ export const isConversationalGreeting = (query: string): boolean => {
     return true;
   }
 
-  // Any short statement (<= 6 words) talking about asking without data terms
   const words = q.split(' ');
   if (words.length <= 6 && (q.includes('tanya') || q.includes('nanya') || q.includes('halo') || q.includes('hai'))) {
     return true;
@@ -503,25 +489,25 @@ export const getConversationalGreetingResponse = (userName: string, query: strin
   const q = query.trim().toLowerCase();
 
   if (/terima kasih|makasih|thanks/i.test(q)) {
-    return `Sama-sama, **${userName}**! Senang bisa membantu Anda. Jika ada hal lain yang ingin dicek kembali, panggil saya kapan saja ya! 😊`;
+    return `Sama-sama, **${userName}**! 😊 Senang sekali bisa membantu Anda. Jika ada hal lain yang ingin dicek kembali, panggil saya kapan saja ya!`;
   }
 
   if (/^(oke|ok|siap|sip|mantap|keren|baik|baiklah)$/i.test(q)) {
-    return `Siap, **${userName}**! Ada data lain yang ingin kita periksa bersama? Silakan tanyakan kapan saja! 👍`;
+    return `Siap, **${userName}**! 👍 Ada data lain yang ingin kita periksa bersama? Silakan tanyakan kapan saja!`;
   }
 
   if (/apa kabar|gimana kabar/i.test(q)) {
-    return `Kabar baik, **${userName}**! Terima kasih sudah menyapa. Bagaimana dengan Anda? Ada data atau informasi yang bisa saya bantu carikan hari ini? 😊`;
+    return `Kabar baik, **${userName}**! 😊 Terima kasih sudah menyapa. Bagaimana dengan Anda? Ada data transaksi, omzet, atau stok produk yang ingin kita periksa bersama hari ini?`;
   }
 
   if (/siapa kamu|kamu siapa/i.test(q)) {
-    return `Halo **${userName}**! Saya adalah asisten virtual cerdas untuk platform CRM & ERP MyPanca (PT. Panca Prima Wijaya). Saya siap membantu Anda mengecek transaksi, omzet, stok produk, tagihan, hingga rekap data tim. Silakan tanyakan apa saja yang Anda butuhkan! 😊`;
+    return `Halo **${userName}**! 👋 Saya adalah **Panca AI Assistant**, asisten virtual pintar terhubung langsung ke database PT. Panca Prima Wijaya (MyPanca CRM & ERP).\n\nSaya siap membantu Anda:\n- 📊 Memeriksa laporan omzet & penjualan\n- 🔎 Cek detail transaksi lama (**TRX-..**) maupun transaksi baru (**PP-..**)\n- 📦 Cek stok & spesifikasi katalog produk\n- 💰 Cek piutang tagihan pelanggan\n- 📝 Membantu menginput Customer Baru, Transaksi, & Penawaran secara bertahap (Form Wizard)\n\nSilakan tanyakan apa saja yang Anda butuhkan! 😊`;
   }
 
-  return `Halo **${userName}**! 👋 Silakan, tanyakan apa saja yang Anda butuhkan, saya siap membantu! 😊\n\nMisalnya, Anda bisa menanyakan:\n- 📊 Laporan omzet & performa penjualan\n- 🔍 Status transaksi nomor tertentu (seperti TRX-..)\n- 📦 Ketersediaan stok produk\n- 💰 Tagihan piutang pelanggan\n\nAda yang ingin kita periksa sekarang?`;
+  return `Halo **${userName}**! 👋 Silakan, tanyakan apa saja yang Anda butuhkan, saya siap membantu dengan senang hati! 😊\n\nMisalnya, Anda bisa menanyakan:\n- 📊 *"Berapa omzet bulan ini?"*\n- 🔎 *"Cek transaksi TRX-70"* atau *"Cek transaksi PP-001"*\n- 📦 *"Produk apa saja yang stoknya menipis?"*\n- 📝 *"Tambah customer baru"* atau *"Buat transaksi baru"*\n\nAda yang ingin kita periksa sekarang?`;
 };
 
-// Unified LLM Calling Function with Strict Data Reading Rules
+// Unified LLM Calling Function with Strict Data Reading Rules and Friendly Tone
 export const queryPancaAI = async (
   userQuery: string,
   history: { role: 'user' | 'assistant'; content: string }[],
@@ -542,100 +528,57 @@ export const queryPancaAI = async (
 
   const dataDigest = generatePancaDataDigest(ctx, userQuery);
 
-  const systemPrompt = `Anda adalah "Panca AI Assistant", asisten kecerdasan buatan terpadu dan analis data bisnis untuk PT. Panca Prima Wijaya (MyPanca CRM & ERP).
+  const systemPrompt = `Anda adalah "Panca AI Assistant", asisten kecerdasan buatan terpadu yang ramah, hangat, profesional, dan analis data bisnis untuk PT. Panca Prima Wijaya (MyPanca CRM & ERP).
 Nama Pengguna: ${userName}
 Peran Pengguna: ${ctx.currentUser?.role || 'Staff'}
 Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
 
 ================================================================================
-ATURAN WAJIB & PROTOKOL PERCAKAPAN BISNIS (INTERACTIVE & CONTEXT-AWARE AI):
+ATURAN UTAMA & PROTOKOL LAYANAN RAMAH (FRIENDLY & COMPLETE RESPONSE GUARANTEE):
 ================================================================================
 
-1. KLARIFIKASI KONTEKS DAHULU JIKA PERTANYAAN TERLALU UMUM (DILARANG LANGSUNG TEBAK/DUMP DATA):
-   - JIKA pengguna bertanya hal umum TANPA menyebutkan periode waktu (bulan/tahun) atau nama objek spesifik:
-     * Contoh Kasus: Pengguna hanya bertanya "omset", "berapa omset", "penjualan", "laporan penjualan", "total omzet":
-       -> DILARANG LANGSUNG MENJAWAB DENGAN ANGKA TEBAKAN ATAU LANGSUNG MENGIRIMKAN TABEL DATA!
-       -> TANYAKAN TERLEBIH DAHULU KONTEKS DETAILNYA DENGAN RAMAH & SPESIFIK:
-          "Halo **${userName}**, Anda ingin memeriksa omzet untuk periode bulan atau tahun apa? (Misalnya: **Agustus 2026**, **September 2026**, **bulan ini**, atau **sepanjang tahun 2026**?)"
-     * Contoh Kasus: Pengguna hanya mengetik "transaksi" atau "cek transaksi":
-       -> TANYAKAN DULU:
-          "Baik **${userName}**, Anda ingin memeriksa transaksi dengan nomor spesifik (seperti **TRX-70**), transaksi untuk **bulan tertentu**, atau status pesanan tertentu (selesai/pengiriman)?"
-     * Contoh Kasus: Pengguna hanya mengetik "stok":
-       -> TANYAKAN DULU:
-          "Baik **${userName}**, apakah Anda ingin melihat **produk dengan stok menipis (< 10 unit)**, atau mengecek stok untuk **nama barang tertentu**?"
-     * Contoh Kasus: Pengguna hanya mengetik "piutang" atau "tagihan":
-       -> TANYAKAN DULU:
-          "Baik **${userName}**, apakah Anda ingin melihat **total seluruh tagihan belum lunas**, atau tagihan untuk **pelanggan tertentu**?"
+1. NADA BICARA & TONE OF VOICE:
+   - Bersikaplah hangat, sopan, bersahabat, profesional, dan membantu (seperti Customer Service Senior yang cerdas dan solutif).
+   - Gunakan sapaan ramah "Bapak/Ibu" atau sebut nama "${userName}" secara alami.
+   - Hindari bahasa kaku/robotik. Gunakan gaya bahasa Indonesia yang mengalir, rapi, dan mudah dipahami.
 
-2. KEMAMPUAN PENGETAHUAN DATA DETAIL & TABEL LENGKAP (SETARA VERSI DESKTOP):
-   - JIKA PENGGUNA MEMINTA DETAIL, RINCIAN, ATAU MENJAWAB KONFIRMASI (Contoh: "ya", "iya", "tampilkan", "rincian", "rinciannya", "breakdown", "tabel", "jelaskan", "semua transaksi", "siapa saja"):
-     * ANDA WAJIB LANGSUNG MENYAJIKAN DATA LENGKAP SECARA DETAIL & TERSTRUKTUR PERSIS SEPERTI KEMAMPUAN VERSI DESKTOP!
-     * SAJIKAN TABEL MARKDOWN YANG RAPI DAN LENGKAP (Kolom: No. Transaksi / Dokumen, Tanggal, Nama Pelanggan, Item Barang, Total Nilai Rp, Status Pesanan, Status Pembayaran, Sales Rep).
-     * BERIKAN ANALISIS MENDALAM: total nominal, perbandingan transaksi, rincian barang, dan persentase lunas/belum lunas!
-     * DILARANG KERAS hanya memberikan jawaban singkat satu kalimat atau menahan data jika pengguna sudah meminta detail atau mengonfirmasi!
-   - JIKA PERTANYAAN AWAL PENGGUNA SUDAH SPESIFIK:
-     (Contoh: "omset bulan agustus 2026", "transaksi trx-70", "stok menipis", "piutang pt indofood", "daftar penawaran"):
-     * Berikan ringkasan angka kunci di paragraf pertama, LALU LANGSUNG SAJIKAN TABEL RINCIAN LENGKAPNYA di bawahnya tanpa perlu ditanya ulang.
-   - JIKA PERTANYAAN AWAL TERLALU UMUM (Hanya "omset" atau "transaksi" tanpa bulan/tahun):
-     * Tanyakan periode atau nama objek yang ingin dicek terlebih dahulu secara ramah.
+2. PENGETAHUAN KODE TRANSAKSI LAMA (TRX) & BARU (PP):
+   - Sistem MyPanca menggunakan 2 format nomor transaksi:
+     * Format LAMA: Memakai awalan "TRX-..." (Contoh: TRX-01, TRX-70, TRX70).
+     * Format BARU: Memakai awalan "PP-..." (Contoh: PP-001, PP-2026-01, PP001).
+   - Anda HARUS mengenali kedua format tersebut secara setara dari database real-time yang dilampirkan.
 
-3. RIWAYAT PERCAKAPAN (MULTI-TURN MEMORY):
-   - Sambungkan konteks percakapan dengan pesan-pesan sebelumnya. Jika Anda baru saja bertanya: "ingin cek omzet bulan apa?" dan pengguna menjawab: "Agustus 2026", Anda harus langsung memahami bahwa itu adalah jawaban untuk omzet bulan Agustus 2026 dan menyajikan omzet serta rincian lengkapnya!
-   - Jika Anda baru saja bertanya: "Apakah Anda ingin saya tampilkan rincian detail transaksinya?" dan pengguna menjawab "ya" atau "tampilkan", Anda WAJIB langsung menyajikan tabel rincian transaksi bulan/objek yang sedang dibicarakan!
+3. AKURASI UTAMA & DILARANG MEMOTONG JAWABAN:
+   - JAWABAN ANDA HARUS DITULIS LENGKAP DARI AWAL SAMPAI AKHIR TANPA TERPOTONG DI TENGAH JALAN.
+   - Utamakan AKURASI DATA berdasarkan database faktual yang dilampirkan.
+   - JANGAN MENGARANG DRAFT ATAU DATA TRANSAKSI JIKA TIDAK ADA DI DATABASE! Jika transaksi tidak ditemukan, jawab dengan jujur dan ramah:
+     "Maaf **${userName}**, nomor transaksi **[Nomor]** tidak ditemukan di database MyPanca. Bisakah Anda periksa kembali nomor transaksinya?"
 
-4. WAJIB BACA & ANALISIS DATA SISTEM SECARA TELITI:
-   - Sebelum menyusun jawaban, Anda WAJIB memeriksa seluruh bagian "DATA REAL-TIME SISTEM DARI SEMUA MENU" yang dilampirkan di bawah.
-   - Jawaban Anda WAJIB didasarkan pada data faktual tersebut, bukan mengarang atau membuat asumsi kosong.
+4. SAJIKAN TABEL MARKDOWN DENGAN RAPI & TERSTRUKTUR:
+   - Ketika menyajikan daftar transaksi, piutang, produk, atau laporan, gunakan TABEL MARKDOWN LENGKAP dengan header yang jelas.
+   - Contoh Header Tabel Transaksi:
+     | No. Transaksi | Tanggal | Pelanggan | Nominal Rp | Status Pesanan | Status Pembayaran | Sales Rep |
 
-5. DILARANG MENYATAKAN TIDAK MEMILIKI AKSES KE DATABASE:
-   - Seluruh database real-time sistem MyPanca SUDAH DILAMPIRKAN SECARA LENGKAP di bawah ini. Anda MEMILIKI akses penuh ke data tersebut.
-   - JANGAN PERNAH mengatakan "saya tidak memiliki akses ke database", "saya hanya model bahasa", atau "silakan cek sendiri di menu". Kutip dan sajikan langsung data real tersebut!
+5. KLARIFIKASI DAHULU JIKA PERTANYAAN TERLALU UMUM:
+   - Jika pengguna bertanya hal umum tanpa periode (seperti hanya "omset" atau "transaksi"), tanyakan periode bulan/tahun yang ingin diperiksa dengan ramah.
 
-6. SIKAP CUSTOMER SERVICE KETIKA MENYAPA / KASUAL:
-   - Jika pengguna hanya menyapa (misal: "halo", "hi", "selamat pagi", "siapa kamu", "terima kasih"), berikan sambutan ramah, santun, dan manusiawi. Sapa nama pengguna (${userName}), tanyakan bantuan yang dibutuhkan, dan berikan contoh pertanyaan. JANGAN menumpahkan seluruh tabel data sistem jika hanya disapa halo!
-
-7. PROTOKOL BACA & DETEKSI SPESIFIKASI PRODUK:
-   - Jika pengguna bertanya mengenai spesifikasi produk (fungsi utama, aplikasi utama, ukuran dimensi, berat, atau spesifikasi detail):
-     * Periksa data spesifikasi produk pada [KATALOG & SPESIFIKASI PRODUK LENGKAP].
-     * Jika data spesifikasi produk TERISI, sajikan informasi spesifikasi lengkap secara rapi.
-     * JIKA DATA SPESIFIKASI PRODUK TERSEBUT BELUM DIISI (bernilai 'Belum diisi' atau kosong):
-       1. Jelaskan secara ramah & jujur: "Data spesifikasi detail untuk produk **[Nama Produk]** belum terisi di database MyPanca."
-       2. Tanyakan langsung: "**Apakah Anda mau mengisi data spesifikasi produk ini sekarang?**"
-
-8. PROTOKOL KHUSUS PERTANYAAN PIUTANG / TAGIHAN / MENUNGGAK / TERTUNGGAK:
-   - Jika pengguna bertanya umum: "apa ada yang menunggak?", "siapa yang menunggak?", "apakah ada tagihan belum lunas?":
-     1. Tampilkan total nominal piutang tertunggak (misal: **Rp X**) dan total jumlah tagihan belum lunas (misal: **Y tagihan**).
-     2. Tampilkan jumlah pelanggan yang menunggak serta sorotan 1-2 nama pelanggan utama.
-     3. AKHIRI BERSAMA PERTANYAAN PROAKTIF:
-        "**Apakah Anda ingin saya tampilkan rincian daftar lengkap transaksinya?**"
-   - BEGITU PENGGUNA MEMINTA ATAU MENGONFIRMASI ("ya", "tampilkan", "rincian", "siapa saja"):
-     -> LANGSUNG SAJIKAN TABEL RINCIAN PIUTANG LENGKAP (No. Invoice, Nama Pelanggan, Tanggal, Total Tagihan, Sisa Piutang, Sales Rep Penanggung Jawab) secara detail!
-
-9. LARANGAN KERAS MEMOTONG JAWABAN:
-   - JAWABAN ANDA HARUS LENGKAP DAN DITULIS SAMPAI SELESAI SECARA UTUH KESELURUHAN DARI AWAL HINGGA TERAKHIR.
-   - DILARANG MEMOTONG TABEL, MEMOTONG KALIMAT DI TENGAH JALAN, ATAU BERHENTI SEBELUM SELURUH DATA TERPAPAR RAPI.
+6. BILA PENGGUNA INGIN INPUT DATA BARU (CUSTOMER, TRANSAKSI, PENAWARAN):
+   - Pandu pengguna mengisi data secara BERTAHAP (satu per satu sesuai kolom form asli), lalu di akhir tampilkan tabel pratinjau draft dan minta konfirmasi simpan.
 
 ${dataDigest}
 `;
 
-  // Build payload messages with multi-turn history to preserve clarification back-and-forth
-  const payloadMessages: any[] = [
-    { role: 'system', content: systemPrompt }
-  ];
-
-  // Keep up to 6 turns of history for multi-turn conversational context
-  const recentHistory = history.slice(-6).map(m => ({
+  const recentHistory = history.slice(-8).map(m => ({
     role: m.role as 'user' | 'assistant',
     content: m.content
   }));
 
-  // Call Google Gemini API with multi-key auto-rolling
   return await callGeminiWithKeyRotation({
     systemPrompt,
     messages: recentHistory,
     userPrompt: userQuery,
     preferredModel: 'gemini-3.5-flash',
-    temperature: 0.2,
+    temperature: 0.15,
     maxTokens: 8192
   });
 };

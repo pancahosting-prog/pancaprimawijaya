@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, ArrowLeft, Trash2, Copy, Check, Sparkles, 
   Bot, User, Download, Mic, Square, Volume2, VolumeX,
-  AlertCircle, Radio, CheckCircle2, XCircle
+  AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -44,7 +44,7 @@ const TypewriterText: React.FC<{
     setIsTyping(true);
     let currLength = 0;
     const totalLength = content.length;
-    const chunkSize = Math.max(3, Math.floor(totalLength / 80));
+    const chunkSize = Math.max(5, Math.floor(totalLength / 50));
 
     const interval = setInterval(() => {
       currLength += chunkSize;
@@ -56,14 +56,60 @@ const TypewriterText: React.FC<{
       } else {
         setDisplayedText(content.slice(0, currLength));
       }
-    }, 15);
+    }, 12);
 
     return () => clearInterval(interval);
   }, [content, isNew]);
 
   return (
     <div className="relative overflow-x-auto">
-      <Markdown remarkPlugins={[remarkGfm]}>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          table: ({ children }) => (
+            <div className="my-3 overflow-x-auto rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs">
+              <table className="min-w-full divide-y divide-slate-200 dark:divide-zinc-800 text-xs text-left">
+                {children}
+              </table>
+            </div>
+          ),
+          thead: ({ children }) => (
+            <thead className="bg-slate-100/90 dark:bg-zinc-800/80 text-slate-700 dark:text-zinc-200 font-extrabold uppercase tracking-wider text-[11px]">
+              {children}
+            </thead>
+          ),
+          tbody: ({ children }) => (
+            <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60 bg-white dark:bg-zinc-900">
+              {children}
+            </tbody>
+          ),
+          tr: ({ children }) => (
+            <tr className="hover:bg-slate-50/80 dark:hover:bg-zinc-800/50 transition-colors">
+              {children}
+            </tr>
+          ),
+          th: ({ children }) => (
+            <th className="px-3.5 py-2.5 font-bold text-slate-800 dark:text-zinc-200 border-b border-slate-200/80 dark:border-zinc-800 whitespace-nowrap">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="px-3.5 py-2.5 text-slate-700 dark:text-zinc-300 align-top whitespace-nowrap">
+              {children}
+            </td>
+          ),
+          ul: ({ children }) => <ul className="list-disc list-inside my-2 space-y-1">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal list-inside my-2 space-y-1">{children}</ol>,
+          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+          p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+          strong: ({ children }) => <strong className="font-extrabold text-slate-900 dark:text-zinc-100">{children}</strong>,
+          code: ({ children }) => (
+            <code className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-violet-600 dark:text-violet-400 font-mono text-[11px] border border-slate-200/60 dark:border-zinc-700/60">
+              {children}
+            </code>
+          )
+        }}
+      >
         {displayedText}
       </Markdown>
       {isTyping && (
@@ -156,6 +202,125 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     step: number;
     data: Record<string, any>;
   } | null>(null);
+
+  // Search box states for interactive form wizards
+  const [wizardCustSearch, setWizardCustSearch] = useState('');
+  const [wizardProdSearch, setWizardProdSearch] = useState('');
+  const [wizardProdQty, setWizardProdQty] = useState(1);
+
+  // Helper to update active form state dynamically
+  const updateActiveData = (field: string, val: any) => {
+    setActiveSession(prev => prev ? {
+      ...prev,
+      data: { ...prev.data, [field]: val }
+    } : null);
+  };
+
+  // Helper to directly save CRM form input to state & Supabase
+  const handleDirectSaveFromForm = () => {
+    if (!activeSession) return;
+    const { type, data } = activeSession;
+    const isQuote = type === 'penawaran';
+    const activeCompanyId = activeCompany?.id || '1';
+
+    if (type === 'customer') {
+      const name = data.nama?.trim() || 'Customer Baru';
+      const wa = data.whatsapp?.trim() || '08123456789';
+      const city = data.kota?.trim() || 'Surabaya';
+      const salesName = data.sales || currentUser?.nama || 'General Sales';
+
+      const newCust = {
+        id: 'CUST-' + Date.now(),
+        nama: name,
+        perusahaan: name,
+        whatsapp: wa,
+        phone: wa,
+        kota: city,
+        sales: salesName,
+        leadType: data.leadType || 'Belum Transaksi',
+        pic: name,
+        companyId: activeCompanyId,
+        company_id: activeCompanyId,
+        createdAt: new Date().toISOString()
+      };
+
+      if (setCustomers) setCustomers(prev => [newCust, ...prev]);
+      if (syncToSupabase) syncToSupabase('customers', newCust);
+
+      playTone(800, 0.15);
+      const successMsg: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `### ✅ DATA CUSTOMER BERHASIL DISIMPAN KE DATABASE MYPANCA!\n\n| Field Customer | Data Tersimpan |\n|---|---|\n| **Nama Pelanggan** | **${newCust.nama}** |\n| **WhatsApp / Telp** | **${newCust.whatsapp}** |\n| **Kota / Wilayah** | **${newCust.kota}** |\n| **Sales Penanggung Jawab** | **${newCust.sales}** |\n| **Status Lead** | **${newCust.leadType}** |\n\nData pelanggan telah aktif dan siap digunakan untuk transaksi/penawaran selanjutnya! 🎉`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setMessages(prev => [...prev, successMsg]);
+      setActiveSession(null);
+      setWizardCustSearch('');
+      return;
+    }
+
+    // Transaction or Penawaran
+    const items = data.items && data.items.length > 0 ? data.items : [
+      { produkId: 'PROD-' + Date.now(), kode: 'SKU-CUSTOM', nama: 'Produk Transaksi', harga: 100000, qty: 1, diskon: 0 }
+    ];
+
+    const subtotal = items.reduce((sum: number, it: any) => sum + (it.harga * it.qty) - (it.diskon || 0), 0);
+    const ppnAmt = data.ppn ? Math.round(subtotal * 0.11) : 0;
+    const ongkirAmt = data.ongkir ? (Number(data.biayaOngkir) || 0) : 0;
+    const grandTotal = subtotal + ppnAmt + ongkirAmt;
+
+    const docNo = (isQuote ? 'QUO-' : 'PP-') + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000);
+    const payStatus = isQuote ? 'Penawaran' : (data.paymentStatus || 'Belum Lunas');
+    const dpAmt = payStatus === 'Lunas' ? grandTotal : (Number(data.dpAmt) || 0);
+    const sisaPay = Math.max(0, grandTotal - dpAmt);
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const newTrx = {
+      id: docNo,
+      noTrx: docNo,
+      customerName: data.customerName || 'Pelanggan Umum',
+      tanggal: todayStr,
+      total: grandTotal,
+      nilaiProyek: grandTotal,
+      items: items,
+      ppn: Boolean(data.ppn),
+      ongkir: Boolean(data.ongkir),
+      biayaOngkir: ongkirAmt,
+      jasaKirim: data.jasaKirim || 'JNE',
+      status: isQuote ? 'Penawaran' : 'Selesai',
+      paymentStatus: payStatus,
+      pembayaranDiterima: dpAmt,
+      sisaPembayaran: sisaPay,
+      sales: currentUser?.nama || 'General Sales',
+      keterangan: data.keterangan || 'Input via Panca AI Assistant',
+      companyId: activeCompanyId,
+      company_id: activeCompanyId,
+      createdAt: new Date().toISOString()
+    };
+
+    if (setTransactions) setTransactions(prev => [newTrx, ...prev]);
+    if (syncToSupabase) syncToSupabase('transactions', newTrx);
+
+    playTone(880, 0.2);
+
+    let itemsTable = `| No | SKU | Nama Produk | Qty | Harga | Subtotal |\n|---|---|---|---|---|---|\n`;
+    items.forEach((it: any, i: number) => {
+      itemsTable += `| ${i + 1} | ${it.kode || '-'} | **${it.nama}** | ${it.qty} unit | Rp ${(it.harga || 0).toLocaleString('id-ID')} | **Rp ${(((it.harga || 0) * it.qty) - (it.diskon || 0)).toLocaleString('id-ID')}** |\n`;
+    });
+
+    const successMsg: Message = {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: `### 🎉 ${isQuote ? 'PENAWARAN HARGA' : 'TRANSAKSI PENJUALAN'} BERHASIL DISIMPAN KE DATABASE MYPANCA!\n\n| Detail Dokumen | Data Terdaftar |\n|---|---|\n| **No. Dokumen** | **${docNo}** (Resmi) |\n| **Pelanggan** | **${newTrx.customerName}** |\n| **Subtotal Produk** | **Rp ${subtotal.toLocaleString('id-ID')}** |\n| **PPN 11%** | **${data.ppn ? `Rp ${ppnAmt.toLocaleString('id-ID')}` : 'Tidak PPN'}** |\n| **Biaya Kirim** | **Rp ${ongkirAmt.toLocaleString('id-ID')}** (${newTrx.jasaKirim}) |\n| **GRAND TOTAL** | **Rp ${grandTotal.toLocaleString('id-ID')}** |\n| **Status Pembayaran** | **${payStatus}** (Diterima: Rp ${dpAmt.toLocaleString('id-ID')}, Sisa: Rp ${sisaPay.toLocaleString('id-ID')}) |\n| **Sales Representative** | **${newTrx.sales}** |\n\n**Rincian Barang:**\n${itemsTable}\n\nDokumen transaksi telah resmi terdata di CRM MyPanca & Supabase! 🚀`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setMessages(prev => [...prev, successMsg]);
+    setActiveSession(null);
+    setWizardCustSearch('');
+    setWizardProdSearch('');
+  };
 
   // Voice Speech-to-Text states
   const [isListening, setIsListening] = useState(false);
@@ -630,117 +795,207 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       }
     }
 
-    // 2. TRANSACTION GUIDED WIZARD
-    if (activeSession.type === 'transaction') {
+    // 2. TRANSACTION & PENAWARAN GUIDED WIZARD
+    if (activeSession.type === 'transaction' || activeSession.type === 'penawaran') {
+      const isQuote = activeSession.type === 'penawaran';
+
+      // STEP 1: CUSTOMER SEARCH FROM DATABASE
       if (activeSession.step === 1) {
-        data.customerName = userText.trim();
-        return {
-          responseText: `### 🛍️ Input Transaksi Penjualan Baru (Langkah 2 dari 4)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n\nSelanjutnya, **Item Produk / Barang** apa yang dibeli?\n*(Contoh: Fumiphos 5 box)*`,
-          nextSession: { type: 'transaction', step: 2, data }
-        };
-      }
+        const searchTerm = userText.trim().toLowerCase();
+        const matchedCust = customers.find(c => c.nama?.toLowerCase().includes(searchTerm) || c.perusahaan?.toLowerCase().includes(searchTerm));
+        const custName = matchedCust ? matchedCust.nama : userText.trim();
+        data.customerName = custName;
+        data.isNewCustomer = !matchedCust;
+        data.items = [];
 
-      if (activeSession.step === 2) {
-        data.productName = userText.trim();
-        return {
-          responseText: `### 🛍️ Input Transaksi Penjualan Baru (Langkah 3 dari 4)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n- **Produk Dibeli**: **${data.productName}** ✅\n\nSelanjutnya, berapa **Total Nominal Transaksi (Rp)**?\n*(Contoh: 15.000.000 atau 15 juta)*`,
-          nextSession: { type: 'transaction', step: 3, data }
-        };
-      }
-
-      if (activeSession.step === 3) {
-        let totalAmt = 1000000;
-        const rawAmt = userText.toLowerCase().trim();
-        if (rawAmt.includes('juta') || rawAmt.includes('jt')) {
-          const num = parseFloat(rawAmt.replace(/[^0-9.]/g, ''));
-          if (!isNaN(num)) totalAmt = num * 1000000;
-        } else {
-          const num = parseFloat(rawAmt.replace(/[^0-9]/g, ''));
-          if (!isNaN(num) && num > 0) totalAmt = num;
+        // Show available top products with real stock info
+        let prodListStr = '';
+        if (products.length > 0) {
+          prodListStr = `\n\n**📦 Katalog Produk & Sisa Stok Gudang Currently Available:**\n`;
+          prodListStr += `| No | Kode / SKU | Nama Produk | Sisa Stok | Harga Jual |\n|---|---|---|---|---|\n`;
+          products.slice(0, 6).forEach((p, idx) => {
+            prodListStr += `| ${idx + 1} | **${p.kode || p.id}** | **${p.nama}** | ${p.stok || 0} ${p.satuan || 'unit'} | Rp ${(p.hargaJual || 0).toLocaleString('id-ID')} |\n`;
+          });
         }
 
-        data.totalAmount = totalAmt;
         return {
-          responseText: `### 🛍️ Input Transaksi Penjualan Baru (Langkah 4 dari 4)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n- **Produk Dibeli**: **${data.productName}** ✅\n- **Total Nominal**: **Rp ${data.totalAmount.toLocaleString('id-ID')}** ✅\n\nTerakhir! Apakah status pembayaran transaksi ini **Lunas** atau **Belum Lunas**?\n*(Ketik \`Lunas\` atau \`Belum Lunas\`)*`,
+          responseText: `### ${isQuote ? '📋' : '🛍️'} Input ${isQuote ? 'Penawaran' : 'Transaksi'} (Langkah 2: Pilih Produk)\n\n- **Pelanggan**: **${data.customerName}** ${matchedCust ? '✅ *(Pelanggan Terdaftar di Database)*' : '📌 *(Pelanggan Baru)*'}${prodListStr}\n\nSilakan masukkan **Nama / Kode Produk** dan **Jumlah (Qty)**:\n*(Contoh: \`Fumiphos, 5 box\` atau \`Phostoxin 2\`)*`,
+          nextSession: { type: activeSession.type, step: 2, data }
+        };
+      }
+
+      // STEP 2: MULTI-PRODUCT SELECTION WITH STOCK & PRICE LOOKUP
+      if (activeSession.step === 2) {
+        const inputLower = userText.trim().toLowerCase();
+
+        // Check if user wants to finish adding products
+        if (data.items?.length > 0 && (inputLower === 'lanjut' || inputLower === 'selesai' || inputLower === 'sudah' || inputLower === 'tidak' || inputLower === 'next')) {
+          if (isQuote) {
+            // Quotes jump directly to notes / summary
+            const todayStr = new Date().toISOString().split('T')[0];
+            const itemsSubtotal = data.items.reduce((sum: number, it: any) => sum + (it.harga * it.qty), 0);
+            
+            const draftPayload = {
+              noTrx: 'QUO-' + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000),
+              customerName: data.customerName,
+              tanggal: todayStr,
+              total: itemsSubtotal,
+              status: 'Penawaran',
+              paymentStatus: 'Belum Lunas',
+              sales: currentUser?.nama || 'General Sales',
+              items: data.items
+            };
+
+            let itemsTableStr = `| No | Nama Produk | Qty | Harga Satuan | Subtotal |\n|---|---|---|---|---|\n`;
+            data.items.forEach((it: any, idx: number) => {
+              itemsTableStr += `| ${idx + 1} | **${it.nama}** | ${it.qty} unit | Rp ${it.harga.toLocaleString('id-ID')} | **Rp ${(it.harga * it.qty).toLocaleString('id-ID')}** |\n`;
+            });
+
+            return {
+              responseText: `### 📝 PRATINJAU DRAFT FORM PENAWARAN HARGA (SIAP DISIMPAN)\n\nSeluruh data penawaran telah terkumpul:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **No. Penawaran** | **${draftPayload.noTrx}** | 🟢 Auto-Generate |\n| **Pelanggan** | **${data.customerName}** | ${data.isNewCustomer ? '📌 Pelanggan Baru' : '✅ Terdaftar'} |\n| **Jumlah Item** | **${data.items.length} Produk** | ✅ Valid |\n| **Total Nilai Penawaran** | **Rp ${itemsSubtotal.toLocaleString('id-ID')}** | ✅ Sesuai Katalog |\n| **Sales** | **${draftPayload.sales}** | ✅ Terhubung |\n\n**Rincian Produk Ditawarkan:**\n${itemsTableStr}\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
+              draftData: {
+                type: 'penawaran',
+                payload: draftPayload,
+                isSaved: false
+              },
+              nextSession: null
+            };
+          }
+
+          // Move to Step 3: Biaya Ongkir & Ekspedisi for Transactions
+          return {
+            responseText: `### 🚚 Biaya Ongkir & Jasa Ekspedisi (Langkah 3 dari 5)\n\n- **Pelanggan**: **${data.customerName}** ✅\n- **Total ${data.items.length} Item Produk**: Subtotal Rp ${data.items.reduce((s: number, i: any) => s + (i.harga * i.qty), 0).toLocaleString('id-ID')} ✅\n\nBerapa **Biaya Ongkir (Rp)** dan **Nama Jasa Ekspedisi / Kurir**?\n*(Contoh: \`50000, JNE\` atau ketik \`0\` jika gratis ongkir)*`,
+            nextSession: { type: 'transaction', step: 3, data }
+          };
+        }
+
+        // Parse product input
+        const parts = userText.split(',').map(s => s.trim());
+        const prodQuery = parts[0].toLowerCase();
+        const qtyMatch = userText.match(/\b(\d+)\b/);
+        const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+
+        // Match product from database catalog
+        const matchedProd = products.find(p => p.nama?.toLowerCase().includes(prodQuery) || p.kode?.toLowerCase().includes(prodQuery));
+        
+        const prodName = matchedProd ? matchedProd.nama : parts[0];
+        const prodCode = matchedProd ? matchedProd.kode : 'SKU-CUSTOM';
+        const prodPrice = matchedProd ? (matchedProd.hargaJual || 100000) : 100000;
+        const prodStock = matchedProd ? (matchedProd.stok || 0) : 100;
+
+        const newItem = {
+          produkId: matchedProd ? matchedProd.id : 'PROD-' + Date.now(),
+          nama: prodName,
+          kode: prodCode,
+          harga: prodPrice,
+          qty: qty,
+          diskon: 0
+        };
+
+        const existingItems = data.items || [];
+        const updatedItems = [...existingItems, newItem];
+        data.items = updatedItems;
+
+        let itemsSummary = `**Daftar Item Produk Terpilih (${updatedItems.length} Item):**\n`;
+        updatedItems.forEach((it: any, idx: number) => {
+          itemsSummary += `- Item ${idx + 1}: **${it.nama}** (${it.qty} unit @ Rp ${it.harga.toLocaleString('id-ID')} = Rp ${(it.harga * it.qty).toLocaleString('id-ID')})\n`;
+        });
+
+        return {
+          responseText: `### 🛍️ Item Produk Berhasil Ditambahkan!\n\n${itemsSummary}\n*(Catatan Stok: **${prodName}** sisa ${prodStock} unit di gudang)*\n\nApakah ada **produk lain** yang ingin ditambahkan ke ${isQuote ? 'penawaran' : 'transaksi'} ini?\n\n- Ketik **Nama Produk Selanjutnya** (Contoh: \`Phostoxin 2 box\`)\n- ATAU Ketik **\`Lanjut\`** jika produk sudah selesai.`,
+          nextSession: { type: activeSession.type, step: 2, data }
+        };
+      }
+
+      // STEP 3: BIAYA ONGKIR & EKSPEDISI (TRANSACTION)
+      if (activeSession.step === 3) {
+        let ongkirAmt = 0;
+        let jasaKirim = 'JNE / Ekspedisi';
+
+        const parts = userText.split(',').map(s => s.trim());
+        const numMatch = userText.replace(/[^0-9]/g, '');
+        if (numMatch) {
+          ongkirAmt = parseInt(numMatch, 10) || 0;
+        }
+        if (parts.length >= 2) {
+          jasaKirim = parts[1];
+        } else if (userText.toLowerCase().includes('jne')) jasaKirim = 'JNE';
+        else if (userText.toLowerCase().includes('sicepat')) jasaKirim = 'SiCepat';
+        else if (userText.toLowerCase().includes('j&t')) jasaKirim = 'J&T';
+
+        data.biayaOngkir = ongkirAmt;
+        data.jasaKirim = jasaKirim;
+
+        return {
+          responseText: `### 📄 Pajak PPN 11% (Langkah 4 dari 5)\n\n- **Biaya Ongkir**: **Rp ${ongkirAmt.toLocaleString('id-ID')}** (${jasaKirim}) ✅\n\nApakah transaksi ini dikenakan **Pajak PPN 11%**?\n*(Ketik \`Ya\` atau \`Tidak\`)*`,
           nextSession: { type: 'transaction', step: 4, data }
         };
       }
 
+      // STEP 4: PAJAK PPN 11% (TRANSACTION)
       if (activeSession.step === 4) {
-        const isPaid = userText.toLowerCase().includes('lunas') && !userText.toLowerCase().includes('belum');
-        data.paymentStatus = isPaid ? 'Lunas' : 'Belum Lunas';
-        const todayStr = new Date().toISOString().split('T')[0];
+        const isPpn = userText.toLowerCase().includes('ya') || userText.toLowerCase().includes('ppn') || userText.toLowerCase().includes('11');
+        data.ppn = isPpn;
 
-        const draftPayload = {
-          noTrx: 'TRX-' + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000),
-          customerName: data.customerName,
-          tanggal: todayStr,
-          total: data.totalAmount,
-          status: 'Selesai',
-          paymentStatus: data.paymentStatus,
-          sales: currentUser?.nama || 'General Sales',
-          items: [{ nama: data.productName, qty: 1, harga: data.totalAmount }]
-        };
+        const subtotal = data.items.reduce((sum: number, it: any) => sum + (it.harga * it.qty), 0);
+        const ppnAmt = isPpn ? Math.round(subtotal * 0.11) : 0;
+        const grandTotal = subtotal + (data.biayaOngkir || 0) + ppnAmt;
+        data.grandTotal = grandTotal;
 
         return {
-          responseText: `### 📝 PRATINJAU DRAFT FORM TRANSAKSI PENJUALAN (SIAP DISIMPAN)\n\nSeluruh data transaksi telah berhasil terkumpul:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **No. Transaksi** | **${draftPayload.noTrx}** | 🟢 Auto-Generate |\n| **Nama Pelanggan** | **${data.customerName}** | ✅ Valid |\n| **Item Produk** | **${data.productName}** | ✅ Valid |\n| **Total Nominal** | **Rp ${data.totalAmount.toLocaleString('id-ID')}** | ✅ Valid |\n| **Status Pembayaran** | **${data.paymentStatus}** | 💳 Tervalidasi |\n| **Sales** | **${draftPayload.sales}** | ✅ Terhubung |\n\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
-          draftData: {
-            type: 'transaction',
-            payload: draftPayload,
-            isSaved: false
-          },
-          nextSession: null
-        };
-      }
-    }
-
-    // 3. PENAWARAN GUIDED WIZARD
-    if (activeSession.type === 'penawaran') {
-      if (activeSession.step === 1) {
-        data.customerName = userText.trim();
-        return {
-          responseText: `### 📋 Input Penawaran Harga Baru (Langkah 2 dari 3)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n\nSelanjutnya, **Item / Produk** apa yang ditawarkan?\n*(Contoh: Fumiphos 5 box)*`,
-          nextSession: { type: 'penawaran', step: 2, data }
+          responseText: `### 💳 Status Pembayaran & Pembayaran Diterima (Langkah 5 dari 5)\n\n- **Subtotal Produk**: **Rp ${subtotal.toLocaleString('id-ID')}** ✅\n- **Pajak PPN 11%**: **${isPpn ? `Rp ${ppnAmt.toLocaleString('id-ID')}` : 'Tanpa PPN'}** ✅\n- **Grand Total Transaksi**: **Rp ${grandTotal.toLocaleString('id-ID')}** ✅\n\nTerakhir! Apakah status pembayaran transaksi ini **Lunas**, **Belum Lunas**, atau **DP / Pembayaran Parsial**?\n*(Jika DP, masukkan nominal DP. Contoh: \`DP 5.000.000\` atau \`Lunas\`)*`,
+          nextSession: { type: 'transaction', step: 5, data }
         };
       }
 
-      if (activeSession.step === 2) {
-        data.productName = userText.trim();
-        return {
-          responseText: `### 📋 Input Penawaran Harga Baru (Langkah 3 dari 3)\n\n- **Nama Pelanggan**: **${data.customerName}** ✅\n- **Produk Ditawarkan**: **${data.productName}** ✅\n\nSelanjutnya, berapa **Total Nilai Penawaran (Rp)**?\n*(Contoh: 8.000.000 atau 8 juta)*`,
-          nextSession: { type: 'penawaran', step: 3, data }
-        };
-      }
+      // STEP 5: STATUS PEMBAYARAN & FINAL DRAFT GENERATION
+      if (activeSession.step === 5) {
+        const lowerInput = userText.toLowerCase();
+        const isPaid = lowerInput.includes('lunas') && !lowerInput.includes('belum') && !lowerInput.includes('dp');
+        let dpAmt = 0;
 
-      if (activeSession.step === 3) {
-        let totalAmt = 1000000;
-        const rawAmt = userText.toLowerCase().trim();
-        if (rawAmt.includes('juta') || rawAmt.includes('jt')) {
-          const num = parseFloat(rawAmt.replace(/[^0-9.]/g, ''));
-          if (!isNaN(num)) totalAmt = num * 1000000;
-        } else {
-          const num = parseFloat(rawAmt.replace(/[^0-9]/g, ''));
-          if (!isNaN(num) && num > 0) totalAmt = num;
+        if (lowerInput.includes('dp') || lowerInput.includes('uang muka') || lowerInput.includes('parsial')) {
+          const numMatch = userText.replace(/[^0-9]/g, '');
+          if (numMatch) dpAmt = parseInt(numMatch, 10) || 0;
+        } else if (isPaid) {
+          dpAmt = data.grandTotal;
         }
 
-        data.totalAmount = totalAmt;
+        const payStatus = isPaid ? 'Lunas' : (dpAmt > 0 ? 'DP / Parsial' : 'Belum Lunas');
+        const sisaPay = Math.max(0, data.grandTotal - dpAmt);
         const todayStr = new Date().toISOString().split('T')[0];
 
+        const subtotal = data.items.reduce((sum: number, it: any) => sum + (it.harga * it.qty), 0);
+        const ppnAmt = data.ppn ? Math.round(subtotal * 0.11) : 0;
+
         const draftPayload = {
-          noTrx: 'QUO-' + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000),
+          noTrx: 'PP-' + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000),
           customerName: data.customerName,
           tanggal: todayStr,
-          total: data.totalAmount,
-          status: 'Penawaran',
-          paymentStatus: 'Belum Lunas',
+          total: data.grandTotal,
+          nilaiProyek: data.grandTotal,
+          items: data.items,
+          ppn: data.ppn,
+          ongkir: (data.biayaOngkir || 0) > 0,
+          biayaOngkir: data.biayaOngkir || 0,
+          jasaKirim: data.jasaKirim || 'Ekspedisi',
+          status: 'Selesai',
+          paymentStatus: payStatus,
+          pembayaranDiterima: dpAmt,
+          sisaPembayaran: sisaPay,
           sales: currentUser?.nama || 'General Sales',
-          items: [{ nama: data.productName, qty: 1, harga: data.totalAmount }]
+          keterangan: 'Input via Panca AI Assistant'
         };
 
+        let itemsTableStr = `| No | Kode SKU | Nama Produk | Qty | Harga Satuan | Subtotal |\n|---|---|---|---|---|---|\n`;
+        data.items.forEach((it: any, idx: number) => {
+          itemsTableStr += `| ${idx + 1} | ${it.kode} | **${it.nama}** | ${it.qty} unit | Rp ${it.harga.toLocaleString('id-ID')} | **Rp ${(it.harga * it.qty).toLocaleString('id-ID')}** |\n`;
+        });
+
         return {
-          responseText: `### 📝 PRATINJAU DRAFT FORM PENAWARAN HARGA (SIAP DISIMPAN)\n\nSeluruh data penawaran telah berhasil terkumpul:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **No. Penawaran** | **${draftPayload.noTrx}** | 🟢 Auto-Generate |\n| **Nama Pelanggan** | **${data.customerName}** | ✅ Valid |\n| **Item Produk** | **${data.productName}** | ✅ Valid |\n| **Total Nilai Penawaran** | **Rp ${data.totalAmount.toLocaleString('id-ID')}** | ✅ Valid |\n| **Status** | **Penawaran Berjalan** | 📌 Default |\n| **Sales** | **${draftPayload.sales}** | ✅ Terhubung |\n\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
+          responseText: `### 📝 PRATINJAU DRAFT FORM TRANSAKSI PENJUALAN (SIAP DISIMPAN)\n\nSeluruh data transaksi telah lengkap terverifikasi:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **No. Transaksi** | **${draftPayload.noTrx}** | 🟢 Auto-Generate (PP-..)\n| **Nama Pelanggan** | **${data.customerName}** | ${data.isNewCustomer ? '📌 Pelanggan Baru' : '✅ Terdaftar di Database'} |\n| **Rincian Item** | **${data.items.length} Jenis Produk** | ✅ Sesuai Katalog |\n| **Subtotal Produk** | **Rp ${subtotal.toLocaleString('id-ID')}** | ✅ Terhitung |\n| **Biaya Ongkir** | **Rp ${(data.biayaOngkir || 0).toLocaleString('id-ID')}** (${data.jasaKirim}) | ✅ Valid |\n| **Pajak PPN (11%)** | **${data.ppn ? `Rp ${ppnAmt.toLocaleString('id-ID')}` : 'Tidak Ada (0%)'}** | 📄 Terhitung |\n| **GRAND TOTAL TRANSAKSI** | **Rp ${data.grandTotal.toLocaleString('id-ID')}** | 💰 Total Akhir |\n| **Status Pembayaran** | **${payStatus}** | 💳 Pembayaran Diterima: Rp ${dpAmt.toLocaleString('id-ID')} (Sisa: Rp ${sisaPay.toLocaleString('id-ID')}) |\n| **Sales Penanggung Jawab** | **${draftPayload.sales}** | ✅ Terhubung |\n\n**Rincian Barang Diproses:**\n${itemsTableStr}\n---\n⚠️ **Silakan periksa kembali data transaksi di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan secara resmi ke database MyPanca!`,
           draftData: {
-            type: 'penawaran',
+            type: 'transaction',
             payload: draftPayload,
             isSaved: false
           },
@@ -756,112 +1011,85 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const handleCommandOrIntent = (text: string): { responseText: string; draftData?: DraftData; nextSession?: typeof activeSession } | null => {
     const lower = text.toLowerCase().trim();
 
-    // 1. Customer Input / Creation
-    if (
+    // 1. Customer Input / Creation Intent
+    const isCustomerIntent = 
       lower.startsWith('/input customer') || lower.startsWith('input customer') ||
       lower.startsWith('/tambah customer') || lower.startsWith('tambah customer') ||
-      lower === 'tambah customer baru' || lower === 'customer baru'
-    ) {
+      lower.includes('tambah customer') || lower.includes('input customer') ||
+      lower === 'tambah customer baru' || lower === 'customer baru';
+
+    if (isCustomerIntent) {
       const prefixRegex = /^(\/input customer|input customer|\/tambah customer|tambah customer|tambah customer baru|customer baru)/i;
       const rawData = text.replace(prefixRegex, '').trim();
+      const parts = rawData.split(',').map(s => s.trim()).filter(Boolean);
 
-      if (!rawData) {
-        return {
-          responseText: `### 👥 Input Customer Baru (Langkah 1 dari 3)\n\nMari kita isi data customer baru satu per satu!\n\nSilakan masukkan **Nama Pelanggan / Perusahaan**:\n*(Contoh: PT Jaya Abadi)*\n\n*(Ketik \`batal\` jika ingin membatalkan)*`,
-          nextSession: { type: 'customer', step: 1, data: {} }
-        };
-      }
-
-      const parts = rawData.split(',').map(s => s.trim());
-      const waMatch = rawData.match(/(?:wa|phone|hp|telp|whatsapp)[\s:]*([0-9\-\+\s]{9,15})/i) || rawData.match(/\b(08[0-9\s\-]{8,13})\b/);
-      
-      const name = parts[0] || 'Customer Baru';
-      const wa = waMatch?.[1]?.replace(/[^0-9]/g, '') || parts.find(p => /08[0-9]{8,}/.test(p)) || '08123456789';
-      const city = parts.find(p => !p.includes('08') && !p.toLowerCase().includes('sales') && !p.toLowerCase().includes('pic') && p !== parts[0]) || 'Surabaya';
-      const salesName = currentUser?.nama || 'General Sales';
-      const picName = name;
-
-      const draftPayload = {
-        nama: name,
-        perusahaan: name,
-        whatsapp: wa,
-        phone: wa,
-        kota: city,
-        sales: salesName,
-        pic: picName,
-        leadType: 'Belum Transaksi'
-      };
+      const initName = parts[0] || '';
+      const initWa = parts.find(p => /08[0-9]{8,}/.test(p)) || '';
+      const initCity = parts.find(p => p !== initName && !p.includes('08')) || '';
 
       return {
-        responseText: `### 📝 DRAFT FORM CUSTOMER BARU (BRM CONTACTS)\n\nAI telah mengekstrak parameter data sesuai Form Asli MyPanca:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **Nama Customer** | **${name}** | ✅ Valid |\n| **No. WA / Telepon** | **${wa}** | ✅ Valid |\n| **Kota / Wilayah** | **${city}** | ✅ Valid |\n| **Sales Penanggung Jawab** | **${salesName}** | ✅ Terhubung |\n| **Status Lead** | **Belum Transaksi** | 🟢 Aktif |\n\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
-        draftData: {
+        responseText: `### 👤 Form CRM Customer Baru\n\nSilakan isi data pelanggan baru pada **Form CRM Interactive** di bawah ini:`,
+        nextSession: {
           type: 'customer',
-          payload: draftPayload,
-          isSaved: false
-        },
-        nextSession: null
+          step: 1,
+          data: {
+            nama: initName,
+            perusahaan: initName,
+            whatsapp: initWa,
+            kota: initCity,
+            sales: currentUser?.nama || 'General Sales',
+            leadType: 'Belum Transaksi'
+          }
+        }
       };
     }
 
-    // 2. Transaksi / Penawaran Input
-    if (
+    // 2. Transaksi / Penawaran Input Intent
+    const isTrxIntent = 
       lower.startsWith('/input transaksi') || lower.startsWith('input transaksi') ||
       lower.startsWith('/input penawaran') || lower.startsWith('input penawaran') ||
       lower.startsWith('/tambah transaksi') || lower.startsWith('tambah transaksi') ||
       lower.startsWith('/tambah penawaran') || lower.startsWith('tambah penawaran') ||
+      lower.includes('tambah transaksi') || lower.includes('tambah penawaran') ||
       lower === 'transaksi baru' || lower === 'tambah transaksi baru' ||
-      lower === 'penawaran baru' || lower === 'tambah penawaran baru'
-    ) {
+      lower === 'penawaran baru' || lower === 'tambah penawaran baru';
+
+    if (isTrxIntent) {
       const isQuote = lower.includes('penawaran');
       const prefixRegex = /^(\/input transaksi|input transaksi|\/input penawaran|input penawaran|\/tambah transaksi|tambah transaksi|\/tambah penawaran|tambah penawaran|tambah transaksi baru|transaksi baru|tambah penawaran baru|penawaran baru)/i;
       const rawData = text.replace(prefixRegex, '').trim();
+      const parts = rawData.split(',').map(s => s.trim()).filter(Boolean);
 
-      if (!rawData) {
-        return {
-          responseText: `### ${isQuote ? '📋 Input Penawaran Harga Baru' : '🛍️ Input Transaksi Penjualan Baru'} (Langkah 1 dari ${isQuote ? '3' : '4'})\n\nMari kita isi data ${isQuote ? 'penawaran' : 'transaksi'} baru satu per satu!\n\nSiapa **Nama Pelanggan** untuk ${isQuote ? 'penawaran' : 'transaksi'} ini?\n*(Contoh: PT Jaya Abadi)*\n\n*(Ketik \`batal\` jika ingin membatalkan)*`,
-          nextSession: { type: isQuote ? 'penawaran' : 'transaction', step: 1, data: {} }
-        };
-      }
+      const initCust = parts[0] || '';
+      const initProd = parts[1] || '';
 
-      const parts = rawData.split(',').map(s => s.trim());
-      const custName = parts[0] || 'Pelanggan Umum';
-      const prodName = parts[1] || 'Item Transaksi AI';
-      
-      const amtMatch = rawData.match(/(?:total|nominal|harga|rp)?\s*([0-9\.\,]+|[\d\s]+juta|[\d\s]+jt)/i);
-      let totalAmt = 1000000;
-      if (amtMatch?.[1]) {
-        const rawAmt = amtMatch[1].toLowerCase();
-        if (rawAmt.includes('juta') || rawAmt.includes('jt')) {
-          const num = parseFloat(rawAmt.replace(/[^0-9.]/g, ''));
-          if (!isNaN(num)) totalAmt = num * 1000000;
-        } else {
-          const num = parseFloat(rawAmt.replace(/[^0-9]/g, ''));
-          if (!isNaN(num) && num > 0) totalAmt = num;
-        }
-      }
-
-      const isPaid = lower.includes('lunas') && !lower.includes('belum lunas');
-      const todayStr = new Date().toISOString().split('T')[0];
-
-      const draftPayload = {
-        noTrx: (isQuote ? 'QUO-' : 'TRX-') + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000),
-        customerName: custName,
-        tanggal: todayStr,
-        total: totalAmt,
-        status: isQuote ? 'Penawaran' : 'Selesai',
-        paymentStatus: isPaid ? 'Lunas' : 'Belum Lunas',
-        sales: currentUser?.nama || 'General Sales',
-        items: [{ nama: prodName, qty: 1, harga: totalAmt }]
-      };
+      const initItems = initProd ? [{
+        produkId: 'PROD-' + Date.now(),
+        nama: initProd,
+        kode: 'SKU-AI',
+        harga: 100000,
+        qty: 1,
+        diskon: 0
+      }] : [];
 
       return {
-        responseText: `### 📝 DRAFT FORM ${isQuote ? 'PENAWARAN' : 'TRANSAKSI PENJUALAN'} BARU\n\nAI telah mengekstrak parameter data sesuai Form Asli MyPanca:\n\n| Field Form Asli | Nilai Terbaca | Status Validasi |\n|---|---|---|\n| **No. ${isQuote ? 'Penawaran' : 'Transaksi'}** | **${draftPayload.noTrx}** | 🟢 Auto-Generate |\n| **Nama Pelanggan** | **${custName}** | ✅ Valid |\n| **Item Produk** | **${prodName}** | ✅ Valid |\n| **Total Nominal** | **Rp ${totalAmt.toLocaleString('id-ID')}** | ✅ Valid |\n| **Status** | **${isQuote ? 'Penawaran Berjalan' : 'Selesai'}** | 📌 Status Fix |\n| **Status Pembayaran** | **${isPaid ? 'Lunas' : 'Belum Lunas'}** | 💳 Valid |\n| **Sales** | **${draftPayload.sales}** | ✅ Terhubung |\n\n---\n⚠️ **Silakan periksa kembali data di atas.** Klik tombol di bawah untuk mengonfirmasi dan menyimpan ke database MyPanca!`,
-        draftData: {
+        responseText: `### ${isQuote ? '📋 Form CRM Penawaran Harga Baru' : '🛍️ Form CRM Transaksi Penjualan Baru'}\n\nSilakan isi dan periksa rincian transaksi pada **Form CRM Interactive** di bawah ini:`,
+        nextSession: {
           type: isQuote ? 'penawaran' : 'transaction',
-          payload: draftPayload,
-          isSaved: false
-        },
-        nextSession: null
+          step: 1,
+          data: {
+            docType: isQuote ? 'penawaran' : 'transaction',
+            customerName: initCust,
+            items: initItems,
+            ppn: false,
+            ongkir: false,
+            biayaOngkir: 0,
+            jasaKirim: 'JNE',
+            paymentStatus: isQuote ? 'Penawaran' : 'Belum Lunas',
+            dpAmt: 0,
+            keterangan: 'Input via Panca AI Assistant'
+          }
+        }
       };
     }
 
@@ -906,17 +1134,25 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           return m;
         }));
       } else if (type === 'transaction' || type === 'penawaran') {
+        const isQuote = type === 'penawaran';
         const newTrx = {
-          id: 'TRX-' + Date.now(),
-          noTrx: payload.noTrx || ('TRX-' + Date.now()),
+          id: (isQuote ? 'QUO-' : 'PP-') + Date.now(),
+          noTrx: payload.noTrx || ((isQuote ? 'QUO-' : 'PP-') + Date.now()),
           customerName: payload.customerName,
           tanggal: payload.tanggal || new Date().toISOString().split('T')[0],
           total: payload.total || 1000000,
           nilaiProyek: payload.total || 1000000,
-          status: payload.status || 'Selesai',
+          items: payload.items || [{ produkId: 'P1', nama: 'Item AI', kode: 'SKU-AI', qty: 1, harga: payload.total || 1000000, diskon: 0 }],
+          ppn: Boolean(payload.ppn),
+          ongkir: Boolean(payload.ongkir),
+          biayaOngkir: payload.biayaOngkir || 0,
+          jasaKirim: payload.jasaKirim || 'Ekspedisi',
+          status: payload.status || (isQuote ? 'Penawaran' : 'Selesai'),
           paymentStatus: payload.paymentStatus || 'Belum Lunas',
+          pembayaranDiterima: payload.pembayaranDiterima || 0,
+          sisaPembayaran: payload.sisaPembayaran || 0,
           sales: payload.sales || currentUser?.nama || 'General Sales',
-          items: payload.items || [{ nama: 'Item AI', qty: 1, harga: payload.total || 1000000 }],
+          keterangan: payload.keterangan || 'Input via Panca AI Assistant',
           companyId: activeCompanyId,
           company_id: activeCompanyId,
           createdAt: new Date().toISOString()
@@ -929,7 +1165,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           if (m.id === messageId) {
             return {
               ...m,
-              content: m.content + `\n\n---\n🎉 **SUKSES TERSIMPAN KE DATABASE TRANSAKSI!**\n\nNomor **${newTrx.noTrx}** (${newTrx.customerName} - Rp ${newTrx.total.toLocaleString('id-ID')}) telah resmi tersimpan.`,
+              content: m.content + `\n\n---\n🎉 **SUKSES TERSIMPAN KE DATABASE ${isQuote ? 'PENAWARAN' : 'TRANSAKSI'}!**\n\nDokumen **${newTrx.noTrx}** (${newTrx.customerName} - Rp ${newTrx.total.toLocaleString('id-ID')}) telah resmi tersimpan ke database MyPanca.`,
               draftData: { ...m.draftData!, isSaved: true }
             };
           }
@@ -1269,6 +1505,490 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
               <span className="w-2 h-2 rounded-full bg-violet-500 animate-bounce [animation-delay:0.4s]" />
               <span className="text-xs text-slate-400 dark:text-zinc-400 font-medium ml-1">Mencari data sistem...</span>
             </div>
+          </div>
+        )}
+
+        {/* EMBEDDED INTERACTIVE CRM FORM CARD WHEN ACTIVE SESSION IS OPEN */}
+        {activeSession && (
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border-2 border-violet-500 shadow-2xl p-4 my-2 text-xs space-y-4 animate-in fade-in slide-in-from-bottom-3 duration-300">
+            {/* Header with Type Selector & Close Button */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+                <h4 className="font-extrabold text-slate-900 dark:text-zinc-100 text-sm tracking-tight">
+                  {activeSession.type === 'customer' 
+                    ? '👤 Form Input Customer Baru (CRM)' 
+                    : activeSession.type === 'penawaran'
+                      ? '📋 Form Input Penawaran Harga (QUO)'
+                      : '🛍️ Form Input Transaksi Penjualan (PP)'}
+                </h4>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveSession(null);
+                  setWizardCustSearch('');
+                  setWizardProdSearch('');
+                }}
+                className="p-1 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition cursor-pointer"
+                title="Tutup Form"
+              >
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            {/* FORM TYPE SWITCHER FOR TRANSACTIONS / PENAWARAN */}
+            {(activeSession.type === 'transaction' || activeSession.type === 'penawaran') && (
+              <div className="space-y-3">
+                {/* Switch Document Type */}
+                <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-zinc-800/80 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => updateActiveData('docType', 'transaction')}
+                    className={`flex-1 py-2 px-3 rounded-lg font-extrabold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      activeSession.type === 'transaction'
+                        ? 'bg-violet-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🛍️ Transaksi Penjualan (PP-..)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSession(prev => prev ? { ...prev, type: 'penawaran' } : null);
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-lg font-extrabold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      activeSession.type === 'penawaran'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>📋 Penawaran Harga (QUO-..)</span>
+                  </button>
+                </div>
+
+                {/* 1. CUSTOMER SEARCH & SELECTOR */}
+                <div className="space-y-1.5 bg-slate-50 dark:bg-zinc-950/60 p-3 rounded-xl border border-slate-200/80 dark:border-zinc-800">
+                  <label className="font-extrabold text-slate-800 dark:text-zinc-200 text-xs flex items-center gap-1.5">
+                    <User size={14} className="text-violet-600" />
+                    <span>Pilih Pelanggan / Customer (Search Database):</span>
+                  </label>
+
+                  {activeSession.data.customerName ? (
+                    <div className="flex items-center justify-between p-2.5 bg-violet-50 dark:bg-violet-950/80 border border-violet-200 dark:border-violet-800 rounded-xl text-violet-900 dark:text-violet-200 font-extrabold">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs">✅ {activeSession.data.customerName}</p>
+                        <p className="text-[10px] text-violet-600 dark:text-violet-400 font-normal">
+                          {customers.find(c => c.nama === activeSession.data.customerName)?.perusahaan || 'Pelanggan Terdaftar'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => updateActiveData('customerName', '')}
+                        className="text-[10px] text-rose-600 dark:text-rose-400 underline font-bold ml-2 cursor-pointer"
+                      >
+                        Ganti
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={wizardCustSearch}
+                          onChange={(e) => setWizardCustSearch(e.target.value)}
+                          placeholder="Cari nama pelanggan, perusahaan, atau whatsapp..."
+                          className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs font-medium focus:ring-2 focus:ring-violet-500 outline-none shadow-xs"
+                        />
+                      </div>
+
+                      <div className="max-h-36 overflow-y-auto space-y-1 custom-scrollbar">
+                        {customers
+                          .filter(c => 
+                            !wizardCustSearch || 
+                            c.nama?.toLowerCase().includes(wizardCustSearch.toLowerCase()) || 
+                            c.perusahaan?.toLowerCase().includes(wizardCustSearch.toLowerCase()) ||
+                            c.whatsapp?.includes(wizardCustSearch)
+                          )
+                          .slice(0, 6)
+                          .map((cust) => (
+                            <button
+                              key={cust.id || cust.nama}
+                              type="button"
+                              onClick={() => {
+                                updateActiveData('customerName', cust.nama);
+                                setWizardCustSearch('');
+                              }}
+                              className="w-full p-2 bg-white dark:bg-zinc-900 hover:bg-violet-100 dark:hover:bg-zinc-800 border border-slate-200 dark:border-zinc-800 rounded-xl text-left flex items-center justify-between transition cursor-pointer"
+                            >
+                              <div className="min-w-0 pr-2">
+                                <p className="font-extrabold text-slate-900 dark:text-zinc-100 text-xs truncate">{cust.nama}</p>
+                                <p className="text-[10px] text-slate-400 truncate">{cust.perusahaan || '-'} • {cust.kota || '-'} ({cust.whatsapp || '-'})</p>
+                              </div>
+                              <span className="px-2 py-0.5 bg-violet-600 text-white rounded-md text-[10px] font-bold">Pilih</span>
+                            </button>
+                          ))}
+
+                        {wizardCustSearch && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateActiveData('customerName', wizardCustSearch);
+                              setWizardCustSearch('');
+                            }}
+                            className="w-full p-2 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 border border-amber-300 text-amber-900 dark:text-amber-200 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Plus size={13} />
+                            <span>Gunakan "{wizardCustSearch}" sebagai Customer Baru</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. PRODUCT CATALOG SEARCH & BASKET */}
+                <div className="space-y-2.5 bg-slate-50 dark:bg-zinc-950/60 p-3 rounded-xl border border-slate-200/80 dark:border-zinc-800">
+                  <label className="font-extrabold text-slate-800 dark:text-zinc-200 text-xs flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Package size={14} className="text-violet-600" />
+                      <span>Keranjang Item Produk & Barang:</span>
+                    </span>
+                    <span className="text-[11px] font-extrabold text-violet-600 dark:text-violet-400 bg-violet-100 dark:bg-violet-950 px-2 py-0.5 rounded-full">
+                      {activeSession.data.items?.length || 0} Item
+                    </span>
+                  </label>
+
+                  {/* Basket Table */}
+                  {activeSession.data.items?.length > 0 ? (
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                      <table className="w-full text-left border-collapse text-[11px]">
+                        <thead className="bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-extrabold uppercase text-[10px]">
+                          <tr>
+                            <th className="p-2">Item</th>
+                            <th className="p-2 text-center">Qty</th>
+                            <th className="p-2 text-right">Harga</th>
+                            <th className="p-2 text-right">Subtotal</th>
+                            <th className="p-2 text-center">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
+                          {activeSession.data.items.map((it: any, idx: number) => (
+                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-zinc-800/40">
+                              <td className="p-2 font-extrabold text-slate-800 dark:text-zinc-100 max-w-[120px] truncate">
+                                {it.nama}
+                              </td>
+                              <td className="p-2 text-center">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={it.qty}
+                                  onChange={(e) => {
+                                    const newQty = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                    const updated = [...activeSession.data.items];
+                                    updated[idx].qty = newQty;
+                                    updateActiveData('items', updated);
+                                  }}
+                                  className="w-12 text-center bg-slate-100 dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 rounded-md py-0.5 font-bold"
+                                />
+                              </td>
+                              <td className="p-2 text-right font-medium">
+                                Rp {(it.harga || 0).toLocaleString('id-ID')}
+                              </td>
+                              <td className="p-2 text-right font-extrabold text-emerald-600 dark:text-emerald-400">
+                                Rp {((it.harga * it.qty) - (it.diskon || 0)).toLocaleString('id-ID')}
+                              </td>
+                              <td className="p-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = activeSession.data.items.filter((_: any, i: number) => i !== idx);
+                                    updateActiveData('items', updated);
+                                  }}
+                                  className="text-rose-500 hover:text-rose-700 p-1 rounded-md cursor-pointer"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic text-center py-2 bg-white dark:bg-zinc-900 rounded-xl border border-dashed border-slate-300 dark:border-zinc-800">
+                      Keranjang masih kosong. Cari & pilih produk di bawah ini:
+                    </p>
+                  )}
+
+                  {/* Add Product Search Input */}
+                  <div className="flex gap-2 pt-1">
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                      <input
+                        type="text"
+                        value={wizardProdSearch}
+                        onChange={(e) => setWizardProdSearch(e.target.value)}
+                        placeholder="Cari & tambah barang dari katalog..."
+                        className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs font-medium focus:ring-2 focus:ring-violet-500 outline-none shadow-xs"
+                      />
+                    </div>
+
+                    <div className="flex items-center bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl px-2">
+                      <button
+                        type="button"
+                        onClick={() => setWizardProdQty(Math.max(1, wizardProdQty - 1))}
+                        className="px-1.5 font-extrabold text-slate-600 dark:text-zinc-300 hover:text-violet-600 cursor-pointer"
+                      >-</button>
+                      <span className="px-2 font-bold text-xs">{wizardProdQty}</span>
+                      <button
+                        type="button"
+                        onClick={() => setWizardProdQty(wizardProdQty + 1)}
+                        className="px-1.5 font-extrabold text-slate-600 dark:text-zinc-300 hover:text-violet-600 cursor-pointer"
+                      >+</button>
+                    </div>
+                  </div>
+
+                  {/* Product Catalog Results */}
+                  <div className="max-h-36 overflow-y-auto space-y-1.5 custom-scrollbar">
+                    {products
+                      .filter(p => 
+                        !wizardProdSearch || 
+                        p.nama?.toLowerCase().includes(wizardProdSearch.toLowerCase()) || 
+                        p.kode?.toLowerCase().includes(wizardProdSearch.toLowerCase())
+                      )
+                      .slice(0, 6)
+                      .map((prod) => (
+                        <div
+                          key={prod.id || prod.kode}
+                          className="p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl flex items-center justify-between"
+                        >
+                          <div className="min-w-0 pr-2">
+                            <p className="font-extrabold text-slate-900 dark:text-zinc-100 text-xs truncate">{prod.nama}</p>
+                            <p className="text-[10px] text-slate-500 dark:text-zinc-400">
+                              SKU: <strong>{prod.kode || '-'}</strong> • Rp {(prod.hargaJual || 0).toLocaleString('id-ID')} • Stok: <span className="font-extrabold text-emerald-600">{prod.stok || 0} unit</span>
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newItem = {
+                                produkId: prod.id || 'PROD-' + Date.now(),
+                                nama: prod.nama,
+                                kode: prod.kode || 'SKU',
+                                harga: prod.hargaJual || 100000,
+                                qty: wizardProdQty,
+                                diskon: 0
+                              };
+                              const updated = [...(activeSession.data.items || []), newItem];
+                              updateActiveData('items', updated);
+                              setWizardProdSearch('');
+                              setWizardProdQty(1);
+                            }}
+                            className="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-[10px] font-extrabold cursor-pointer flex items-center gap-1 transition active:scale-95 shrink-0"
+                          >
+                            <Plus size={12} />
+                            <span>+ Tambah</span>
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* 3. PPN, SHIPPING & PAYMENT OPTIONS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* Tax & Ongkir Options */}
+                  <div className="p-3 bg-slate-50 dark:bg-zinc-950/60 rounded-xl border border-slate-200/80 dark:border-zinc-800 space-y-2">
+                    <label className="font-extrabold text-slate-800 dark:text-zinc-200 text-xs block border-b pb-1">
+                      📄 Pajak & Pengiriman:
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-zinc-300">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(activeSession.data.ppn)}
+                        onChange={(e) => updateActiveData('ppn', e.target.checked)}
+                        className="rounded text-violet-600 w-4 h-4"
+                      />
+                      <span>Kenakan Pajak PPN (11%)</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-zinc-300">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(activeSession.data.ongkir)}
+                        onChange={(e) => updateActiveData('ongkir', e.target.checked)}
+                        className="rounded text-violet-600 w-4 h-4"
+                      />
+                      <span>Biaya Kirim / Shipping Fee</span>
+                    </label>
+
+                    {activeSession.data.ongkir && (
+                      <div className="grid grid-cols-2 gap-1.5 pt-1">
+                        <div>
+                          <span className="text-[10px] font-extrabold text-slate-400">Nominal Ongkir (Rp):</span>
+                          <input
+                            type="number"
+                            value={activeSession.data.biayaOngkir || 0}
+                            onChange={(e) => updateActiveData('biayaOngkir', parseInt(e.target.value, 10) || 0)}
+                            className="w-full p-1.5 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-lg font-bold text-xs"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-extrabold text-slate-400">Kurir / Ekspedisi:</span>
+                          <select
+                            value={activeSession.data.jasaKirim || 'JNE'}
+                            onChange={(e) => updateActiveData('jasaKirim', e.target.value)}
+                            className="w-full p-1.5 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-lg font-bold text-xs"
+                          >
+                            <option value="JNE">JNE Express</option>
+                            <option value="SiCepat">SiCepat</option>
+                            <option value="J&T">J&T Express</option>
+                            <option value="Lalamove">Lalamove</option>
+                            <option value="Deliveree">Deliveree</option>
+                            <option value="Ekspedisi Custom">Ekspedisi Lainnya</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Payment Status & Received Amount */}
+                  <div className="p-3 bg-slate-50 dark:bg-zinc-950/60 rounded-xl border border-slate-200/80 dark:border-zinc-800 space-y-2">
+                    <label className="font-extrabold text-slate-800 dark:text-zinc-200 text-xs block border-b pb-1">
+                      💳 Status Pembayaran:
+                    </label>
+
+                    <div className="flex gap-1">
+                      {['Lunas', 'Belum Lunas', 'DP / Parsial'].map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => updateActiveData('paymentStatus', st)}
+                          className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] transition cursor-pointer ${
+                            activeSession.data.paymentStatus === st
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+
+                    {activeSession.data.paymentStatus === 'DP / Parsial' && (
+                      <div className="pt-1">
+                        <span className="text-[10px] font-extrabold text-slate-400">Nominal DP Diterima (Rp):</span>
+                        <input
+                          type="number"
+                          value={activeSession.data.dpAmt || 0}
+                          onChange={(e) => updateActiveData('dpAmt', parseInt(e.target.value, 10) || 0)}
+                          placeholder="Masukkan DP..."
+                          className="w-full p-1.5 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-lg font-bold text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4. GRAND TOTAL SUMMARY CARD & SUBMIT BUTTON */}
+                {(() => {
+                  const items = activeSession.data.items || [];
+                  const subtotal = items.reduce((s: number, i: any) => s + (i.harga * i.qty) - (i.diskon || 0), 0);
+                  const ppnAmt = activeSession.data.ppn ? Math.round(subtotal * 0.11) : 0;
+                  const ongkirAmt = activeSession.data.ongkir ? (Number(activeSession.data.biayaOngkir) || 0) : 0;
+                  const grandTotal = subtotal + ppnAmt + ongkirAmt;
+
+                  return (
+                    <div className="p-3.5 bg-gradient-to-r from-violet-900 via-indigo-900 to-slate-900 text-white rounded-xl space-y-3 shadow-md">
+                      <div className="flex justify-between items-center text-xs border-b border-violet-700/60 pb-2">
+                        <span>Subtotal Produk: <strong>Rp {subtotal.toLocaleString('id-ID')}</strong></span>
+                        <span>PPN: <strong>Rp {ppnAmt.toLocaleString('id-ID')}</strong></span>
+                        <span>Ongkir: <strong>Rp {ongkirAmt.toLocaleString('id-ID')}</strong></span>
+                      </div>
+
+                      <div className="flex justify-between items-center font-black text-sm">
+                        <span className="text-violet-200">TOTAL AKHIR TRANSAKSI:</span>
+                        <span className="text-emerald-400 text-base">Rp {grandTotal.toLocaleString('id-ID')}</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleDirectSaveFromForm}
+                        className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-98 text-white font-extrabold text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <CheckCircle2 size={18} />
+                        <span>Simpan {activeSession.type === 'penawaran' ? 'Penawaran' : 'Transaksi'} ke Database MyPanca</span>
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* FORM FOR CUSTOMER BARU */}
+            {activeSession.type === 'customer' && (
+              <div className="space-y-3">
+                <div className="space-y-2 bg-slate-50 dark:bg-zinc-950/60 p-3 rounded-xl border border-slate-200/80 dark:border-zinc-800">
+                  <div>
+                    <label className="font-bold text-slate-700 dark:text-zinc-300 text-xs">Nama Lengkap / Perusahaan:</label>
+                    <input
+                      type="text"
+                      value={activeSession.data.nama || ''}
+                      onChange={(e) => updateActiveData('nama', e.target.value)}
+                      placeholder="Contoh: PT Jaya Abadi"
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl font-medium text-xs mt-1"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="font-bold text-slate-700 dark:text-zinc-300 text-xs">No. WhatsApp / HP:</label>
+                      <input
+                        type="text"
+                        value={activeSession.data.whatsapp || ''}
+                        onChange={(e) => updateActiveData('whatsapp', e.target.value)}
+                        placeholder="08123456789"
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl font-medium text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 dark:text-zinc-300 text-xs">Kota / Wilayah:</label>
+                      <input
+                        type="text"
+                        value={activeSession.data.kota || ''}
+                        onChange={(e) => updateActiveData('kota', e.target.value)}
+                        placeholder="Surabaya"
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl font-medium text-xs mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 dark:text-zinc-300 text-xs">Sales Rep Penanggung Jawab:</label>
+                    <input
+                      type="text"
+                      value={activeSession.data.sales || currentUser?.nama || ''}
+                      onChange={(e) => updateActiveData('sales', e.target.value)}
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl font-medium text-xs mt-1"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDirectSaveFromForm}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-98 text-white font-extrabold text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <CheckCircle2 size={18} />
+                  <span>Simpan Data Customer ke Database MyPanca</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
