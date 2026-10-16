@@ -37,6 +37,67 @@ export const getTransactionAmount = (t: any): number => {
   return 0;
 };
 
+// Helper to extract exact stock value across all potential schema variants
+export const getProductStock = (p: any, purchaseOrders: any[] = [], transactions: any[] = []): number => {
+  if (!p) return 0;
+  
+  // 1. Calculate incoming stock from p.lots if available
+  let incomingStock = 0;
+  const hasLots = Array.isArray(p.lots) && p.lots.length > 0;
+  if (hasLots) {
+    incomingStock = p.lots.reduce((sum: number, lot: any) => {
+      const s = Number(lot.stock) ?? Number(lot.stok) ?? Number(lot.qty) ?? Number(lot.sisaStok) ?? 0;
+      return sum + (isNaN(s) ? 0 : s);
+    }, 0);
+  }
+
+  // 2. Direct stock property on object (combine/fallback with lots)
+  const raw = p.stok ?? p.stock ?? p.stokGudang ?? p.stok_gudang ?? p.qty ?? p.quantity ?? p.sisaStok ?? p.sisa_stok ?? p.jumlah ?? p.jumlahStok ?? p.jumlah_stok ?? p.stokAwal ?? p.stok_awal ?? p.initialStock ?? p.stock_qty ?? p.current_stock ?? p.available_stock ?? p.total_stok ?? p.sisa;
+  let directStock = 0;
+  if (typeof raw === 'number' && !isNaN(raw)) directStock = raw;
+  else if (typeof raw === 'string') {
+    const parsed = parseInt(raw.replace(/[^\d-]/g, ''), 10);
+    if (!isNaN(parsed)) directStock = parsed;
+  }
+
+  if (incomingStock === 0) {
+    incomingStock = directStock;
+  } else if (directStock > 0) {
+    incomingStock = Math.max(incomingStock, directStock);
+  }
+
+  // 3. Fallback to dynamic PO calculation if incomingStock is still 0
+  if (incomingStock === 0 && Array.isArray(purchaseOrders) && purchaseOrders.length > 0) {
+    purchaseOrders.filter(po => po.status === 'Received' || po.status === 'Lunas').forEach(po => {
+      if (Array.isArray(po.items)) {
+        po.items.forEach((it: any) => {
+          if (it.produkId === p.id || it.productId === p.id || (it.nama && p.nama && it.nama.toLowerCase() === p.nama.toLowerCase())) {
+            incomingStock += Number(it.jumlah) || Number(it.qty) || 0;
+          }
+        });
+      } else if (po.produkId === p.id || po.productId === p.id) {
+        incomingStock += Number(po.jumlah) || Number(po.qty) || 0;
+      }
+    });
+  }
+
+  // 4. Subtract shipped transactions if transactions are provided
+  let soldQty = 0;
+  if (Array.isArray(transactions) && transactions.length > 0) {
+    transactions.filter(t => !(t.statuses || []).includes('Batal') && ((t.statuses || []).includes('Pengiriman') || (t.statuses || []).includes('Selesai'))).forEach(t => {
+      if (Array.isArray(t.items)) {
+        t.items.forEach((it: any) => {
+          if (it.produkId === p.id || it.productId === p.id || (it.nama && p.nama && it.nama.toLowerCase() === p.nama.toLowerCase())) {
+            soldQty += Number(it.qty) || Number(it.jumlah) || 0;
+          }
+        });
+      }
+    });
+  }
+
+  return Math.max(0, incomingStock - soldQty);
+};
+
 // // Compile real-time aggregations from all modules
 export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string = '') => {
   const currentCompId = ctx.activeCompany?.id || '1';
@@ -177,8 +238,8 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
 
   // Stock Analysis
   const lowStockProducts = compProducts.filter(p => {
-    const s = typeof p.stok === 'number' ? p.stok : 0;
-    const min = p.minStok || 10;
+    const s = getProductStock(p);
+    const min = Number(p.minStok) || Number(p.min_stok) || Number(p.minStock) || 10;
     return s < min;
   });
 
@@ -266,17 +327,19 @@ ${agg.compCustomers.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'},
 * Total Penawaran: ${agg.totalQuotes} penawaran (Nilai Total: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')})
 ${agg.quoteList.map(q => `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Status: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu'} | Terakhir: ${q.lastFollowUpDate} | Catatan: ${q.notes} | Sales: ${q.sales}`).join('\n')}
 
---- [MENU 4: KATALOG & STOK PRODUK] ---
+--- [MENU 4: KATALOG & STOK PRODUK LENGKAP] ---
 * Total SKU: ${agg.compProducts.length} Produk
 ${agg.compProducts.map(p => {
+  const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
   const specStr = p.specifications || p.deskripsi || p.description || 'Belum diisi';
-  const mainFunc = p.mainFunction || 'Belum diisi';
-  const mainApp = p.mainApplication || 'Belum diisi';
-  const dim = (p.panjang || p.lebar || p.tinggi) ? `${p.panjang || 0} x ${p.lebar || 0} x ${p.tinggi || 0} cm` : 'Belum diisi';
+  const mainFunc = p.mainFunction || p.fungsi || 'Belum diisi';
+  const mainApp = p.mainApplication || p.aplikasi || 'Belum diisi';
+  const dim = (p.panjang || p.lebar || p.tinggi) ? `${p.panjang || 0} x ${p.lebar || 0} x ${p.tinggi || 0} cm` : (p.dimensi || 'Belum diisi');
   const weight = p.berat ? `${p.berat} kg` : 'Belum diisi';
-  return `  - SKU [${p.kode || p.id}] ${p.nama} (Stok: ${p.stok || 0} ${p.satuan || 'unit'}) | Harga: Rp ${(p.hargaJual || 0).toLocaleString('id-ID')}
+  const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
+  return `  - SKU [${p.kode || p.id}] ${p.nama || p.name} (SISA STOK AKURAT: ${stockVal} ${p.satuan || p.unit || 'unit'}) | Harga Jual: Rp ${price.toLocaleString('id-ID')}
     * Fungsi: ${mainFunc} | Aplikasi: ${mainApp} | Dimensi: ${dim} | Berat: ${weight} | Spesifikasi: ${specStr}`;
-}).join('\n')}
+}).join('\n') || '  (Belum ada data produk di database)'}
 
 --- [MENU 5: FINANCE - PIUTANG USAHA (TAGIHAN BELUM LUNAS)] ---
 * Total Piutang: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan)
@@ -312,12 +375,46 @@ ${projects.map(p => `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.
   });
 
   if (matchedTrxExact.length > 0) {
-    digest += `\n=== PENCARIAN SANGAT SPESIFIK & PRESISI LENGKAP UNTUK ("${queryText}") ===\n`;
+    digest += `\n=== PENCARIAN SANGAT SPESIFIK & PRESISI LENGKAP UNTUK TRANSAKSI ("${queryText}") ===\n`;
     matchedTrxExact.forEach(t => {
       const amt = getTransactionAmount(t);
       const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} x Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : 'N/A';
       digest += `* TRANSAKSI KUNCI COCOK [${t.noTrx || t.id}]: Pelanggan: ${t.customerName || t.customer || '-'} | Tanggal: ${t.tanggal || '-'} | Nominal Rp: ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales Rep: ${t.sales || t.salesName || '-'} | Items: [${itemsStr}]\n`;
     });
+  }
+
+  // Exact Match Search Normalization for Products (by Code, SKU, or Name)
+  const genericStokWords = ['stok', 'stock', 'cek', 'sisa', 'produk', 'barang', 'persediaan', 'katalog', 'daftar', 'ada', 'berapa', 'info', 'data', 'min', 'tolong', 'di', 'dalam', 'yang', 'semua', 'seluruh', 'all', 'list', 'tampilkan', 'lihat', 'apa', 'saja', 'yg', 'masih', 'punya'];
+  const productSearchTerms = queryLower
+    .split(/\s+/)
+    .map(w => w.replace(/[^a-z0-9]/g, ''))
+    .filter(t => t.length > 0 && !genericStokWords.includes(t));
+
+  if (productSearchTerms.length > 0) {
+    let matchedProductsExact = agg.compProducts.filter(p => {
+      const code = (p.kode || p.id || '').toLowerCase();
+      const name = (p.nama || p.name || '').toLowerCase();
+      const desc = (p.deskripsi || p.specifications || p.description || '').toLowerCase();
+      return productSearchTerms.every(term => code.includes(term) || name.includes(term) || desc.includes(term));
+    });
+
+    if (matchedProductsExact.length === 0) {
+      matchedProductsExact = agg.compProducts.filter(p => {
+        const code = (p.kode || p.id || '').toLowerCase();
+        const name = (p.nama || p.name || '').toLowerCase();
+        const desc = (p.deskripsi || p.specifications || p.description || '').toLowerCase();
+        return productSearchTerms.some(term => code.includes(term) || name.includes(term) || desc.includes(term));
+      });
+    }
+
+    if (matchedProductsExact.length > 0) {
+      digest += `\n=== PENCARIAN SANGAT SPESIFIK & PRESISI LENGKAP UNTUK PRODUK ("${queryText}") ===\n`;
+      matchedProductsExact.forEach(p => {
+        const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
+        const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
+        digest += `* PRODUK KUNCI COCOK [SKU: ${p.kode || p.id}]: Nama: "${p.nama || p.name}" | SISA STOK AKURAT DATABASE REAL-TIME: ${stockVal} ${p.satuan || p.unit || 'unit'} | Harga Jual: Rp ${price.toLocaleString('id-ID')} | Deskripsi: ${p.deskripsi || p.specifications || 'N/A'}\n`;
+      });
+    }
   }
 
   return digest;
@@ -391,11 +488,12 @@ export const detectLackingContext = (
     }
   }
 
-  // 3. Stok without product name
+  // 3. Stok without product name or SKU
   const isStokTopic = /\b(stok|stock|persediaan|katalog)\b/i.test(q);
   if (isStokTopic && !q.includes('menipis') && !q.includes('habis') && !q.includes('aman')) {
-    const isGeneralStok = /^(stok|stock|cek stok|cek stock|sisa stok|stok barang|stok produk|persediaan|daftar stok)[\?\.\!]?$/i.test(q)
-      || (q.split(' ').length <= 3);
+    const genericStokWords = ['stok', 'stock', 'cek', 'sisa', 'produk', 'barang', 'persediaan', 'katalog', 'daftar', 'ada', 'berapa', 'info', 'data', 'min', 'tolong', 'di', 'dalam', 'yang', 'semua', 'seluruh', 'all', 'list', 'tampilkan', 'lihat', 'apa', 'saja', 'yg', 'masih', 'punya'];
+    const nonGenericTerms = q.split(/\s+/).map(w => w.replace(/[^a-z0-9]/g, '')).filter(w => w.length > 0 && !genericStokWords.includes(w));
+    const isGeneralStok = nonGenericTerms.length === 0;
     if (isGeneralStok) {
       return {
         lacksContext: true,
@@ -565,6 +663,10 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (NO-EMOJI CLUTTER GUARANTEE):
 6. BILA PENGGUNA INGIN INPUT DATA BARU (CUSTOMER, TRANSAKSI, PENAWARAN):
    - Pandu pengguna mengisi data secara BERTAHAP (satu per satu sesuai kolom form asli), lalu di akhir tampilkan tabel pratinjau draft dan minta konfirmasi simpan.
 
+7. AKURASI STOK PRODUK REAL DATABASE:
+   - Nilai sisa stok produk tertera dengan jelas di [MENU 4: KATALOG & STOK PRODUK LENGKAP] dan di bagian [PENCARIAN SANGAT SPESIFIK & PRESISI LENGKAP UNTUK PRODUK] sebagai "SISA STOK AKURAT DATABASE REAL-TIME: X unit".
+   - Jika nilai stok pada database tertera > 0 (misalnya 1 unit, 5 unit, dsb.), ANDA WAJIB MENJAWAB DENGAN JUMLAH STOK TERSEBUT. DILARANG KERAS MENYATAKAN STOK 0 ATAU KOSONG BILA DATABASE MENUNJUKKAN STOK TERSEDIA.
+
 ${dataDigest}
 `;
 
@@ -642,18 +744,59 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
   }
 
   // Stock query
-  if (lower.includes('stok') || lower.includes('produk') || lower.includes('menipis')) {
-    let res = `### 📦 Informasi Stok Produk:\n\n`;
-    res += `- Total Produk: **${agg.compProducts.length} SKU**\n`;
-    res += `- Produk Perlu Restock (< 10 unit): **${agg.lowStockProducts.length} SKU**\n\n`;
+  if (lower.includes('stok') || lower.includes('stock') || lower.includes('produk') || lower.includes('menipis') || lower.includes('katalog') || lower.includes('sisa')) {
+    const genericStokWords = ['stok', 'stock', 'cek', 'sisa', 'produk', 'barang', 'persediaan', 'katalog', 'daftar', 'ada', 'berapa', 'info', 'data', 'min', 'tolong', 'di', 'dalam', 'yang', 'semua', 'seluruh', 'all', 'list', 'tampilkan', 'lihat', 'apa', 'saja', 'yg', 'masih', 'punya'];
+    const productSearchTerms = lower
+      .split(/\s+/)
+      .map(w => w.replace(/[^a-z0-9]/g, ''))
+      .filter(t => t.length > 0 && !genericStokWords.includes(t));
 
-    if (agg.lowStockProducts.length > 0) {
-      res += `| No | Nama Produk | Sisa Stok | Min. Stok | Harga Jual |\n|---|---|---|---|---|\n`;
-      agg.lowStockProducts.slice(0, 10).forEach((p, i) => {
-        res += `| ${i + 1} | **${p.nama}** | <span style="color:red; font-weight:bold;">${p.stok || 0} ${p.satuan || 'unit'}</span> | ${p.minStok || 10} | Rp ${(p.hargaJual || 0).toLocaleString('id-ID')} |\n`;
+    let displayProducts = agg.compProducts;
+    let isSpecificSearch = false;
+
+    if (productSearchTerms.length > 0) {
+      let filtered = agg.compProducts.filter(p => {
+        const code = (p.kode || p.id || '').toLowerCase();
+        const name = (p.nama || p.name || '').toLowerCase();
+        const desc = (p.deskripsi || p.specifications || p.description || '').toLowerCase();
+        return productSearchTerms.every(term => code.includes(term) || name.includes(term) || desc.includes(term));
+      });
+
+      if (filtered.length === 0) {
+        filtered = agg.compProducts.filter(p => {
+          const code = (p.kode || p.id || '').toLowerCase();
+          const name = (p.nama || p.name || '').toLowerCase();
+          const desc = (p.deskripsi || p.specifications || p.description || '').toLowerCase();
+          return productSearchTerms.some(term => code.includes(term) || name.includes(term) || desc.includes(term));
+        });
+      }
+
+      if (filtered.length > 0) {
+        displayProducts = filtered;
+        isSpecificSearch = true;
+      }
+    }
+
+    let res = isSpecificSearch 
+      ? `### 📦 Hasil Pencarian Stok Produk ("${query}"):\n\n`
+      : `### Informasi Stok & Katalog Produk:\n\n`;
+
+    res += `- Total SKU Terdaftar: **${agg.compProducts.length} Produk**\n`;
+    if (isSpecificSearch) {
+      res += `- Ditemukan **${displayProducts.length} SKU** yang cocok dengan pencarian Anda.\n\n`;
+    } else {
+      res += `- Produk Perlu Restock (< 10 unit): **${agg.lowStockProducts.length} SKU**\n\n`;
+    }
+
+    if (displayProducts.length > 0) {
+      res += `| No | SKU / Kode | Nama Produk | Sisa Stok Real | Harga Jual |\n|---|---|---|---|---|\n`;
+      displayProducts.slice(0, 30).forEach((p, i) => {
+        const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
+        const isLow = stockVal < (Number(p.minStok) || 10);
+        res += `| ${i + 1} | **${p.kode || p.id}** | **${p.nama || p.name}** | **${stockVal} ${p.satuan || p.unit || 'unit'}**${isLow ? ' (Menipis)' : ''} | Rp ${(Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0).toLocaleString('id-ID')} |\n`;
       });
     } else {
-      res += `✅ Seluruh produk berada dalam status stok aman.\n`;
+      res += `Belum ada data produk tercatat di database MyPanca yang sesuai.\n`;
     }
     return res;
   }

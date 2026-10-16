@@ -43,19 +43,29 @@ export const loadDataFromSupabase = async () => {
                 bankAccountNumber: c.bank_account_number || null
             })),
             suppliers: (dbSupps || []).filter((s: any) => !recycledIds.has(s.id)).map((s: any) => ({ ...s, companyId: s.company_id, phoneCode: s.phone_code, website: s.website })),
-            products: (dbProds || []).filter((p: any) => !recycledIds.has(p.id)).map((p: any) => ({
-                ...p,
-                companyId: p.company_id,
-                mainFunction: p.main_function,
-                mainApplication: p.main_application,
-                lots: (dbProductLots || [])
+            products: (dbProds || []).filter((p: any) => !recycledIds.has(p.id)).map((p: any) => {
+                const lotStockSum = (dbProductLots || [])
                     .filter((l: any) => l.product_id === p.id)
-                    .map((l: any) => ({
-                        ...l,
-                        supplierId: l.supplier_id,
-                        hargaJual: l.harga_jual
-                    }))
-            })),
+                    .reduce((sum: number, l: any) => sum + (Number(l.stock) || Number(l.stok) || Number(l.qty) || 0), 0);
+                const rootStock = Number(p.stok) || Number(p.stock) || Number(p.qty) || 0;
+                const finalStock = rootStock > 0 ? rootStock : lotStockSum;
+
+                return {
+                    ...p,
+                    stok: finalStock,
+                    stock: finalStock,
+                    companyId: p.company_id,
+                    mainFunction: p.main_function,
+                    mainApplication: p.main_application,
+                    lots: (dbProductLots || [])
+                        .filter((l: any) => l.product_id === p.id)
+                        .map((l: any) => ({
+                            ...l,
+                            supplierId: l.supplier_id,
+                            hargaJual: l.harga_jual
+                        }))
+                };
+            }),
             customers: (dbCusts || []).filter((c: any) => !recycledIds.has(c.id)).map((c: any) => ({
                 ...c,
                 companyId: c.company_id,
@@ -198,6 +208,9 @@ export const saveProductToSupabase = async (prod: any) => {
         id: mainProd.id,
         nama: mainProd.nama,
         kode: mainProd.kode,
+        stok: mainProd.stok ?? mainProd.stock ?? 0,
+        hpp: mainProd.hpp || 0,
+        harga_jual: mainProd.hargaJual || mainProd.harga || 0,
         satuan: mainProd.satuan,
         berat: mainProd.berat,
         panjang: mainProd.panjang,

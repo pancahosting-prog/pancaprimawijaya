@@ -70,6 +70,9 @@ interface Product {
   id: string; 
   nama: string; 
   kode: string; 
+  stok?: number;
+  hargaJual?: number;
+  supplierId?: string;
   hpp?: number;
   lots: ProductLot[]; 
   panjang?: number; 
@@ -3068,9 +3071,31 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
   }, [transactions, activeCompanyId]);
 
   const getAvailableStock = (productName: string) => {
-      const product = products.find(p => p.nama === productName && (p.companyId === activeCompanyId || p.company_id === activeCompanyId));
+      const product = products.find(p => p.nama === productName && (!p.companyId || p.companyId === activeCompanyId || p.company_id === activeCompanyId));
       if (!product) return 0;
-      const totalIncoming = product.lots ? product.lots.reduce((acc, lot) => acc + lot.stock, 0) : 0;
+      
+      let totalIncoming = 0;
+      if (Array.isArray(product.lots) && product.lots.length > 0) {
+          totalIncoming = product.lots.reduce((acc, lot: any) => {
+              const s = Number(lot.stock) ?? Number(lot.stok) ?? Number(lot.qty) ?? 0;
+              return acc + (isNaN(s) ? 0 : s);
+          }, 0);
+      }
+      
+      const rawDirect = (product as any).stok ?? (product as any).stock ?? (product as any).stokGudang ?? (product as any).qty ?? (product as any).stokAwal;
+      let directVal = 0;
+      if (typeof rawDirect === 'number' && !isNaN(rawDirect)) directVal = rawDirect;
+      else if (typeof rawDirect === 'string') {
+          const parsed = parseInt(rawDirect.replace(/[^\d-]/g, ''), 10);
+          if (!isNaN(parsed)) directVal = parsed;
+      }
+
+      if (totalIncoming === 0) {
+          totalIncoming = directVal;
+      } else if (directVal > 0) {
+          totalIncoming = Math.max(totalIncoming, directVal);
+      }
+
       const totalSold = soldQuantities[productName] || 0;
       return Math.max(0, totalIncoming - totalSold);
   };
@@ -4512,10 +4537,17 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
             newProd.lots = [newLot];
         }
 
-        // Always sync the main HPP field if provided in tempStock
+        // Always sync direct stok, hargaJual, hpp, and supplierId fields
         if (tempStock.hpp > 0) {
             newProd.hpp = tempStock.hpp;
         }
+        if (tempStock.hargaJual > 0) {
+            newProd.hargaJual = tempStock.hargaJual;
+        }
+        if (tempStock.supplierId) {
+            newProd.supplierId = tempStock.supplierId;
+        }
+        newProd.stok = newProd.lots.reduce((acc, l) => acc + (l.stock || 0), 0);
 
         setProducts(prev => {
             const result = currentProd.id ? prev.map(p => p.id === newProd.id ? newProd : p) : [...prev, newProd];
@@ -4682,11 +4714,13 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
         const totalIncoming = updatedProd.lots.reduce((acc, lot) => acc + lot.stock, 0);
         const newIncoming = numValue + totalSold;
         const diff = newIncoming - totalIncoming;
+        updatedProd.stok = numValue;
         updatedProd.lots[lastLotIndex].stock += diff;
         if (updatedProd.lots[lastLotIndex].stock < 0) {
             updatedProd.lots[lastLotIndex].stock = 0; // prevent negative lot stock
         }
     } else if (field === 'hargaJual') {
+        updatedProd.hargaJual = numValue;
         updatedProd.lots[lastLotIndex].hargaJual = numValue;
     } else if (field === 'hpp') {
         updatedProd.hpp = numValue;
@@ -4697,11 +4731,12 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
     await syncToSupabase('products', updatedProd);
   };
 
-  const getProductPrice = (p: Product) => p.lots.length > 0 ? p.lots[p.lots.length - 1].hargaJual : 0;
-  const getProductHPP = (p: Product) => p.hpp || (p.lots.length > 0 ? p.lots[p.lots.length - 1].hpp : 0);
+  const getProductPrice = (p: Product) => (p as any).hargaJual ?? (p.lots && p.lots.length > 0 ? p.lots[p.lots.length - 1].hargaJual : 0) ?? 0;
+  const getProductHPP = (p: Product) => p.hpp ?? (p.lots && p.lots.length > 0 ? p.lots[p.lots.length - 1].hpp : 0) ?? 0;
   const getSupplierName = (p: Product) => {
-      if (p.lots.length === 0) return 'No Supplier';
-      const s = suppliers.find(sup => sup.id === p.lots[p.lots.length - 1].supplierId);
+      const supId = (p as any).supplierId || (p.lots && p.lots.length > 0 ? p.lots[p.lots.length - 1].supplierId : '');
+      if (!supId) return 'No Supplier';
+      const s = suppliers.find(sup => sup.id === supId);
       return s ? s.nama : 'Unknown';
   }
 
