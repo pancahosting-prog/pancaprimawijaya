@@ -14,16 +14,6 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  // Disable caching for HTML responses to ensure instant UI updates on refresh
-  app.use((req, res, next) => {
-    if (req.path === "/" || req.path.endsWith(".html") || req.headers.accept?.includes("text/html")) {
-      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.setHeader("Pragma", "no-cache");
-      res.setHeader("Expires", "0");
-    }
-    next();
-  });
-
   // Fonnte API Proxy
   app.post("/api/send-whatsapp", async (req, res) => {
     const { phone, message } = req.body;
@@ -116,11 +106,11 @@ async function startServer() {
   });
 
   app.post("/api/wa/send", async (req, res) => {
-    const { jid, text } = req.body;
-    if (!jid || !text) {
-      return res.status(400).json({ success: false, error: "JID dan teks pesan diperlukan." });
+    const { jid, text, media } = req.body;
+    if (!jid || (!text && !media)) {
+      return res.status(400).json({ success: false, error: "JID dan teks atau lampiran file/gambar diperlukan." });
     }
-    const result = await waService.sendMessage(jid, text);
+    const result = await waService.sendMessage(jid, text || "", media);
     res.json(result);
   });
 
@@ -319,19 +309,8 @@ async function startServer() {
 
   if (fs.existsSync(indexPath)) {
     console.log(`[server] Serving static build from: ${distPath}`);
-    app.use(express.static(distPath, {
-      setHeaders: (res, filepath) => {
-        if (filepath.endsWith('.html')) {
-          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-          res.setHeader("Pragma", "no-cache");
-          res.setHeader("Expires", "0");
-        }
-      }
-    }));
+    app.use(express.static(distPath));
     app.get(/(.*)/, (_req, res) => {
-      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.setHeader("Pragma", "no-cache");
-      res.setHeader("Expires", "0");
       res.sendFile(indexPath);
     });
   } else {
