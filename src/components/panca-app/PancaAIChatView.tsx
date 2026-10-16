@@ -2,13 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, ArrowLeft, Trash2, Copy, Check, Sparkles, 
   Bot, User, Download, Mic, Square, Volume2, VolumeX,
-  AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package
+  AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package,
+  PhoneCall
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabaseService } from '../../../task/services/supabaseService';
 import { Task, Project, DrivePost } from '../../../task/types';
 import { queryPancaAI, PancaAIContext } from '../../services/pancaAIService';
+import { PancaAICallModal } from './PancaAICallModal';
 
 export interface DraftData {
   type: 'customer' | 'transaction' | 'penawaran';
@@ -192,6 +194,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const [inputPrompt, setInputPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showCallModal, setShowCallModal] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isSuperAdmin = currentUser?.role?.toLowerCase() === 'superadmin';
@@ -2047,6 +2050,20 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           }}
           className="flex items-center gap-2"
         >
+          {/* Live Voice Call Button (Di sebelah kiri tombol Mic) */}
+          <button
+            type="button"
+            onClick={() => setShowCallModal(true)}
+            className="w-11 h-11 rounded-2xl flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/25 transition active:scale-90 shrink-0 relative group border border-emerald-500/30"
+            title="Mulai Panggilan Telepon AI (Live Voice Audio Dialog)"
+          >
+            <PhoneCall className="w-5 h-5 text-white" />
+            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+          </button>
+
           {/* Voice Microphone Button */}
           <button
             type="button"
@@ -2092,6 +2109,24 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           </button>
         </form>
       </div>
+
+      {/* Live Audio Phone Call Dialog Modal */}
+      <PancaAICallModal
+        isOpen={showCallModal}
+        onClose={() => setShowCallModal(false)}
+        currentUser={currentUser}
+        context={{
+          currentUser,
+          activeCompany,
+          transactions,
+          customers,
+          products,
+          suppliers,
+          purchaseOrders,
+          employees,
+          taskAppData
+        }}
+      />
     </div>
   );
 };

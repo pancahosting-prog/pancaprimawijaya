@@ -458,3 +458,226 @@ export const callGeminiWithKeyRotation = async ({
 
   return `⚠️ **Semua API Key Gemini Mencapai Batas Kuota**\n\nSeluruh API Key Gemini yang Anda daftarkan (${activeKeys.length} kunci) saat ini telah mencapai batas kuota pemakaian. Silakan tambahkan API key baru di menu **Settings > Pengaturan Gemini AI** atau tunggu beberapa saat agar kuota ter-reset secara otomatis.`;
 };
+
+// ==============================================================================
+// GEMINI LIVE API (VOICE CALL AUDIO DIALOG) MANAGEMENT & AUTO-ROLLING
+// ==============================================================================
+
+export const LIVE_STORAGE_KEY = 'mypanca_gemini_live_settings';
+
+export const SUPPORTED_GEMINI_LIVE_MODELS = [
+  { id: 'gemini-3.8-live', label: 'Gemini 3.8 Live (Paling Direkomendasikan untuk Panggilan Suara Telepon)', isRecommended: true },
+  { id: 'gemini-3.8-live-extended-thinking', label: 'Gemini 3.8 Live Extended Thinking (Penalaran Mendalam)' },
+  { id: 'gemini-3-flash-live', label: 'Gemini 3 Flash Live' },
+  { id: 'gemini-2.5-flash-native-audio', label: 'Gemini 2.5 Flash Native Audio Dialog' },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (Fallback Cepat)' }
+];
+
+export const DEFAULT_GEMINI_LIVE_SETTINGS: GeminiSettings = {
+  apiKeys: [],
+  activeKeyIndex: 0,
+  model: 'gemini-3.8-live',
+  temperature: 0.2,
+  autoRotate: true,
+  lastUpdated: new Date().toISOString()
+};
+
+export const getStoredGeminiLiveSettings = (): GeminiSettings => {
+  if (typeof window === 'undefined') return { ...DEFAULT_GEMINI_LIVE_SETTINGS };
+  try {
+    const raw = localStorage.getItem(LIVE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        ...DEFAULT_GEMINI_LIVE_SETTINGS,
+        ...parsed,
+        apiKeys: Array.isArray(parsed.apiKeys) ? parsed.apiKeys : []
+      };
+    }
+  } catch (err) {
+    console.warn('[GeminiKeyService] Gagal membaca gemini live settings dari localStorage:', err);
+  }
+  return { ...DEFAULT_GEMINI_LIVE_SETTINGS };
+};
+
+export const saveStoredGeminiLiveSettings = (settings: GeminiSettings): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    const payload = {
+      ...settings,
+      lastUpdated: new Date().toISOString()
+    };
+    localStorage.setItem(LIVE_STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.error('[GeminiKeyService] Gagal menyimpan gemini live settings ke localStorage:', err);
+  }
+};
+
+export const syncGeminiLiveSettingsToDatabase = async (
+  settings: GeminiSettings
+): Promise<{ success: boolean; message: string; isCloudSynced: boolean; errorDetail?: string }> => {
+  saveStoredGeminiLiveSettings(settings);
+
+  let isCloudSynced = false;
+  let cloudMsg = '';
+  let cloudError = '';
+
+  // 1. Direct Cloud Sync to Supabase Database with key 'gemini_live_settings'
+  try {
+    const supabaseRes = await saveAppSettingToSupabase('gemini_live_settings', settings, 'gemini_live_settings_ui');
+    if (supabaseRes && !supabaseRes.error) {
+      isCloudSynced = true;
+      cloudMsg = 'Pengaturan Live API Key berhasil disimpan ke Cloud Database Supabase.';
+    } else if (supabaseRes?.error) {
+      cloudError = supabaseRes.error.message;
+    }
+  } catch (dbErr: any) {
+    cloudError = dbErr.message || 'Koneksi ke Supabase gagal.';
+  }
+
+  // 2. Sync to server endpoint
+  try {
+    const res = await fetch('/api/gemini/live-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.cloudSaved) isCloudSynced = true;
+    }
+  } catch (err: any) {
+    console.warn('[GeminiKeyService] Server persistence sync notice for live settings:', err.message);
+  }
+
+  return {
+    success: true,
+    isCloudSynced,
+    message: isCloudSynced
+      ? 'Kunci Live API tersimpan di Database Supabase Cloud (Aktif di semua perangkat).'
+      : 'Kunci Live API tersimpan di penyimpanan lokal browser.',
+    errorDetail: cloudError || undefined
+  };
+};
+
+export const loadGeminiLiveSettingsFromDatabase = async (): Promise<GeminiSettings> => {
+  try {
+    const cloudValue = await loadAppSettingFromSupabase('gemini_live_settings');
+    if (cloudValue && Array.isArray(cloudValue.apiKeys) && cloudValue.apiKeys.length > 0) {
+      const merged: GeminiSettings = {
+        ...DEFAULT_GEMINI_LIVE_SETTINGS,
+        ...cloudValue,
+        apiKeys: cloudValue.apiKeys
+      };
+      saveStoredGeminiLiveSettings(merged);
+      return merged;
+    }
+  } catch (cloudErr) {
+    console.warn('[GeminiKeyService] Supabase live load warning:', cloudErr);
+  }
+
+  try {
+    const res = await fetch('/api/gemini/live-settings');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.settings && Array.isArray(data.settings.apiKeys) && data.settings.apiKeys.length > 0) {
+        const merged: GeminiSettings = {
+          ...DEFAULT_GEMINI_LIVE_SETTINGS,
+          ...data.settings,
+          apiKeys: data.settings.apiKeys
+        };
+        saveStoredGeminiLiveSettings(merged);
+        return merged;
+      }
+    }
+  } catch (err) {
+    // ignore
+  }
+
+  return getStoredGeminiLiveSettings();
+};
+
+export const callGeminiLiveVoiceWithRolling = async (
+  systemPrompt: string,
+  userSpeechText: string
+): Promise<string> => {
+  // Try Live Settings first; if empty, fallback to main Gemini Settings
+  let liveSettings = getStoredGeminiLiveSettings();
+  let availableKeys = liveSettings.apiKeys.filter(k => k.isActive && !k.isExhausted && k.key?.trim()?.length > 0);
+  let isUsingFallback = false;
+
+  if (availableKeys.length === 0) {
+    const mainSettings = getStoredGeminiSettings();
+    availableKeys = mainSettings.apiKeys.filter(k => k.isActive && !k.isExhausted && k.key?.trim()?.length > 0);
+    isUsingFallback = true;
+  }
+
+  if (availableKeys.length === 0) {
+    return 'Halo! Mohon pasang API Key Gemini terlebih dahulu melalui tombol Pengaturan agar asisten suara dapat terhubung.';
+  }
+
+  // Model cascade for voice dialog
+  const candidateModels = [
+    liveSettings.model || 'gemini-3.8-live',
+    'gemini-3.8-live-extended-thinking',
+    'gemini-3-flash-live',
+    'gemini-3.5-flash',
+    'gemini-2.5-flash'
+  ];
+
+  for (let i = 0; i < availableKeys.length; i++) {
+    const activeKeyConfig = availableKeys[i];
+    const cleanKey = activeKeyConfig.key.trim();
+
+    for (const model of candidateModels) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: userSpeechText }]
+              }
+            ],
+            systemInstruction: {
+              parts: [{ text: systemPrompt }]
+            },
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 250 // Voice responses should be concise and spoken quickly
+            }
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (reply && reply.trim().length > 0) {
+            activeKeyConfig.successCount = (activeKeyConfig.successCount || 0) + 1;
+            activeKeyConfig.lastUsedAt = new Date().toISOString();
+            if (!isUsingFallback) saveStoredGeminiLiveSettings(liveSettings);
+            return reply.trim();
+          }
+        }
+
+        if (res.status === 404) continue;
+
+        if (res.status === 429) {
+          activeKeyConfig.isExhausted = true;
+          activeKeyConfig.failCount = (activeKeyConfig.failCount || 0) + 1;
+          if (!isUsingFallback) saveStoredGeminiLiveSettings(liveSettings);
+          break; // Advance to next key
+        }
+      } catch (err) {
+        console.warn(`[GeminiLiveRolling] Error on model ${model}:`, err);
+        break;
+      }
+    }
+  }
+
+  return 'Maaf, terjadi kendala saat menghubungkan suara ke server. Silakan periksa koneksi internet atau kuota API Key Anda.';
+};
+

@@ -292,6 +292,114 @@ async function startServer() {
     }
   });
 
+  // Dedicated Live / Voice Call Settings Endpoints
+  const GEMINI_LIVE_SETTINGS_FILE = path.resolve(process.cwd(), "gemini-live-settings.json");
+
+  app.get("/api/gemini/live-settings", async (_req, res) => {
+    try {
+      const fs = await import("fs/promises");
+      let data: any = null;
+
+      if (supabaseServer) {
+        try {
+          const { data: row, error } = await supabaseServer
+            .from("app_settings")
+            .select("value")
+            .eq("key", "gemini_live_settings")
+            .maybeSingle();
+
+          if (!error && row?.value) {
+            data = row.value;
+          }
+        } catch (dbErr: any) {
+          console.warn("[server] Supabase load live settings fallback to file:", dbErr.message);
+        }
+      }
+
+      if (!data) {
+        try {
+          const content = await fs.readFile(GEMINI_LIVE_SETTINGS_FILE, "utf-8");
+          data = JSON.parse(content);
+        } catch {
+          // ignore
+        }
+      }
+
+      res.json({ success: true, settings: data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/gemini/live-settings", async (req, res) => {
+    try {
+      const fs = await import("fs/promises");
+      const settings = req.body;
+
+      await fs.writeFile(GEMINI_LIVE_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+
+      let cloudSaved = false;
+      let cloudError = "";
+      if (supabaseServer) {
+        try {
+          let { error } = await supabaseServer.from("app_settings").upsert(
+            {
+              key: "gemini_live_settings",
+              value: settings,
+              updated_at: new Date().toISOString(),
+              updated_by: "server_api"
+            },
+            { onConflict: "key" }
+          );
+
+          if (error && (error.message.includes("unique constraint") || error.message.includes("duplicate key"))) {
+            const { data: existing } = await supabaseServer
+              .from("app_settings")
+              .select("key")
+              .eq("key", "gemini_live_settings")
+              .maybeSingle();
+
+            if (existing) {
+              const updateRes = await supabaseServer
+                .from("app_settings")
+                .update({
+                  value: settings,
+                  updated_at: new Date().toISOString(),
+                  updated_by: "server_api"
+                })
+                .eq("key", "gemini_live_settings");
+              error = updateRes.error;
+            } else {
+              const insertRes = await supabaseServer.from("app_settings").insert({
+                key: "gemini_live_settings",
+                value: settings,
+                updated_at: new Date().toISOString(),
+                updated_by: "server_api"
+              });
+              error = insertRes.error;
+            }
+          }
+
+          if (!error) cloudSaved = true;
+          else cloudError = error.message;
+        } catch (dbErr: any) {
+          cloudError = dbErr.message;
+        }
+      }
+
+      res.json({
+        success: true,
+        cloudSaved,
+        cloudError: cloudError || undefined,
+        message: cloudSaved
+          ? "Pengaturan Gemini Live API berhasil disimpan ke Cloud Database Supabase."
+          : "Pengaturan Gemini Live API tersimpan di database sistem."
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Test Gemini API Key
   app.post("/api/gemini/test-key", async (req, res) => {
     const { key, model = "gemini-3.5-flash" } = req.body;
