@@ -148,27 +148,30 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 pt-3 pb-8 text-slate-800 dark:text-zinc-100 bg-[#fafafa] dark:bg-zinc-950 font-sans space-y-5 select-none">
-      {/* 1. Top Bar / Header */}
-      <div className="flex items-center justify-between pt-1">
+    <div className="flex-1 flex flex-col h-full overflow-hidden text-slate-800 dark:text-zinc-100 bg-[#fafafa] dark:bg-zinc-950 font-sans select-none">
+      {/* 1. Top Bar / Fixed Header */}
+      <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-5 py-3 border-b border-slate-200/80 dark:border-zinc-800 flex items-center justify-between shadow-xs shrink-0 z-20">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-full bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 flex items-center justify-center shadow-xs">
-            <span className="font-extrabold text-sm text-slate-900 dark:text-white tracking-tighter">S<sup className="text-[10px] -top-1">+</sup></span>
+          <div className="w-8 h-8 rounded-full bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 flex items-center justify-center shadow-xs">
+            <span className="font-extrabold text-xs text-slate-900 dark:text-white tracking-tighter">S<sup className="text-[9px] -top-1">+</sup></span>
           </div>
-          <h1 className="text-base font-extrabold text-slate-900 dark:text-white tracking-tight">Panca App</h1>
+          <h1 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">Panca App</h1>
         </div>
 
         {/* Bell Notification */}
         <button
           onClick={onOpenNotifications}
-          className="relative w-9 h-9 rounded-full bg-slate-100 dark:bg-zinc-800/80 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center text-slate-700 dark:text-zinc-300 transition active:scale-95"
+          className="relative w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800/80 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center text-slate-700 dark:text-zinc-300 transition active:scale-95"
         >
           <Bell className="w-4 h-4" />
           {unreadNotificationsCount > 0 && (
-            <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-rose-500 rounded-full" />
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full" />
           )}
         </button>
       </div>
+
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto px-5 pt-3 pb-8 space-y-5">
 
       {/* 2. Welcome Greeting */}
       <div className="pt-1">
@@ -339,6 +342,7 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
           })}
         </div>
       </div>
+    </div>
     </div>
   );
 };

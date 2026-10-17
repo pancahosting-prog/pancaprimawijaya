@@ -184,16 +184,12 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const [messages, setMessages] = useState<Message[]>(() => {
     try {
       const saved = localStorage.getItem('mypanca_mobile_ai_chat');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [
-      {
-        id: '1',
-        role: 'assistant',
-        content: `Halo, **${currentUser?.nama || 'Bapak/Ibu'}**. Selamat datang di **Panca AI Chat**.\n\nSaya siap melayani Anda melalui **teks maupun suara** untuk mencari informasi data transaksi (seperti **TRX-70** atau **PP-001**), status piutang, stok produk, serta tugas & proyek tim.\n\nTekan tombol mikrofon di bawah untuk mulai bicara, atau ketik langsung di kolom pesan!`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-    ];
+    } catch (e) {}
+    return [];
   });
 
   const [inputPrompt, setInputPrompt] = useState('');
@@ -202,7 +198,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash-lite');
   const [showModelSelector, setShowModelSelector] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const isSuperAdmin = currentUser?.role?.toLowerCase() === 'superadmin';
 
   // Active Session for guided multi-step form wizard (Customer, Transaksi, Penawaran)
@@ -540,16 +536,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
   const clearChat = () => {
     if (confirm('Bersihkan seluruh percakapan?')) {
-      const initialMsg: Message[] = [
-        {
-          id: '1',
-          role: 'assistant',
-          content: `Halo, **${currentUser?.nama || 'Bapak/Ibu'}**. Percakapan telah dibersihkan. Ada yang bisa saya bantu lagi?`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ];
-      setMessages(initialMsg);
-      localStorage.setItem('mypanca_mobile_ai_chat', JSON.stringify(initialMsg));
+      setMessages([]);
+      localStorage.removeItem('mypanca_mobile_ai_chat');
     }
   };
 
@@ -800,8 +788,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col flex-1 h-full min-h-full bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 font-sans relative">
-      <div className="bg-white dark:bg-zinc-900 px-4 py-3 border-b border-slate-200/80 dark:border-zinc-800 flex items-center justify-between shadow-xs shrink-0 z-10">
+    <div className="flex flex-col flex-1 h-full min-h-0 bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 font-sans relative overflow-hidden">
+      <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-4 py-3 border-b border-slate-200/80 dark:border-zinc-800 flex items-center justify-between shadow-xs shrink-0 z-20">
         <div className="flex items-center gap-2.5">
           <button onClick={() => { stopSpeaking(); stopVoiceInput(); onBack(); }} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-600 dark:text-zinc-300 transition active:scale-95"><ArrowLeft className="w-4 h-4" /></button>
           <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-extrabold text-xs shadow-xs">P</div>
@@ -831,33 +819,48 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3.5">
-        {messages.map((m) => {
-          const isUser = m.role === 'user';
-          return (
-            <div key={m.id} className={`max-w-[88%] ${isUser ? 'ml-auto text-right' : 'mr-auto text-left'}`}>
-              <div className={`p-3 rounded-2xl text-[10px] text-left shadow-2xs ${isUser ? 'bg-slate-900 text-white rounded-tr-none font-medium' : 'bg-white border border-slate-200 rounded-tl-none'}`}>
-                {isUser ? <p className="whitespace-pre-wrap">{m.content}</p> : (
-                  <>
-                    <TypewriterText content={m.content} isNew={m.isNew} onComplete={() => { if(m.isNew) setMessages(prev => prev.map(msg => msg.id === m.id ? {...msg, isNew: false} : msg)) }} />
-                    {m.draftData && !m.draftData.isSaved && (
-                      <button onClick={() => handleConfirmDraftSave(m.id)} className="w-full mt-2 py-2 bg-slate-900 text-white text-[10px] font-bold rounded-lg shadow-sm">Konfirmasi Simpan ke Database</button>
-                    )}
-                  </>
-                )}
-              </div>
-              <div className={`flex items-center gap-2 mt-1 px-1 text-[10px] text-slate-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                <span>{m.timestamp}</span>
-                {!isUser && (
-                  <>
-                    <button onClick={() => speakText(m.content, m.id)} className={`flex items-center gap-0.5 ${speakingMessageId === m.id ? 'text-slate-900 font-bold' : ''}`}>{speakingMessageId === m.id ? <Square size={10} className="fill-current animate-pulse" /> : <Volume2 size={10} />}<span>Dengar</span></button>
-                    <button onClick={() => copyToClipboard(m.content, m.id)} className="flex items-center gap-0.5">{copiedId === m.id ? <Check size={10} className="text-emerald-500" /> : <Copy size={10} />}<span>Salin</span></button>
-                  </>
-                )}
-              </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3.5 flex flex-col">
+        {messages.length === 0 ? (
+          <div className="flex-1 min-h-[300px] flex flex-col items-center justify-center text-center p-6 my-auto select-none">
+            <div className="w-32 h-32 mb-3 relative flex items-center justify-center">
+              <img 
+                src="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2JyeWZkamY3eTNlZWcwajRhczU0ajgxeW5jeGU0YmpibnJ4bmh1eiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/1qzirb6B4KXOHbJpd3/giphy.gif" 
+                alt="Panca AI Robot" 
+                className="w-full h-full object-contain"
+              />
             </div>
-          );
-        })}
+            <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-zinc-100 max-w-xs leading-relaxed">
+              Selamat datang di Panca AI Assistant, silahkan sampaikan apa saja yang kamu butuhkan
+            </h3>
+          </div>
+        ) : (
+          messages.map((m) => {
+            const isUser = m.role === 'user';
+            return (
+              <div key={m.id} className={`max-w-[88%] ${isUser ? 'ml-auto text-right' : 'mr-auto text-left'}`}>
+                <div className={`p-3 rounded-2xl text-[10px] text-left shadow-2xs ${isUser ? 'bg-slate-900 text-white rounded-tr-none font-medium' : 'bg-white border border-slate-200 rounded-tl-none'}`}>
+                  {isUser ? <p className="whitespace-pre-wrap">{m.content}</p> : (
+                    <>
+                      <TypewriterText content={m.content} isNew={m.isNew} onComplete={() => { if(m.isNew) setMessages(prev => prev.map(msg => msg.id === m.id ? {...msg, isNew: false} : msg)) }} />
+                      {m.draftData && !m.draftData.isSaved && (
+                        <button onClick={() => handleConfirmDraftSave(m.id)} className="w-full mt-2 py-2 bg-slate-900 text-white text-[10px] font-bold rounded-lg shadow-sm">Konfirmasi Simpan ke Database</button>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className={`flex items-center gap-2 mt-1 px-1 text-[10px] text-slate-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                  <span>{m.timestamp}</span>
+                  {!isUser && (
+                    <>
+                      <button onClick={() => speakText(m.content, m.id)} className={`flex items-center gap-0.5 ${speakingMessageId === m.id ? 'text-slate-900 font-bold' : ''}`}>{speakingMessageId === m.id ? <Square size={10} className="fill-current animate-pulse" /> : <Volume2 size={10} />}<span>Dengar</span></button>
+                      <button onClick={() => copyToClipboard(m.content, m.id)} className="flex items-center gap-0.5">{copiedId === m.id ? <Check size={10} className="text-emerald-500" /> : <Copy size={10} />}<span>Salin</span></button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
         {isLoading && (
           <div className="bg-white border border-slate-200 p-2.5 rounded-xl w-fit flex items-center gap-1.5 shadow-2xs animate-pulse">
             <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" />
@@ -1052,17 +1055,45 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         </div>
       )}
 
-      <div className="bg-white dark:bg-zinc-900 p-3 border-t border-slate-200 dark:border-zinc-800 shrink-0 z-20 mt-auto">
-        <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="flex items-center gap-2">
-          <button type="button" onClick={startVoiceInput} className={`w-11 h-11 rounded-2xl flex items-center justify-center transition active:scale-90 shrink-0 border ${isListening ? 'bg-rose-500 text-white border-rose-500 shadow-lg animate-pulse' : 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-700'}`}>
-            {isListening ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-5 h-5" />}
-          </button>
-          <div className="relative flex-1">
-            <textarea ref={inputRef} rows={1} value={inputPrompt} onChange={(e) => { setInputPrompt(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`; }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); if (inputRef.current) inputRef.current.style.height = 'auto'; } }} placeholder={isListening ? "Mendengarkan..." : "Tanyakan AI..."} className="w-full rounded-2xl px-4 py-3 text-xs leading-tight text-slate-800 dark:text-zinc-100 outline-none transition border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-950 focus:bg-white dark:focus:bg-zinc-900 focus:border-slate-800 resize-none overflow-y-auto" style={{ minHeight: '44px', maxHeight: '150px' }} />
+      <div className="bg-white dark:bg-zinc-900 px-4 py-3 border-t border-slate-200/80 dark:border-zinc-800 shrink-0 z-20">
+        <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="relative flex items-center">
+          <div className="w-full bg-slate-50 dark:bg-zinc-800/80 rounded-full py-1.5 pl-3 pr-1.5 flex items-center justify-between border border-slate-200/90 dark:border-zinc-700 shadow-2xs">
+            <div className="flex items-center gap-2.5 flex-1 mr-2 min-w-0">
+              <button
+                type="button"
+                onClick={isListening ? stopVoiceInput : startVoiceInput}
+                title={isListening ? "Mendengarkan..." : "Input Suara (Mic)"}
+                className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-90 shrink-0 ${
+                  isListening
+                    ? 'bg-rose-500 text-white animate-pulse'
+                    : 'text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200'
+                }`}
+              >
+                {isListening ? <Square className="w-3.5 h-3.5 fill-white" /> : <Mic className="w-4 h-4" />}
+              </button>
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputPrompt}
+                onChange={(e) => setInputPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                placeholder={isListening ? "Mendengarkan..." : "Ketik pesan atau perintah..."}
+                className="w-full bg-transparent text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!inputPrompt.trim() || isLoading}
+              className="w-8 h-8 rounded-full bg-slate-900 hover:bg-black dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-slate-900 flex items-center justify-center transition active:scale-95 shrink-0 shadow-xs disabled:opacity-40"
+            >
+              <Send className="w-3.5 h-3.5 ml-0.5" />
+            </button>
           </div>
-          <button type="submit" disabled={!inputPrompt.trim() || isLoading} className="w-11 h-11 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center border border-transparent shadow-sm disabled:opacity-40 transition active:scale-90 shrink-0">
-            <Send className="w-5 h-5 ml-0.5" />
-          </button>
         </form>
       </div>
     </div>

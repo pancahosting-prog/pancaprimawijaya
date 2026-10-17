@@ -174,39 +174,25 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-slate-50 text-slate-800">
-      {/* Top Header */}
-      <div className="bg-white px-5 py-3.5 border-b border-slate-200/80 shadow-sm shrink-0 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-zinc-50 text-zinc-600 flex items-center justify-center font-bold">
-            <HardDrive className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-extrabold text-slate-900 leading-tight">Drive & Berkas</h2>
-            <p className="text-[10px] text-slate-400">Penyimpanan dokumen & tautan berbagi</p>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setShowUploadModal(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-600 hover:bg-zinc-700 text-white rounded-xl text-xs font-bold shadow-md shadow-zinc-200 active:scale-95 transition"
-        >
-          <Upload className="w-3.5 h-3.5" />
-          <span>Unggah</span>
-        </button>
-      </div>
-
-      {/* Search Bar */}
-      <div className="p-3 bg-white border-b border-slate-100">
-        <div className="relative">
+      {/* Search Bar & Upload Button */}
+      <div className="p-3 bg-white border-b border-slate-100 flex items-center gap-2 shrink-0">
+        <div className="relative flex-1">
           <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
           <input
             type="text"
-            placeholder="Cari nama berkas, postingan, atau lampiran..."
+            placeholder="Cari nama berkas, postingan, lampiran..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-700 placeholder:text-slate-400 outline-none focus:border-zinc-400 transition"
           />
         </div>
+        <button
+          onClick={() => setShowUploadModal(true)}
+          className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold shadow-xs active:scale-95 transition shrink-0"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          <span>Unggah</span>
+        </button>
       </div>
 
       {/* Drive Posts & Files List */}

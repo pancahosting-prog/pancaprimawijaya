@@ -85,18 +85,7 @@ export const PancaMessagesView: React.FC<PancaMessagesViewProps> = ({ currentUse
 
   return (
     <div className="flex flex-col h-full bg-slate-50 text-slate-800">
-      {/* Top Header */}
-      <div className="bg-white px-5 py-3.5 border-b border-slate-200/80 shadow-sm shrink-0 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-zinc-50 text-zinc-600 flex items-center justify-center font-bold">
-            <MessageSquare className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-extrabold text-slate-900 leading-tight">Pesan & Diskusi Tim</h2>
-            <p className="text-[10px] text-slate-400">Komunikasi internal & koordinasi task</p>
-          </div>
-        </div>
-      </div>
+      {/* Search Bar */}
 
       {/* Search Bar */}
       <div className="p-3 bg-white border-b border-slate-100">

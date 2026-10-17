@@ -93,50 +93,40 @@ export const PancaNotificationsView: React.FC<PancaNotificationsViewProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-slate-50 text-slate-800">
-      {/* Top Header */}
-      <div className="bg-white px-5 py-3.5 border-b border-slate-200/80 shadow-sm shrink-0 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-slate-50 text-slate-600 flex items-center justify-center font-bold">
-            <Bell className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-extrabold text-slate-900 leading-tight">Pusat Notifikasi</h2>
-            <p className="text-[10px] text-slate-400">Pemberitahuan sistem & task proyek</p>
-          </div>
+      {/* Filter Tabs & Actions */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-100 shrink-0">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setFilter('all')}
+            className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+              filter === 'all'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Semua ({notifications.length})
+          </button>
+          <button
+            onClick={() => setFilter('unread')}
+            className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+              filter === 'unread'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Belum Dibaca ({notifications.filter(n => !n.read).length})
+          </button>
         </div>
 
         <button
           onClick={markAllAsRead}
-          className="text-xs font-bold text-slate-600 hover:text-slate-700 flex items-center gap-1 active:scale-95 transition"
+          className="text-[11px] font-bold text-slate-500 hover:text-slate-900 flex items-center gap-1 active:scale-95 transition"
         >
           <CheckCheck className="w-3.5 h-3.5" />
           <span>Tandai Semua</span>
         </button>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-white border-b border-slate-100">
-        <button
-          onClick={() => setFilter('all')}
-          className={`px-3 py-1 rounded-full text-xs font-bold transition ${
-            filter === 'all'
-              ? 'bg-slate-600 text-white shadow-sm shadow-slate-200'
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-          }`}
-        >
-          Semua ({notifications.length})
-        </button>
-        <button
-          onClick={() => setFilter('unread')}
-          className={`px-3 py-1 rounded-full text-xs font-bold transition ${
-            filter === 'unread'
-              ? 'bg-slate-600 text-white shadow-sm shadow-slate-200'
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-          }`}
-        >
-          Belum Dibaca ({notifications.filter(n => !n.read).length})
-        </button>
-      </div>
 
       {/* Notification List */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-4">
