@@ -3,7 +3,7 @@ import {
   Send, ArrowLeft, Trash2, Copy, Check, Sparkles, 
   Bot, User, Download, Mic, Square, Volume2, VolumeX,
   AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package,
-  ChevronUp, ChevronDown, CheckCircle, Type
+  ChevronUp, ChevronDown, CheckCircle
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -27,20 +27,11 @@ interface Message {
   draftData?: DraftData;
 }
 
-export const CHAT_FONT_SIZES = [
-  { id: '10', name: 'Kecil', px: 10, class: 'text-[10px]', tableClass: 'text-[9px]' },
-  { id: '11', name: 'Sedang', px: 11, class: 'text-[11px]', tableClass: 'text-[10px]' },
-  { id: '12', name: 'Normal (+2)', px: 12, class: 'text-xs', tableClass: 'text-[11px]' },
-  { id: '14', name: 'Besar', px: 14, class: 'text-sm', tableClass: 'text-xs' },
-  { id: '16', name: 'Sangat Besar', px: 16, class: 'text-base', tableClass: 'text-sm' }
-];
-
 const TypewriterText: React.FC<{
   content: string;
   isNew?: boolean;
-  tableFontSizeClass?: string;
   onComplete?: () => void;
-}> = ({ content, isNew = false, tableFontSizeClass = 'text-[11px]', onComplete }) => {
+}> = ({ content, isNew = false, onComplete }) => {
   const [displayedText, setDisplayedText] = useState(isNew ? '' : content);
   const [isTyping, setIsTyping] = useState(isNew);
 
@@ -73,19 +64,19 @@ const TypewriterText: React.FC<{
   }, [content, isNew]);
 
   return (
-    <div className="relative overflow-x-auto">
+    <div className="relative overflow-x-auto text-[14px] leading-relaxed">
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{
           table: ({ children }) => (
             <div className="my-2.5 overflow-x-auto rounded-xl bg-slate-100/70 dark:bg-zinc-800/50 p-1 border border-slate-200/80 dark:border-zinc-700/60 shadow-2xs">
-              <table className={`min-w-full ${tableFontSizeClass} text-left border-collapse`}>
+              <table className="min-w-full text-[12px] text-left border-collapse">
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-slate-200/60 dark:bg-zinc-800/80 text-slate-900 dark:text-zinc-100 font-extrabold text-[10px] border-b border-slate-200/80 dark:border-zinc-700/60">
+            <thead className="bg-slate-200/60 dark:bg-zinc-800/80 text-slate-900 dark:text-zinc-100 font-extrabold text-[12px] border-b border-slate-200/80 dark:border-zinc-700/60">
               {children}
             </thead>
           ),
@@ -109,13 +100,13 @@ const TypewriterText: React.FC<{
               {children}
             </td>
           ),
-          ul: ({ children }) => <ul className="list-disc list-inside my-2 space-y-1">{children}</ul>,
-          ol: ({ children }) => <ol className="list-decimal list-inside my-2 space-y-1">{children}</ol>,
-          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-          p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+          ul: ({ children }) => <ul className="list-disc list-inside my-2 space-y-1 text-[14px]">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal list-inside my-2 space-y-1 text-[14px]">{children}</ol>,
+          li: ({ children }) => <li className="leading-relaxed text-[14px]">{children}</li>,
+          p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed text-[14px]">{children}</p>,
           strong: ({ children }) => <strong className="font-extrabold text-slate-900 dark:text-zinc-100">{children}</strong>,
           code: ({ children }) => (
-            <code className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-slate-400 font-mono text-[10px]">
+            <code className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-slate-400 font-mono text-[12px]">
               {children}
             </code>
           )
@@ -206,29 +197,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash-lite');
   const [showModelSelector, setShowModelSelector] = useState(false);
   
-  // Font size configuration (Default enlarged by 2 levels to index 2 = 12px / text-xs)
-  const [fontIndex, setFontIndex] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('mypanca_chat_font_index');
-      if (saved !== null) {
-        const val = parseInt(saved, 10);
-        if (!isNaN(val) && val >= 0 && val < CHAT_FONT_SIZES.length) return val;
-      }
-    } catch (e) {}
-    return 2; // Default to 'Normal (+2)' (12px / text-xs)
-  });
-  const [showFontDropdown, setShowFontDropdown] = useState(false);
-  const currentFontSize = CHAT_FONT_SIZES[fontIndex] || CHAT_FONT_SIZES[2];
 
-  const handleStepFont = (delta: number) => {
-    setFontIndex(prev => {
-      const next = Math.max(0, Math.min(CHAT_FONT_SIZES.length - 1, prev + delta));
-      try {
-        localStorage.setItem('mypanca_chat_font_index', next.toString());
-      } catch (e) {}
-      return next;
-    });
-  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -849,69 +818,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         </div>
 
         {/* Header Right Actions */}
-        <div className="flex items-center gap-1.5">
-          {/* Dropdown Ukuran Font (disebelah kiri tombol mute) */}
-          <div className="relative">
-            <button
-              onClick={() => setShowFontDropdown(!showFontDropdown)}
-              title="Ubah Ukuran Font Chat"
-              className="p-1.5 px-2 rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/80 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 flex items-center gap-1 transition active:scale-95 text-xs font-bold"
-            >
-              <Type className="w-3.5 h-3.5 text-slate-600 dark:text-zinc-400" />
-              <span className="text-[10px] font-black">{currentFontSize.px}px</span>
-              <ChevronDown size={9} className={`transition-transform duration-200 ${showFontDropdown ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showFontDropdown && (
-              <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-50 p-2 space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
-                <div className="flex items-center justify-between px-1 text-[10px] font-bold text-slate-400 pb-1.5 border-b border-slate-100 dark:border-zinc-800">
-                  <span>Ukuran Font</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleStepFont(-1)}
-                      disabled={fontIndex === 0}
-                      className="w-5 h-5 rounded-md bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center font-bold text-xs disabled:opacity-30 active:scale-90"
-                      title="Perkecil Font (-)"
-                    >
-                      -
-                    </button>
-                    <button
-                      onClick={() => handleStepFont(1)}
-                      disabled={fontIndex === CHAT_FONT_SIZES.length - 1}
-                      className="w-5 h-5 rounded-md bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center font-bold text-xs disabled:opacity-30 active:scale-90"
-                      title="Perbesar Font (+)"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-0.5">
-                  {CHAT_FONT_SIZES.map((fs, idx) => (
-                    <button
-                      key={fs.id}
-                      onClick={() => {
-                        setFontIndex(idx);
-                        try {
-                          localStorage.setItem('mypanca_chat_font_index', idx.toString());
-                        } catch (e) {}
-                        setShowFontDropdown(false);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-xl flex items-center justify-between transition-colors ${
-                        fontIndex === idx
-                          ? 'bg-slate-900 text-white font-bold'
-                          : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 text-xs'
-                      }`}
-                    >
-                      <span>{fs.name}</span>
-                      <span className="text-[10px] opacity-70 font-mono">{fs.px}px</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
+        <div className="flex items-center gap-1">
           {/* Tombol Mute */}
           <button onClick={() => { const next = !autoSpeak; setAutoSpeak(next); if (!next) stopSpeaking(); }} className={`p-2 rounded-xl transition active:scale-95 ${autoSpeak ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600'}`}>{autoSpeak ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</button>
           
@@ -941,15 +848,14 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             return (
               <div key={m.id} className={isUser ? "max-w-[85%] ml-auto text-right" : "w-full text-left py-1"}>
                 {isUser ? (
-                  <div className={`inline-block p-3 rounded-2xl rounded-tr-none bg-slate-900 text-white font-medium text-left shadow-2xs ${currentFontSize.class}`}>
+                  <div className="inline-block p-3 rounded-2xl rounded-tr-none bg-slate-900 text-white font-medium text-left shadow-2xs text-[14px] leading-relaxed">
                     <p className="whitespace-pre-wrap">{m.content}</p>
                   </div>
                 ) : (
-                  <div className={`w-full text-left text-slate-800 dark:text-zinc-100 leading-relaxed ${currentFontSize.class}`}>
+                  <div className="w-full text-left text-slate-800 dark:text-zinc-100 leading-relaxed text-[14px]">
                     <TypewriterText 
                       content={m.content} 
                       isNew={m.isNew} 
-                      tableFontSizeClass={currentFontSize.tableClass}
                       onComplete={() => { 
                         if (m.isNew) setMessages(prev => prev.map(msg => msg.id === m.id ? { ...msg, isNew: false } : msg));
                       }} 
