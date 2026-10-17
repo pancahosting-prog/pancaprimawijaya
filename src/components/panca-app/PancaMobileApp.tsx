@@ -147,27 +147,29 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
           )}
 
           {activeTab === 'ai' && (
-            <PancaAIChatView
-              currentUser={currentUser}
-              activeCompany={activeCompany}
-              transactions={transactions}
-              customers={customers}
-              products={products}
-              suppliers={suppliers}
-              purchaseOrders={purchaseOrders}
-              employees={employees}
-              setCustomers={setCustomers}
-              setTransactions={setTransactions}
-              setProducts={setProducts}
-              syncToSupabase={syncToSupabase}
-              initialPrompt={pendingPromptForAI}
-              rolePermissions={rolePermissions}
-              qaQuestions={qaQuestions}
-              onBack={() => {
-                setPendingPromptForAI('');
-                setActiveTab('home');
-              }}
-            />
+            <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden">
+              <PancaAIChatView
+                currentUser={currentUser}
+                activeCompany={activeCompany}
+                transactions={transactions}
+                customers={customers}
+                products={products}
+                suppliers={suppliers}
+                purchaseOrders={purchaseOrders}
+                employees={employees}
+                setCustomers={setCustomers}
+                setTransactions={setTransactions}
+                setProducts={setProducts}
+                syncToSupabase={syncToSupabase}
+                initialPrompt={pendingPromptForAI}
+                rolePermissions={rolePermissions}
+                qaQuestions={qaQuestions}
+                onBack={() => {
+                  setPendingPromptForAI('');
+                  setActiveTab('home');
+                }}
+              />
+            </div>
           )}
 
           {activeTab === 'pesan' && (

@@ -800,7 +800,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 font-sans relative">
+    <div className="flex flex-col flex-1 h-full min-h-full bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 font-sans relative">
       <div className="bg-white dark:bg-zinc-900 px-4 py-3 border-b border-slate-200/80 dark:border-zinc-800 flex items-center justify-between shadow-xs shrink-0 z-10">
         <div className="flex items-center gap-2.5">
           <button onClick={() => { stopSpeaking(); stopVoiceInput(); onBack(); }} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-600 dark:text-zinc-300 transition active:scale-95"><ArrowLeft className="w-4 h-4" /></button>
@@ -1052,7 +1052,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         </div>
       )}
 
-      <div className="bg-white dark:bg-zinc-900 p-3 border-t border-slate-200 dark:border-zinc-800 shrink-0 z-20">
+      <div className="bg-white dark:bg-zinc-900 p-3 border-t border-slate-200 dark:border-zinc-800 shrink-0 z-20 mt-auto">
         <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="flex items-center gap-2">
           <button type="button" onClick={startVoiceInput} className={`w-11 h-11 rounded-2xl flex items-center justify-center transition active:scale-90 shrink-0 border ${isListening ? 'bg-rose-500 text-white border-rose-500 shadow-lg animate-pulse' : 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-700'}`}>
             {isListening ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-5 h-5" />}

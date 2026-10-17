@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Bell, Search, ArrowRight, Sparkles, Send, User, FileText, 
   Tag, BarChart3, Zap, Target, FileEdit, TrendingUp, LayoutGrid
@@ -33,9 +33,55 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
   onLogout,
 }) => {
   const [chatInput, setChatInput] = useState('');
+  const [placeholderText, setPlaceholderText] = useState('');
 
   const firstName = currentUser?.nama ? currentUser.nama.split(' ')[0] : 'Ahmad';
   const fullName = currentUser?.nama || 'Ahmad Rahmat';
+
+  // Looping Typewriter for input placeholder (smooth & not too fast)
+  useEffect(() => {
+    const phrases = [
+      'Ketik pesan atau perintah...',
+      'Tanyakan data penjualan...',
+      'Cek stok produk & inventaris...',
+      'Buat draf penawaran baru...',
+      'Status piutang jatuh tempo...'
+    ];
+    let phraseIdx = 0;
+    let charIdx = 0;
+    let isDeleting = false;
+    let timer: any;
+
+    const handleTyping = () => {
+      const current = phrases[phraseIdx];
+
+      if (isDeleting) {
+        setPlaceholderText(current.substring(0, charIdx - 1));
+        charIdx--;
+      } else {
+        setPlaceholderText(current.substring(0, charIdx + 1));
+        charIdx++;
+      }
+
+      let speed = 90; // moderate speed, comfortable to read
+
+      if (!isDeleting && charIdx === current.length) {
+        speed = 2200; // pause at end of sentence
+        isDeleting = true;
+      } else if (isDeleting && charIdx === 0) {
+        isDeleting = false;
+        phraseIdx = (phraseIdx + 1) % phrases.length;
+        speed = 500; // pause before typing next sentence
+      } else if (isDeleting) {
+        speed = 45; // faster deletion
+      }
+
+      timer = setTimeout(handleTyping, speed);
+    };
+
+    timer = setTimeout(handleTyping, 600);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleSendInput = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -131,14 +177,14 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
           {fullName}
         </h2>
         <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed mt-1 max-w-xs">
-          Asisten AI untuk membantu kamu bekerja lebih cepat, lebih cerdas, dan lebih produktif.
+          Asisten AI Panca Prima Wijaya
         </p>
       </div>
 
-      {/* 3. Hero Card: AI Assistant with 3D Robot & Input Bar */}
-      <div className="relative rounded-[28px] p-5 bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/60 dark:from-zinc-900 dark:via-zinc-900/90 dark:to-zinc-800/80 border border-slate-200/80 dark:border-zinc-800 shadow-xs overflow-hidden">
+      {/* 3. Hero Card: Solid White Card matching GIF background */}
+      <div className="relative rounded-[28px] p-5 bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800 shadow-xs overflow-hidden">
         {/* Top-left Pill */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-200/80 dark:bg-zinc-800 text-[10px] font-bold text-slate-700 dark:text-zinc-300 mb-3 shadow-2xs">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 text-[10px] font-bold text-slate-700 dark:text-zinc-300 mb-3 shadow-2xs">
           <Sparkles className="w-3 h-3 text-slate-600 dark:text-zinc-300" />
           <span>AI Assistant</span>
         </div>
@@ -153,98 +199,26 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
             </p>
           </div>
 
-          {/* 3D Robot Character Mascot */}
-          <div className="w-28 h-28 -mr-2 -mt-4 relative flex items-center justify-center shrink-0">
-            <svg viewBox="0 0 160 160" className="w-full h-full drop-shadow-md">
-              <defs>
-                {/* Robot Body Ceramic Gradient */}
-                <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#ffffff" />
-                  <stop offset="60%" stopColor="#f1f5f9" />
-                  <stop offset="100%" stopColor="#cbd5e1" />
-                </linearGradient>
-                {/* Head Top Gloss Highlight */}
-                <linearGradient id="headHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
-                  <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-                </linearGradient>
-                {/* Visor Screen Glass Gradient */}
-                <linearGradient id="visorGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#0f172a" />
-                  <stop offset="85%" stopColor="#1e293b" />
-                  <stop offset="100%" stopColor="#020617" />
-                </linearGradient>
-                {/* Ear Cup Gradient */}
-                <linearGradient id="earGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#e2e8f0" />
-                  <stop offset="100%" stopColor="#94a3b8" />
-                </linearGradient>
-                {/* Shadow Gradient */}
-                <radialGradient id="robotShadow" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="#000000" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-                </radialGradient>
-              </defs>
-
-              {/* Ground Shadow */}
-              <ellipse cx="80" cy="150" rx="38" ry="7" fill="url(#robotShadow)" />
-
-              {/* Antenna on head */}
-              <circle cx="80" cy="20" r="4.5" fill="#e2e8f0" stroke="#94a3b8" strokeWidth="1" />
-              <rect x="78.5" y="24" width="3" height="7" rx="1.5" fill="#cbd5e1" />
-
-              {/* Torso / Body */}
-              <path d="M 60 110 C 60 100 100 100 100 110 L 98 136 C 98 143 62 143 62 136 Z" fill="url(#bodyGrad)" stroke="#cbd5e1" strokeWidth="1" />
-              {/* Chest Badge 'S' */}
-              <circle cx="80" cy="122" r="6" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="0.8" />
-              <text x="80" y="125" textAnchor="middle" fontSize="7.5" fontWeight="900" fill="#0f172a">S</text>
-
-              {/* Left Arm (Relaxed) */}
-              <path d="M 60 114 Q 50 125 54 135 Q 57 138 61 133 Q 63 124 64 118 Z" fill="url(#bodyGrad)" stroke="#cbd5e1" strokeWidth="1" />
-
-              {/* Right Arm (Waving Hand!) */}
-              <path d="M 98 114 Q 112 110 116 98 Q 120 94 118 100 Q 112 116 99 122 Z" fill="url(#bodyGrad)" stroke="#cbd5e1" strokeWidth="1" />
-              {/* Right Hand Waving Palm */}
-              <circle cx="117" cy="95" r="4.5" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1" />
-              <circle cx="119" cy="91" r="1.8" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="0.8" />
-              <circle cx="122" cy="94" r="1.8" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="0.8" />
-
-              {/* Head Base (Curved Smooth Cube/Oval) */}
-              <rect x="42" y="30" width="76" height="68" rx="28" fill="url(#bodyGrad)" stroke="#cbd5e1" strokeWidth="1.2" />
-              {/* Head Gloss Highlight */}
-              <ellipse cx="80" cy="38" rx="26" ry="6" fill="url(#headHighlight)" />
-
-              {/* Ears / Headphone Cushions */}
-              <ellipse cx="40" cy="64" rx="4.5" ry="11" fill="url(#earGrad)" stroke="#94a3b8" strokeWidth="0.8" />
-              <ellipse cx="120" cy="64" rx="4.5" ry="11" fill="url(#earGrad)" stroke="#94a3b8" strokeWidth="0.8" />
-
-              {/* Glossy Black Visor Screen */}
-              <rect x="49" y="42" width="62" height="44" rx="18" fill="url(#visorGrad)" stroke="#334155" strokeWidth="1" />
-
-              {/* Visor Glare / Reflection Arc */}
-              <path d="M 54 50 Q 80 44 104 50" fill="none" stroke="#475569" strokeWidth="1.2" strokeLinecap="round" opacity="0.6" />
-
-              {/* Smiling Happy Eyes (^ ^) */}
-              <path d="M 64 63 Q 70 56 76 63" fill="none" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round" />
-              <path d="M 84 63 Q 90 56 96 63" fill="none" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round" />
-
-              {/* Cute Cheek Blushes */}
-              <ellipse cx="61" cy="72" rx="3.5" ry="2" fill="#38bdf8" opacity="0.4" />
-              <ellipse cx="99" cy="72" rx="3.5" ry="2" fill="#38bdf8" opacity="0.4" />
-            </svg>
+          {/* Robot GIF Mascot */}
+          <div className="w-28 h-28 -mr-1 -mt-3 relative flex items-center justify-center shrink-0">
+            <img 
+              src="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2JyeWZkamY3eTNlZWcwajRhczU0ajgxeW5jeGU0YmpibnJ4bmh1eiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/1qzirb6B4KXOHbJpd3/giphy.gif" 
+              alt="Panca AI Robot" 
+              className="w-full h-full object-contain"
+            />
           </div>
         </div>
 
-        {/* Input Bar inside Card */}
+        {/* Input Bar inside Card with Repeating Typewriter Placeholder */}
         <form onSubmit={handleSendInput} className="mt-4 relative flex items-center">
-          <div className="w-full bg-white dark:bg-zinc-900/90 rounded-full py-1.5 pl-4 pr-1.5 flex items-center justify-between border border-slate-200 dark:border-zinc-700 shadow-2xs">
+          <div className="w-full bg-slate-50 dark:bg-zinc-800/80 rounded-full py-1.5 pl-4 pr-1.5 flex items-center justify-between border border-slate-200/90 dark:border-zinc-700 shadow-2xs">
             <div className="flex items-center gap-2.5 flex-1 mr-2">
               <Sparkles className="w-4 h-4 text-slate-400 shrink-0" />
               <input
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ketik pesan atau perintah..."
+                placeholder={placeholderText || "Ketik pesan atau perintah..."}
                 className="w-full bg-transparent text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 outline-none"
               />
             </div>
