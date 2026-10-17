@@ -531,11 +531,15 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       setSpeakingMessageId(null);
     };
 
-    utterance.onerror = () => {
-      setSpeakingMessageId(null);
-    };
-
-    window.speechSynthesis.speak(utterance);
+    // Safe tick after cancel to avoid browser speech collision bug
+    setTimeout(() => {
+      try {
+        window.speechSynthesis.speak(utterance);
+      } catch (e) {
+        console.warn('Speech synthesis speak error:', e);
+        setSpeakingMessageId(null);
+      }
+    }, 50);
   };
 
   const stopSpeaking = () => {
@@ -2053,7 +2057,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           {/* Live Voice Call Button (Di sebelah kiri tombol Mic) */}
           <button
             type="button"
-            onClick={() => setShowCallModal(true)}
+            onClick={() => {
+              stopSpeaking();
+              stopVoiceInput();
+              setShowCallModal(true);
+            }}
             className="w-11 h-11 rounded-2xl flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/25 transition active:scale-90 shrink-0 relative group border border-emerald-500/30"
             title="Mulai Panggilan Telepon AI (Live Voice Audio Dialog)"
           >

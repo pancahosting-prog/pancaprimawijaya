@@ -646,8 +646,8 @@ export const callGeminiLiveVoiceWithRolling = async (
               parts: [{ text: systemPrompt }]
             },
             generationConfig: {
-              temperature: 0.2,
-              maxOutputTokens: 250 // Voice responses should be concise and spoken quickly
+              temperature: 0.25,
+              maxOutputTokens: 1500 // Allow comprehensive, informative and complete voice responses
             }
           })
         });

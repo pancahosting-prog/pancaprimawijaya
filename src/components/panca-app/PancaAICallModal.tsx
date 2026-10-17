@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   PhoneOff, Mic, MicOff, Volume2, VolumeX, Settings, 
   Sparkles, Bot, AlertCircle, RefreshCw, Plus, Trash2, Check,
-  Radio, X, ExternalLink
+  Radio, X, ExternalLink, Hand, Volume1, ShieldCheck
 } from 'lucide-react';
 import { 
   getStoredGeminiLiveSettings, 
@@ -39,12 +39,12 @@ export const PancaAICallModal: React.FC<PancaAICallModalProps> = ({
   context
 }) => {
   const [callDuration, setCallDuration] = useState<number>(0);
-  const [callState, setCallState] = useState<'connecting' | 'listening' | 'processing' | 'speaking' | 'idle'>('connecting');
+  const [callState, setCallState] = useState<'connecting' | 'listening' | 'processing' | 'speaking' | 'idle' | 'cooldown'>('connecting');
   const [isMicMuted, setIsMicMuted] = useState<boolean>(false);
   const [isSpeakerMuted, setIsSpeakerMuted] = useState<boolean>(false);
   const [transcript, setTranscript] = useState<{ userText: string; aiText: string }>({
     userText: '',
-    aiText: 'Halo! Saya Panca AI Assistant. Silakan bicara langsung, ada data stok, omzet, atau transaksi yang ingin dicek?'
+    aiText: 'Halo! Saya Panca AI Assistant. Silakan bicara langsung, ada data stok produk, laporan omzet, atau transaksi yang ingin diperiksa?'
   });
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [liveSettings, setLiveSettings] = useState<GeminiSettings>(getStoredGeminiLiveSettings());
@@ -58,6 +58,14 @@ export const PancaAICallModal: React.FC<PancaAICallModalProps> = ({
   const timerRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
+  // Anti-Echo & Loudspeaker Acoustic Gate Refs
+  const isAISpeakingRef = useRef<boolean>(false);
+  const lastAISpokenTextRef = useRef<string>('');
+  const lastAISpokenTimeRef = useRef<number>(0);
+  const echoCooldownTimerRef = useRef<any>(null);
+  const speechSafetyTimeoutRef = useRef<any>(null);
+  const isProcessingRef = useRef<boolean>(false);
+
   // Initialize SpeechSynthesis
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -65,33 +73,79 @@ export const PancaAICallModal: React.FC<PancaAICallModalProps> = ({
     }
   }, []);
 
-  // Handle call timer
+  // Handle call timer & greeting lifecycle
   useEffect(() => {
     if (isOpen) {
       setCallDuration(0);
       setCallState('connecting');
+      isAISpeakingRef.current = false;
+      isProcessingRef.current = false;
+
       timerRef.current = setInterval(() => {
         setCallDuration(prev => prev + 1);
       }, 1000);
 
       const connectTimer = setTimeout(() => {
-        setCallState('listening');
-        // Speak initial greeting if speaker is on
-        speakAIResponse('Halo! Saya Panca AI Assistant. Silakan bicara langsung, ada data stok, omzet, atau transaksi yang ingin dicek?');
-      }, 1200);
+        const greeting = 'Halo! Saya Panca AI Assistant. Silakan bicara langsung, ada data stok produk, laporan omzet, atau transaksi yang ingin diperiksa?';
+        setTranscript(prev => ({ ...prev, aiText: greeting }));
+        speakAIResponse(greeting);
+      }, 1000);
 
       return () => {
         clearInterval(timerRef.current);
         clearTimeout(connectTimer);
+        clearTimeout(echoCooldownTimerRef.current);
+        clearTimeout(speechSafetyTimeoutRef.current);
         stopSpeech();
         stopRecognition();
+        isAISpeakingRef.current = false;
+        isProcessingRef.current = false;
       };
     }
   }, [isOpen]);
 
-  // Handle Speech Recognition
+  // Acoustic Echo Detector: suppresses loudspeaker bleed
+  const isAcousticEcho = (userSpeech: string): boolean => {
+    if (!userSpeech || !userSpeech.trim()) return true;
+    const now = Date.now();
+    // If AI speech finished less than 1100ms ago, it's very likely speaker bleed
+    if (now - lastAISpokenTimeRef.current < 1100) {
+      console.log('[EchoGuard] Rejected speech within 1.1s cooldown of AI speech');
+      return true;
+    }
+
+    const cleanUser = userSpeech.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+    const cleanAI = lastAISpokenTextRef.current.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+
+    if (!cleanUser || !cleanAI) return false;
+
+    // Direct substring or inclusion if speech is long enough
+    if (cleanAI.includes(cleanUser) && cleanUser.length > 4) {
+      console.log('[EchoGuard] Rejected user speech matching AI spoken text substring');
+      return true;
+    }
+
+    // Word overlap check
+    const userWords = cleanUser.split(/\s+/).filter(w => w.length > 3);
+    if (userWords.length > 0) {
+      const aiWordsSet = new Set(cleanAI.split(/\s+/));
+      let matchCount = 0;
+      for (const w of userWords) {
+        if (aiWordsSet.has(w)) matchCount++;
+      }
+      const overlapRatio = matchCount / userWords.length;
+      if (overlapRatio > 0.6 && now - lastAISpokenTimeRef.current < 5000) {
+        console.log('[EchoGuard] Rejected user speech due to >60% word overlap with AI response');
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Handle Speech Recognition with Half-Duplex Gate (Muted during AI Speech)
   const startRecognition = () => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || isAISpeakingRef.current) return;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       console.warn('SpeechRecognition API not available in this browser');
@@ -116,6 +170,11 @@ export const PancaAICallModal: React.FC<PancaAICallModalProps> = ({
       };
 
       recognition.onresult = (event: any) => {
+        // If AI is currently speaking or in cooldown, discard immediately to prevent feedback loop!
+        if (isAISpeakingRef.current) {
+          return;
+        }
+
         let interimTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
@@ -128,11 +187,6 @@ export const PancaAICallModal: React.FC<PancaAICallModalProps> = ({
         const currentText = (finalUserSpeech || interimTranscript).trim();
         if (currentText) {
           setTranscript(prev => ({ ...prev, userText: currentText }));
-          // If user starts speaking while AI is talking, stop AI speech (barge-in)
-          if (synthRef.current && synthRef.current.speaking) {
-            synthRef.current.cancel();
-            setCallState('listening');
-          }
         }
       };
 
@@ -145,13 +199,18 @@ export const PancaAICallModal: React.FC<PancaAICallModalProps> = ({
 
       recognition.onend = () => {
         setRecognitionActive(false);
-        // If final utterance captured and not muted, process it
-        if (finalUserSpeech.trim().length > 0 && !isMicMuted) {
+        // If final utterance captured, not muted, and AI is not speaking
+        if (finalUserSpeech.trim().length > 0 && !isMicMuted && !isAISpeakingRef.current) {
           const userQuery = finalUserSpeech.trim();
           finalUserSpeech = '';
-          handleProcessVoiceQuery(userQuery);
-        } else if (isOpen && !isMicMuted && callState === 'listening') {
-          // Restart listening loop
+          if (!isAcousticEcho(userQuery)) {
+            handleProcessVoiceQuery(userQuery);
+          } else {
+            console.log('[CallModal] Echo detected from loudspeaker, discarding');
+            setCallState('listening');
+          }
+        } else if (isOpen && !isMicMuted && callState === 'listening' && !isAISpeakingRef.current) {
+          // Restart listening loop safely
           try {
             recognition.start();
           } catch {
@@ -181,55 +240,101 @@ export const PancaAICallModal: React.FC<PancaAICallModalProps> = ({
 
   // Turn management: start/stop listening based on state
   useEffect(() => {
-    if (isOpen && !isMicMuted && callState === 'listening') {
+    if (isOpen && !isMicMuted && callState === 'listening' && !isAISpeakingRef.current) {
       startRecognition();
     } else {
       stopRecognition();
     }
   }, [isOpen, isMicMuted, callState]);
 
-  // Speak AI Response with Natural Voice
+  // Speak AI Response with Natural Voice and Acoustic Echo Protection
   const speakAIResponse = (text: string) => {
+    if (!isOpen) return;
+
+    // 1. Immediately abort microphone so it NEVER captures the loudspeaker sound
+    stopRecognition();
+
     if (isSpeakerMuted || !synthRef.current) {
+      isAISpeakingRef.current = false;
       setCallState('listening');
       return;
     }
 
     try {
+      // Cancel previous speech safely
       synthRef.current.cancel();
+      clearTimeout(echoCooldownTimerRef.current);
+      clearTimeout(speechSafetyTimeoutRef.current);
+
+      isAISpeakingRef.current = true;
       setCallState('speaking');
 
-      // Clean text for speech: remove markdown symbols, bullets, asterisks
+      // Clean text for natural speech synthesis
       const cleanVoiceText = text
-        .replace(/\*\*/g, '')
-        .replace(/\*/g, '')
-        .replace(/#/g, '')
-        .replace(/- /g, '')
-        .replace(/\[.*?\]/g, '')
-        .replace(/`.*?`/g, '')
+        .replace(/#{1,6}\s+/g, '')
+        .replace(/\*\*(.*?)\*\*/g, '$1')
+        .replace(/\*(.*?)\*/g, '$1')
+        .replace(/[-*•]\s+/g, ', ')
+        .replace(/\|.*?\|/g, '')
+        .replace(/`{1,3}.*?`{1,3}/g, '')
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+        .replace(/---/g, '')
+        .replace(/\n+/g, ' ')
         .trim();
 
-      const utterance = new SpeechSynthesisUtterance(cleanVoiceText);
-      utterance.lang = 'id-ID';
-      utterance.rate = 1.05; // Natural talking pace
-      utterance.pitch = 1.0;
+      lastAISpokenTextRef.current = cleanVoiceText;
+      lastAISpokenTimeRef.current = Date.now();
 
-      // Find best Indonesian voice if present
-      const voices = synthRef.current.getVoices();
-      const idVoice = voices.find(v => v.lang.startsWith('id') || v.lang.includes('ID'));
-      if (idVoice) utterance.voice = idVoice;
+      // Safe tick (60ms) to prevent Chrome engine speech cancellation race condition
+      setTimeout(() => {
+        if (!synthRef.current || !isOpen) return;
 
-      utterance.onend = () => {
-        setCallState('listening');
-      };
+        const utterance = new SpeechSynthesisUtterance(cleanVoiceText);
+        utterance.lang = 'id-ID';
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
 
-      utterance.onerror = () => {
-        setCallState('listening');
-      };
+        const voices = synthRef.current.getVoices();
+        const idVoice = voices.find(v => v.lang.startsWith('id') || v.lang.includes('ID'));
+        if (idVoice) utterance.voice = idVoice;
 
-      synthRef.current.speak(utterance);
+        const onFinishUtterance = () => {
+          clearTimeout(speechSafetyTimeoutRef.current);
+          lastAISpokenTimeRef.current = Date.now();
+
+          // Echo Silence Buffer (850ms) to allow audio hardware buffer and room reverberations to clear
+          setCallState('cooldown');
+          echoCooldownTimerRef.current = setTimeout(() => {
+            isAISpeakingRef.current = false;
+            if (isOpen && !isMicMuted) {
+              setCallState('listening');
+            } else {
+              setCallState('idle');
+            }
+          }, 850);
+        };
+
+        utterance.onend = onFinishUtterance;
+        utterance.onerror = (e) => {
+          console.warn('[CallModal] Utterance error/interrupted:', e);
+          onFinishUtterance();
+        };
+
+        // Fallback watchdog: in case browser drops onend (happens on some Android/iOS)
+        const estimatedDurationMs = Math.max(3000, (cleanVoiceText.length / 14) * 1000);
+        speechSafetyTimeoutRef.current = setTimeout(() => {
+          if (isAISpeakingRef.current) {
+            console.log('[CallModal] Safety watchdog released speaking state');
+            onFinishUtterance();
+          }
+        }, estimatedDurationMs + 4000);
+
+        synthRef.current.speak(utterance);
+      }, 60);
+
     } catch (e) {
       console.warn('Speech synthesis error:', e);
+      isAISpeakingRef.current = false;
       setCallState('listening');
     }
   };
@@ -238,32 +343,57 @@ export const PancaAICallModal: React.FC<PancaAICallModalProps> = ({
     if (synthRef.current) {
       synthRef.current.cancel();
     }
+    clearTimeout(echoCooldownTimerRef.current);
+    clearTimeout(speechSafetyTimeoutRef.current);
+    isAISpeakingRef.current = false;
   };
 
-  // Process User Query by reading REAL database data
-  const handleProcessVoiceQuery = async (queryText: string) => {
-    if (!queryText.trim()) return;
+  // User manually interrupts AI to speak immediately
+  const handleInterruptAI = () => {
+    stopSpeech();
+    isAISpeakingRef.current = false;
+    lastAISpokenTimeRef.current = Date.now() - 3000;
+    if (!isMicMuted) {
+      setCallState('listening');
+    }
+  };
 
+  // Process User Query by reading REAL database data with Complete, Informative Instruction
+  const handleProcessVoiceQuery = async (queryText: string) => {
+    if (!queryText.trim() || isProcessingRef.current) return;
+
+    if (isAcousticEcho(queryText)) {
+      console.log('[CallModal] Suppressed loudspeaker echo:', queryText);
+      setCallState('listening');
+      return;
+    }
+
+    isProcessingRef.current = true;
     stopRecognition();
     stopSpeech();
     setCallState('processing');
 
     // 1. Generate real-time system data digest
     const dataDigest = generatePancaDataDigest(context, queryText);
-    const agg = compileSystemAggregations(context, queryText);
 
-    // 2. Strict system instruction for conversational voice response
-    const voiceSystemPrompt = `Anda adalah "Panca AI Assistant" yang sedang berbicara langsung melalui panggilan telepon suara (live voice dialog) dengan ${currentUser.nama || 'Bapak/Ibu'}.
+    // 2. Comprehensive voice system instruction
+    const voiceSystemPrompt = `Anda adalah "Panca AI Assistant" yang sedang berbicara langsung melalui sambungan telepon suara dengan ${currentUser.nama || 'Bapak/Ibu'}.
 Perusahaan: ${context.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}.
 
-PETUNJUK PENTING PERCAKAPAN TELEPON:
-1. Jawaban Anda AKAN DIBACAKAN LANGSUNG KE TELINGA PENGGUNA LEWAT SUARA.
-2. Jawablah secara singkat (1 sampai 3 kalimat pendek), ramah, to-the-point, dan sopan.
-3. DILARANG menggunakan markdown tebal (**), simbol pagar (#), tanda bintang (*), atau tabel baris karena itu adalah teks visual.
-4. BACA DATA DARI DATABASE REAL-TIME DENGAN AKURAT:
-   - Jika menanyakan stok produk, bacakan angka sisa stok yang ada pada data. Jika sisa stok ada (misal 1 unit), jangan pernah mengatakan 0 atau kosong.
-   - Jika menanyakan omzet, sebutkan total angka rupiah secara jelas (misal: "Sekitar Rp 25 juta rupiah").
-   - Jika menanyakan transaksi atau kontak, sebutkan statusnya secara ringkas.
+PETUNJUK JAWABAN SUARA LENGKAP, INFORMATIF, FAKTUAL & RAMAH:
+1. BERIKAN JAWABAN LENGKAP & MEMUASKAN:
+   - Jawablah pertanyaan dengan tuntas, jelas, dan berbobot berdasarkan database real-time terkini.
+   - JANGAN MENJAWAB TERLALU PENDEK/SINGKAT ATAU SEPOTONG-POTONG (hindari jawaban 1 kata atau 1 kalimat pendek tanpa konteks). Pengguna ingin informasi yang jelas dan komprehensif.
+   - BILA MENANYAKAN STOK PRODUK: Sebutkan nama produk, total sisa stok yang akurat dari database, satuannya (unit, roll, pcs, dus), harga jual atau HPP bila ada, serta status apakah stok aman, menipis, atau perlu dipesan ulang. Jika stok tertera di database > 0 (misalnya 1 roll atau 5 unit), Anda WAJIB menyebutkan jumlah stok tersebut (DILARANG mengatakan stok kosong atau 0 bila data tersedia).
+   - BILA MENANYAKAN OMZET / PENJUALAN: Sebutkan angka total omzet penjualan dalam nominal rupiah secara jelas dan lengkap (misal: "Sekitar dua puluh lima juta lima ratus ribu rupiah"), jumlah total transaksi, rata-rata transaksi, dan performa penjualan periode tersebut.
+   - BILA MENANYAKAN TRANSAKSI / INVOICE (TRX / PP): Sebutkan nomor transaksi lengkap, tanggal transaksi, nama pelanggan, nominal rupiah, rincian produk yang dibeli bila ada, status pengiriman/pesanan, dan status lunas atau belum lunas.
+   - BILA MENANYAKAN PIUTANG / TAGIHAN: Sebutkan daftar nama pelanggan yang masih memiliki tagihan, nomor invoice terkait, tanggal jatuh tempo, dan nominal sisa tagihannya secara rinci.
+   - BILA MENANYAKAN PEMBELIAN / PO SUPPLIER: Sebutkan nomor PO, nama supplier, nominal, dan status penerimaan barang di gudang.
+
+2. GAYA BICARA NATURAL & ENAK DIDENGAR:
+   - Gunakan bahasa percakapan lisan Indonesia yang santun, luwes, dan ramah seperti seorang konsultan bisnis terpercaya.
+   - JANGAN gunakan simbol visual markdown seperti tanda bintang tebal (**), tanda pagar (#), garis tabel (|), atau tanda minus bullet (-) karena jawaban ini akan dibacakan langsung melalui suara ke telinga pengguna.
+   - Rangkai data angka dan nama-nama menjadi kalimat penjelas yang mengalir lancar dan enak didengarkan.
 
 DATABASE REAL-TIME TERKINI:
 ${dataDigest}
@@ -277,12 +407,14 @@ ${dataDigest}
       });
       speakAIResponse(reply);
     } catch (err: any) {
-      const errReply = 'Maaf, terjadi kendala saat membaca data. Silakan coba tanyakan kembali.';
+      const errReply = 'Maaf, terjadi kendala saat membaca data dari database. Silakan coba tanyakan kembali.';
       setTranscript({
         userText: queryText,
         aiText: errReply
       });
       speakAIResponse(errReply);
+    } finally {
+      isProcessingRef.current = false;
     }
   };
 
@@ -570,29 +702,47 @@ ${dataDigest}
             </div>
 
             {/* Caller Name & Status */}
-            <h2 className="text-xl font-black text-white tracking-tight mb-1">
+            <h2 className="text-xl font-black text-white tracking-tight mb-0.5">
               Panca AI Voice
             </h2>
-            <p className="text-xs text-slate-400 font-medium mb-3">
+            <p className="text-xs text-slate-400 font-medium mb-2">
               Database Real-Time • {context.activeCompany?.nama || 'PT Panca'}
             </p>
 
+            {/* Loudspeaker Status Badge */}
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 mb-2.5">
+              {isSpeakerMuted ? (
+                <VolumeX className="w-3.5 h-3.5 text-amber-400" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span className="text-[10px] font-bold text-slate-300">
+                {isSpeakerMuted ? 'Speaker: Senyap' : 'Mode Loudspeaker Aktif'}
+              </span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-bold ml-1">
+                Anti-Echo
+              </span>
+            </div>
+
             {/* Call State Pill */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-800/80 border border-slate-700/80 mb-4 shadow-sm">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-800/90 border border-slate-700 mb-2.5 shadow-sm">
               <span className={`w-2 h-2 rounded-full ${
                 callState === 'speaking'
                   ? 'bg-emerald-400 animate-pulse'
                   : callState === 'processing'
                   ? 'bg-blue-400 animate-spin'
+                  : callState === 'cooldown'
+                  ? 'bg-amber-400'
                   : callState === 'listening'
                   ? 'bg-emerald-400 animate-ping'
                   : 'bg-slate-400'
               }`} />
               <span className="text-[11px] font-extrabold text-slate-200">
                 {callState === 'connecting' && 'Menyambungkan Panggilan...'}
-                {callState === 'listening' && 'Mendengarkan Anda...'}
-                {callState === 'processing' && 'Membaca Database Real-Time...'}
                 {callState === 'speaking' && 'Panca AI Sedang Berbicara...'}
+                {callState === 'cooldown' && 'Mengalihkan ke Mikrofon...'}
+                {callState === 'listening' && 'Mendengarkan Anda (Silakan Bicara)...'}
+                {callState === 'processing' && 'Membaca Database Real-Time...'}
                 {callState === 'idle' && 'Siaga'}
               </span>
               <span className="text-[11px] text-slate-400 font-mono">
@@ -600,8 +750,20 @@ ${dataDigest}
               </span>
             </div>
 
+            {/* User Interruption Button (when AI is speaking) */}
+            {callState === 'speaking' && (
+              <button
+                onClick={handleInterruptAI}
+                className="mb-2 px-3.5 py-1.5 rounded-full bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+                title="Hentikan suara AI dan mulai bicara sekarang"
+              >
+                <Hand className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Sela & Bicara Sekarang</span>
+              </button>
+            )}
+
             {/* Audio Waveform Bars Simulation */}
-            <div className="flex items-center justify-center gap-1 h-8 my-2">
+            <div className="flex items-center justify-center gap-1 h-8 my-1.5">
               {[40, 75, 100, 60, 90, 45, 80, 50, 70, 30].map((h, i) => (
                 <div
                   key={i}
@@ -620,7 +782,7 @@ ${dataDigest}
             </div>
 
             {/* Real-time Subtitle / Transcript Box */}
-            <div className="w-full mt-3 p-3 rounded-2xl bg-slate-900/80 border border-slate-800/80 text-left max-h-32 overflow-y-auto">
+            <div className="w-full mt-2.5 p-3 rounded-2xl bg-slate-900/80 border border-slate-800/80 text-left max-h-32 overflow-y-auto">
               {transcript.userText && (
                 <div className="text-[11px] text-slate-400 mb-1 leading-snug">
                   <span className="font-bold text-slate-300">Anda: </span>
@@ -676,18 +838,19 @@ ${dataDigest}
             <PhoneOff className="w-7 h-7" />
           </button>
 
-          {/* Speaker Mute Button */}
+          {/* Speaker / Loudspeaker Button */}
           <button
             onClick={() => {
-              setIsSpeakerMuted(!isSpeakerMuted);
-              if (!isSpeakerMuted) stopSpeech();
+              const next = !isSpeakerMuted;
+              setIsSpeakerMuted(next);
+              if (next) stopSpeech();
             }}
             className={`w-13 h-13 rounded-full flex items-center justify-center transition active:scale-90 border ${
               isSpeakerMuted
                 ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                : 'bg-slate-800/90 text-white hover:bg-slate-700 border-slate-700'
+                : 'bg-emerald-600/25 text-emerald-400 hover:bg-emerald-600/35 border-emerald-500/40'
             }`}
-            title={isSpeakerMuted ? 'Nyalakan Speaker' : 'Matikan Suara Speaker'}
+            title={isSpeakerMuted ? 'Nyalakan Loudspeaker' : 'Matikan Suara Speaker (Mute)'}
           >
             {isSpeakerMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
           </button>
