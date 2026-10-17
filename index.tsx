@@ -3,9 +3,26 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { registerSW } from 'virtual:pwa-register';
 
-// Register Service Worker for PWA
+// Register Service Worker for PWA (production) & clear stale dev cache (development)
 if (typeof window !== 'undefined') {
-  registerSW({ immediate: true });
+  if (import.meta.env.DEV) {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        for (const registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        for (const name of names) {
+          caches.delete(name);
+        }
+      });
+    }
+  } else {
+    registerSW({ immediate: true });
+  }
 }
 
 

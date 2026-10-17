@@ -540,7 +540,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
   const clearChat = () => {
     if (confirm('Bersihkan seluruh percakapan?')) {
-      const initialMsg = [
+      const initialMsg: Message[] = [
         {
           id: '1',
           role: 'assistant',
@@ -571,7 +571,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         };
       }
       if (step === 3) {
-        const draftPayload = { ...data, kota: text };
+        const draftPayload: any = { ...data, kota: text };
         return {
           responseText: `### 👤 PRATINJAU DRAFT DATA CUSTOMER BARU\n\nSeluruh informasi telah terkumpul:\n\n| Field CRM | Nilai Terbaca |\n|---|---|\n| **Nama Pelanggan** | **${draftPayload.nama}** |\n| **WhatsApp / HP** | **${draftPayload.whatsapp}** |\n| **Kota / Lokasi** | **${draftPayload.kota}** |\n| **Sales Officer** | **${currentUser?.nama || 'Admin'}** |\n\n⚠️ **Klik tombol di bawah ini** untuk mengonfirmasi dan menyimpan secara permanen ke database MyPanca!`,
           draftData: { type: 'customer', payload: draftPayload, isSaved: false },
@@ -836,7 +836,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           const isUser = m.role === 'user';
           return (
             <div key={m.id} className={`max-w-[88%] ${isUser ? 'ml-auto text-right' : 'mr-auto text-left'}`}>
-              <div className={`p-3 rounded-2xl text-[11px] text-left shadow-2xs ${isUser ? 'bg-slate-900 text-white rounded-tr-none font-medium' : 'bg-white border border-slate-200 rounded-tl-none'}`}>
+              <div className={`p-3 rounded-2xl text-[10px] text-left shadow-2xs ${isUser ? 'bg-slate-900 text-white rounded-tr-none font-medium' : 'bg-white border border-slate-200 rounded-tl-none'}`}>
                 {isUser ? <p className="whitespace-pre-wrap">{m.content}</p> : (
                   <>
                     <TypewriterText content={m.content} isNew={m.isNew} onComplete={() => { if(m.isNew) setMessages(prev => prev.map(msg => msg.id === m.id ? {...msg, isNew: false} : msg)) }} />
@@ -866,17 +866,166 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           </div>
         )}
         {activeSession && (
-          <div className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-3xl p-4 shadow-xl space-y-3 animate-in slide-in-from-bottom-3 duration-300">
+          <div className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-3xl p-4 shadow-xl space-y-3 animate-in slide-in-from-bottom-3 duration-300 my-2">
             <div className="flex justify-between items-center border-b pb-2">
-              <h4 className="text-xs font-black uppercase">Form {activeSession.type} Baru</h4>
+              <h4 className="text-xs font-black uppercase">Form {activeSession.type === 'penawaran' ? 'Penawaran' : activeSession.type === 'transaction' ? 'Transaksi Penjualan' : 'Customer'} Baru</h4>
               <button onClick={() => setActiveSession(null)} className="text-slate-400 hover:text-rose-500"><XCircle size={18} /></button>
             </div>
+            
             {activeSession.type === 'customer' && (
               <div className="space-y-2">
-                <input type="text" value={activeSession.data.nama || ''} onChange={(e) => updateActiveData('nama', e.target.value)} placeholder="Nama Lengkap" className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" />
-                <input type="text" value={activeSession.data.whatsapp || ''} onChange={(e) => updateActiveData('whatsapp', e.target.value)} placeholder="WhatsApp" className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" />
-                <input type="text" value={activeSession.data.kota || ''} onChange={(e) => updateActiveData('kota', e.target.value)} placeholder="Kota" className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" />
-                <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-lg">Simpan Sekarang</button>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">Nama Pelanggan / Perusahaan</label>
+                  <input type="text" value={activeSession.data.nama || ''} onChange={(e) => updateActiveData('nama', e.target.value)} placeholder="Contoh: PT Sumber Rejeki" className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">Nomor WhatsApp / HP</label>
+                  <input type="text" value={activeSession.data.whatsapp || ''} onChange={(e) => updateActiveData('whatsapp', e.target.value)} placeholder="Contoh: 08123456789" className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">Kota / Wilayah</label>
+                  <input type="text" value={activeSession.data.kota || ''} onChange={(e) => updateActiveData('kota', e.target.value)} placeholder="Contoh: Surabaya" className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" />
+                </div>
+                <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-lg mt-2">Simpan Customer Baru</button>
+              </div>
+            )}
+
+            {(activeSession.type === 'transaction' || activeSession.type === 'penawaran') && (
+              <div className="space-y-3">
+                {/* 1. Search Box Nama Customer */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">1. Cari / Pilih Nama Customer</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                      <Search size={12} />
+                    </div>
+                    <input 
+                      type="text" 
+                      value={wizardCustSearch !== undefined ? wizardCustSearch : (activeSession.data.customerName || '')} 
+                      onChange={(e) => {
+                        setWizardCustSearch(e.target.value);
+                        updateActiveData('customerName', e.target.value);
+                      }} 
+                      placeholder="Ketik nama customer..." 
+                      className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" 
+                    />
+                  </div>
+                  {wizardCustSearch && (
+                    <div className="mt-1 max-h-32 overflow-y-auto bg-white dark:bg-zinc-800 border rounded-xl shadow-md divide-y text-[10px]">
+                      {customers.filter(c => (c.nama || '').toLowerCase().includes(wizardCustSearch.toLowerCase())).slice(0, 5).map(c => (
+                        <div key={c.id} onClick={() => { updateActiveData('customerName', c.nama); setWizardCustSearch(''); }} className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-700 cursor-pointer font-bold">
+                          {c.nama} ({c.kota || 'Kota -'})
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {activeSession.data.customerName && !wizardCustSearch && (
+                    <div className="text-[10px] text-emerald-600 font-bold mt-1">Customer terpilih: {activeSession.data.customerName}</div>
+                  )}
+                </div>
+
+                {/* 2. Search Box Produk */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">2. Cari & Tambah Produk</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                      <Package size={12} />
+                    </div>
+                    <input 
+                      type="text" 
+                      value={wizardProdSearch} 
+                      onChange={(e) => setWizardProdSearch(e.target.value)} 
+                      placeholder="Cari nama produk / SKU..." 
+                      className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" 
+                    />
+                  </div>
+                  {wizardProdSearch && (
+                    <div className="mt-1 max-h-36 overflow-y-auto bg-white dark:bg-zinc-800 border rounded-xl shadow-md divide-y text-[10px]">
+                      {products.filter(p => (p.nama || '').toLowerCase().includes(wizardProdSearch.toLowerCase()) || (p.kode || '').toLowerCase().includes(wizardProdSearch.toLowerCase())).slice(0, 6).map(p => (
+                        <div key={p.id} onClick={() => {
+                          const existingItems = activeSession.data.items || [];
+                          const foundIndex = existingItems.findIndex((it: any) => it.produkId === p.id);
+                          let newItems = [...existingItems];
+                          if (foundIndex >= 0) {
+                            newItems[foundIndex].qty += 1;
+                          } else {
+                            newItems.push({
+                              produkId: p.id,
+                              kode: p.kode || 'SKU',
+                              nama: p.nama,
+                              harga: p.hargaJual || p.harga || 100000,
+                              qty: 1,
+                              diskon: 0
+                            });
+                          }
+                          updateActiveData('items', newItems);
+                          setWizardProdSearch('');
+                        }} className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-700 cursor-pointer flex justify-between items-center">
+                          <span className="font-bold">{p.nama} ({p.kode})</span>
+                          <span className="text-emerald-600 font-extrabold">Rp {(p.hargaJual || p.harga || 100000).toLocaleString('id-ID')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Selected Items List */}
+                {activeSession.data.items && activeSession.data.items.length > 0 && (
+                  <div className="space-y-1.5 border-t pt-2">
+                    <span className="text-[10px] font-bold text-slate-500">Daftar Item ({activeSession.data.items.length})</span>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {activeSession.data.items.map((it: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between bg-slate-50 dark:bg-zinc-800 p-2 rounded-xl text-[10px]">
+                          <div>
+                            <div className="font-bold">{it.nama}</div>
+                            <div className="text-slate-400">Rp {it.harga.toLocaleString('id-ID')} x {it.qty}</div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button type="button" onClick={() => {
+                              const items = [...activeSession.data.items];
+                              if (items[idx].qty > 1) items[idx].qty -= 1;
+                              else items.splice(idx, 1);
+                              updateActiveData('items', items);
+                            }} className="w-5 h-5 bg-slate-200 dark:bg-zinc-700 rounded-md font-bold flex items-center justify-center">-</button>
+                            <span className="font-bold w-4 text-center">{it.qty}</span>
+                            <button type="button" onClick={() => {
+                              const items = [...activeSession.data.items];
+                              items[idx].qty += 1;
+                              updateActiveData('items', items);
+                            }} className="w-5 h-5 bg-slate-200 dark:bg-zinc-700 rounded-md font-bold flex items-center justify-center">+</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Toggles PPN & Ongkir */}
+                <div className="flex items-center gap-4 pt-1 text-[10px]">
+                  <label className="flex items-center gap-1.5 cursor-pointer font-bold">
+                    <input type="checkbox" checked={Boolean(activeSession.data.ppn)} onChange={(e) => updateActiveData('ppn', e.target.checked)} className="rounded" />
+                    <span>PPN 11%</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer font-bold">
+                    <input type="checkbox" checked={Boolean(activeSession.data.ongkir)} onChange={(e) => updateActiveData('ongkir', e.target.checked)} className="rounded" />
+                    <span>Ongkir</span>
+                  </label>
+                </div>
+
+                {activeSession.type === 'transaction' && (
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 mb-1 block">Status Pembayaran</label>
+                    <select value={activeSession.data.paymentStatus || 'Belum Lunas'} onChange={(e) => updateActiveData('paymentStatus', e.target.value)} className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs font-bold">
+                      <option value="Belum Lunas">Belum Lunas (Piutang)</option>
+                      <option value="Lunas">Lunas</option>
+                      <option value="DP">DP (Sebagian)</option>
+                    </select>
+                  </div>
+                )}
+
+                <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-lg mt-2">
+                  Simpan {activeSession.type === 'penawaran' ? 'Penawaran' : 'Transaksi'} Sekarang
+                </button>
               </div>
             )}
           </div>
@@ -885,17 +1034,17 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       </div>
 
       {!inputPrompt && !isListening && (
-        <div className="px-3 py-1.5 bg-slate-50/50 border-t border-slate-200/40 flex items-center gap-1.5 overflow-x-auto scrollbar-hide shrink-0">
+        <div className="px-3 py-1 bg-slate-50/50 flex items-center gap-1 overflow-x-auto scrollbar-hide shrink-0">
           {[
             { label: 'Tambah Customer', prompt: 'tambah customer baru' },
             { label: 'Transaksi Baru', prompt: 'tambah transaksi baru' },
-            { label: 'Penawaran Baru', prompt: 'tambah penawaran baru' },
+            { label: 'Tambah Penawaran', prompt: 'tambah penawaran baru' },
             { label: 'Stok Menipis', prompt: 'Stok menipis' }
           ].map((chip, idx) => (
             <button
               key={idx}
               onClick={() => handleSendMessage(chip.prompt)}
-              className="px-2.5 py-1 bg-white border border-slate-200 rounded-full text-[10px] font-bold text-slate-600 whitespace-nowrap shadow-2xs active:scale-95 transition-transform"
+              className="px-2 py-0.5 bg-white border border-slate-200 rounded-full text-[9px] font-bold text-slate-600 whitespace-nowrap shadow-2xs active:scale-95 transition-transform"
             >
               {chip.label}
             </button>
