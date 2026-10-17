@@ -3,7 +3,7 @@ import {
   Send, ArrowLeft, Trash2, Copy, Check, Sparkles, 
   Bot, User, Download, Mic, Square, Volume2, VolumeX,
   AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package,
-  ChevronUp, ChevronDown, CheckCircle
+  ChevronUp, ChevronDown, CheckCircle, Type
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,7 +11,6 @@ import { supabaseService } from '../../../task/services/supabaseService';
 import { Task, Project, DrivePost } from '../../../task/types';
 import { queryPancaAI, PancaAIContext } from '../../services/pancaAIService';
 import { SUPPORTED_GEMINI_MODELS } from '../../services/geminiKeyService';
-
 
 export interface DraftData {
   type: 'customer' | 'transaction' | 'penawaran';
@@ -28,11 +27,20 @@ interface Message {
   draftData?: DraftData;
 }
 
+export const CHAT_FONT_SIZES = [
+  { id: '10', name: 'Kecil', px: 10, class: 'text-[10px]', tableClass: 'text-[9px]' },
+  { id: '11', name: 'Sedang', px: 11, class: 'text-[11px]', tableClass: 'text-[10px]' },
+  { id: '12', name: 'Normal (+2)', px: 12, class: 'text-xs', tableClass: 'text-[11px]' },
+  { id: '14', name: 'Besar', px: 14, class: 'text-sm', tableClass: 'text-xs' },
+  { id: '16', name: 'Sangat Besar', px: 16, class: 'text-base', tableClass: 'text-sm' }
+];
+
 const TypewriterText: React.FC<{
   content: string;
   isNew?: boolean;
+  tableFontSizeClass?: string;
   onComplete?: () => void;
-}> = ({ content, isNew = false, onComplete }) => {
+}> = ({ content, isNew = false, tableFontSizeClass = 'text-[11px]', onComplete }) => {
   const [displayedText, setDisplayedText] = useState(isNew ? '' : content);
   const [isTyping, setIsTyping] = useState(isNew);
 
@@ -70,8 +78,8 @@ const TypewriterText: React.FC<{
         remarkPlugins={[remarkGfm]}
         components={{
           table: ({ children }) => (
-            <div className="my-2 overflow-x-auto rounded-xl bg-slate-100/60 dark:bg-zinc-800/40 p-1 shadow-2xs">
-              <table className="min-w-full text-[10px] text-left border-collapse">
+            <div className="my-2.5 overflow-x-auto rounded-xl bg-slate-100/70 dark:bg-zinc-800/50 p-1 border border-slate-200/80 dark:border-zinc-700/60 shadow-2xs">
+              <table className={`min-w-full ${tableFontSizeClass} text-left border-collapse`}>
                 {children}
               </table>
             </div>
@@ -197,6 +205,31 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash-lite');
   const [showModelSelector, setShowModelSelector] = useState(false);
+  
+  // Font size configuration (Default enlarged by 2 levels to index 2 = 12px / text-xs)
+  const [fontIndex, setFontIndex] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('mypanca_chat_font_index');
+      if (saved !== null) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 0 && val < CHAT_FONT_SIZES.length) return val;
+      }
+    } catch (e) {}
+    return 2; // Default to 'Normal (+2)' (12px / text-xs)
+  });
+  const [showFontDropdown, setShowFontDropdown] = useState(false);
+  const currentFontSize = CHAT_FONT_SIZES[fontIndex] || CHAT_FONT_SIZES[2];
+
+  const handleStepFont = (delta: number) => {
+    setFontIndex(prev => {
+      const next = Math.max(0, Math.min(CHAT_FONT_SIZES.length - 1, prev + delta));
+      try {
+        localStorage.setItem('mypanca_chat_font_index', next.toString());
+      } catch (e) {}
+      return next;
+    });
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isSuperAdmin = currentUser?.role?.toLowerCase() === 'superadmin';
@@ -788,10 +821,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col flex-1 h-full min-h-0 bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 font-sans relative overflow-hidden">
-      <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-4 py-3 border-b border-slate-200/80 dark:border-zinc-800 flex items-center justify-between shadow-xs shrink-0 z-20">
+    <div className="flex flex-col flex-1 h-full min-h-0 bg-white dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 font-sans relative overflow-hidden">
+      {/* Top Header */}
+      <div className="bg-white dark:bg-zinc-900 px-4 py-3 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between shadow-2xs shrink-0 z-20">
         <div className="flex items-center gap-2.5">
-          <button onClick={() => { stopSpeaking(); stopVoiceInput(); onBack(); }} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-600 dark:text-zinc-300 transition active:scale-95"><ArrowLeft className="w-4 h-4" /></button>
+          <button onClick={() => { stopSpeaking(); stopVoiceInput(); onBack(); }} className="w-8 h-8 rounded-full bg-slate-50 dark:bg-zinc-800 border border-slate-100 dark:border-zinc-700 flex items-center justify-center text-slate-600 dark:text-zinc-300 transition active:scale-95"><ArrowLeft className="w-4 h-4" /></button>
           <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-extrabold text-xs shadow-xs">P</div>
           <div>
             <h3 className="text-xs font-extrabold text-slate-900 dark:text-zinc-100 leading-tight">Panca AI Chat</h3>
@@ -813,13 +847,81 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => { const next = !autoSpeak; setAutoSpeak(next); if (!next) stopSpeaking(); }} className={`p-2 rounded-xl transition active:scale-95 ${autoSpeak ? 'bg-slate-900 text-white' : 'text-slate-400'}`}>{autoSpeak ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</button>
+
+        {/* Header Right Actions */}
+        <div className="flex items-center gap-1.5">
+          {/* Dropdown Ukuran Font (disebelah kiri tombol mute) */}
+          <div className="relative">
+            <button
+              onClick={() => setShowFontDropdown(!showFontDropdown)}
+              title="Ubah Ukuran Font Chat"
+              className="p-1.5 px-2 rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/80 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 flex items-center gap-1 transition active:scale-95 text-xs font-bold"
+            >
+              <Type className="w-3.5 h-3.5 text-slate-600 dark:text-zinc-400" />
+              <span className="text-[10px] font-black">{currentFontSize.px}px</span>
+              <ChevronDown size={9} className={`transition-transform duration-200 ${showFontDropdown ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showFontDropdown && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-50 p-2 space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="flex items-center justify-between px-1 text-[10px] font-bold text-slate-400 pb-1.5 border-b border-slate-100 dark:border-zinc-800">
+                  <span>Ukuran Font</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleStepFont(-1)}
+                      disabled={fontIndex === 0}
+                      className="w-5 h-5 rounded-md bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center font-bold text-xs disabled:opacity-30 active:scale-90"
+                      title="Perkecil Font (-)"
+                    >
+                      -
+                    </button>
+                    <button
+                      onClick={() => handleStepFont(1)}
+                      disabled={fontIndex === CHAT_FONT_SIZES.length - 1}
+                      className="w-5 h-5 rounded-md bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center font-bold text-xs disabled:opacity-30 active:scale-90"
+                      title="Perbesar Font (+)"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-0.5">
+                  {CHAT_FONT_SIZES.map((fs, idx) => (
+                    <button
+                      key={fs.id}
+                      onClick={() => {
+                        setFontIndex(idx);
+                        try {
+                          localStorage.setItem('mypanca_chat_font_index', idx.toString());
+                        } catch (e) {}
+                        setShowFontDropdown(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-xl flex items-center justify-between transition-colors ${
+                        fontIndex === idx
+                          ? 'bg-slate-900 text-white font-bold'
+                          : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 text-xs'
+                      }`}
+                    >
+                      <span>{fs.name}</span>
+                      <span className="text-[10px] opacity-70 font-mono">{fs.px}px</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Tombol Mute */}
+          <button onClick={() => { const next = !autoSpeak; setAutoSpeak(next); if (!next) stopSpeaking(); }} className={`p-2 rounded-xl transition active:scale-95 ${autoSpeak ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600'}`}>{autoSpeak ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</button>
+          
+          {/* Tombol Clear */}
           <button onClick={clearChat} className="p-2 text-slate-400 hover:text-rose-500 transition active:scale-95"><Trash2 className="w-4 h-4" /></button>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3.5 flex flex-col">
+      {/* Messages Scroll Area */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 flex flex-col bg-white dark:bg-zinc-950">
         {messages.length === 0 ? (
           <div className="flex-1 min-h-[300px] flex flex-col items-center justify-center text-center p-6 my-auto select-none">
             <div className="w-32 h-32 mb-3 relative flex items-center justify-center">
@@ -837,23 +939,45 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           messages.map((m) => {
             const isUser = m.role === 'user';
             return (
-              <div key={m.id} className={`max-w-[88%] ${isUser ? 'ml-auto text-right' : 'mr-auto text-left'}`}>
-                <div className={`p-3 rounded-2xl text-[10px] text-left shadow-2xs ${isUser ? 'bg-slate-900 text-white rounded-tr-none font-medium' : 'bg-white border border-slate-200 rounded-tl-none'}`}>
-                  {isUser ? <p className="whitespace-pre-wrap">{m.content}</p> : (
-                    <>
-                      <TypewriterText content={m.content} isNew={m.isNew} onComplete={() => { if(m.isNew) setMessages(prev => prev.map(msg => msg.id === m.id ? {...msg, isNew: false} : msg)) }} />
-                      {m.draftData && !m.draftData.isSaved && (
-                        <button onClick={() => handleConfirmDraftSave(m.id)} className="w-full mt-2 py-2 bg-slate-900 text-white text-[10px] font-bold rounded-lg shadow-sm">Konfirmasi Simpan ke Database</button>
-                      )}
-                    </>
-                  )}
-                </div>
-                <div className={`flex items-center gap-2 mt-1 px-1 text-[10px] text-slate-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
+              <div key={m.id} className={isUser ? "max-w-[85%] ml-auto text-right" : "w-full text-left py-1"}>
+                {isUser ? (
+                  <div className={`inline-block p-3 rounded-2xl rounded-tr-none bg-slate-900 text-white font-medium text-left shadow-2xs ${currentFontSize.class}`}>
+                    <p className="whitespace-pre-wrap">{m.content}</p>
+                  </div>
+                ) : (
+                  <div className={`w-full text-left text-slate-800 dark:text-zinc-100 leading-relaxed ${currentFontSize.class}`}>
+                    <TypewriterText 
+                      content={m.content} 
+                      isNew={m.isNew} 
+                      tableFontSizeClass={currentFontSize.tableClass}
+                      onComplete={() => { 
+                        if (m.isNew) setMessages(prev => prev.map(msg => msg.id === m.id ? { ...msg, isNew: false } : msg));
+                      }} 
+                    />
+                    {m.draftData && !m.draftData.isSaved && (
+                      <button 
+                        onClick={() => handleConfirmDraftSave(m.id)} 
+                        className="w-full max-w-sm mt-3 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl shadow-xs active:scale-98 transition flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle size={14} className="text-emerald-400" />
+                        <span>Konfirmasi Simpan ke Database</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+                
+                <div className={`flex items-center gap-2.5 mt-1.5 px-0.5 text-[10px] text-slate-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
                   <span>{m.timestamp}</span>
                   {!isUser && (
                     <>
-                      <button onClick={() => speakText(m.content, m.id)} className={`flex items-center gap-0.5 ${speakingMessageId === m.id ? 'text-slate-900 font-bold' : ''}`}>{speakingMessageId === m.id ? <Square size={10} className="fill-current animate-pulse" /> : <Volume2 size={10} />}<span>Dengar</span></button>
-                      <button onClick={() => copyToClipboard(m.content, m.id)} className="flex items-center gap-0.5">{copiedId === m.id ? <Check size={10} className="text-emerald-500" /> : <Copy size={10} />}<span>Salin</span></button>
+                      <button onClick={() => speakText(m.content, m.id)} className={`flex items-center gap-1 hover:text-slate-800 dark:hover:text-zinc-200 transition ${speakingMessageId === m.id ? 'text-slate-900 font-bold' : ''}`}>
+                        {speakingMessageId === m.id ? <Square size={11} className="fill-current animate-pulse text-rose-500" /> : <Volume2 size={11} />}
+                        <span>Dengar</span>
+                      </button>
+                      <button onClick={() => copyToClipboard(m.content, m.id)} className="flex items-center gap-1 hover:text-slate-800 dark:hover:text-zinc-200 transition">
+                        {copiedId === m.id ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                        <span>Salin</span>
+                      </button>
                     </>
                   )}
                 </div>
@@ -1037,7 +1161,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       </div>
 
       {!inputPrompt && !isListening && (
-        <div className="px-3 py-1 bg-slate-50/50 flex items-center gap-1 overflow-x-auto scrollbar-hide shrink-0">
+        <div className="px-3 py-1.5 bg-white dark:bg-zinc-950 flex items-center gap-1.5 overflow-x-auto scrollbar-hide shrink-0 border-t border-slate-100 dark:border-zinc-900">
           {[
             { label: 'Tambah Customer', prompt: 'tambah customer baru' },
             { label: 'Transaksi Baru', prompt: 'tambah transaksi baru' },
@@ -1047,7 +1171,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             <button
               key={idx}
               onClick={() => handleSendMessage(chip.prompt)}
-              className="px-2 py-0.5 bg-white border border-slate-200 rounded-full text-[9px] font-bold text-slate-600 whitespace-nowrap shadow-2xs active:scale-95 transition-transform"
+              className="px-2.5 py-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-full text-[10px] font-bold text-slate-700 dark:text-zinc-300 whitespace-nowrap shadow-2xs active:scale-95 transition-transform"
             >
               {chip.label}
             </button>
@@ -1055,7 +1179,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         </div>
       )}
 
-      <div className="bg-white dark:bg-zinc-900 px-4 py-3 border-t border-slate-200/80 dark:border-zinc-800 shrink-0 z-20">
+      <div className="bg-white dark:bg-zinc-900 px-4 py-3 border-t border-slate-100 dark:border-zinc-800 shrink-0 z-20">
         <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="relative flex items-center">
           <div className="w-full bg-slate-50 dark:bg-zinc-800/80 rounded-full py-1.5 pl-3 pr-1.5 flex items-center justify-between border border-slate-200/90 dark:border-zinc-700 shadow-2xs">
             <div className="flex items-center gap-2.5 flex-1 mr-2 min-w-0">

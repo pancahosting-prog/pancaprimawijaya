@@ -147,7 +147,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
           )}
 
           {activeTab === 'ai' && (
-            <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden bg-white dark:bg-zinc-950">
               <PancaAIChatView
                 currentUser={currentUser}
                 activeCompany={activeCompany}
