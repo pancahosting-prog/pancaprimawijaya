@@ -3,14 +3,15 @@ import {
   Send, ArrowLeft, Trash2, Copy, Check, Sparkles, 
   Bot, User, Download, Mic, Square, Volume2, VolumeX,
   AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package,
-  PhoneCall
+  ChevronUp, ChevronDown, CheckCircle
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabaseService } from '../../../task/services/supabaseService';
 import { Task, Project, DrivePost } from '../../../task/types';
 import { queryPancaAI, PancaAIContext } from '../../services/pancaAIService';
-import { PancaAICallModal } from './PancaAICallModal';
+import { SUPPORTED_GEMINI_MODELS } from '../../services/geminiKeyService';
+
 
 export interface DraftData {
   type: 'customer' | 'transaction' | 'penawaran';
@@ -198,9 +199,10 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const [inputPrompt, setInputPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [showCallModal, setShowCallModal] = useState<boolean>(false);
+  const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash-lite');
+  const [showModelSelector, setShowModelSelector] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const isSuperAdmin = currentUser?.role?.toLowerCase() === 'superadmin';
 
   // Active Session for guided multi-step form wizard (Customer, Transaksi, Penawaran)
@@ -1263,7 +1265,12 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         }
       };
 
-      const responseText = await queryPancaAI(query.trim(), historyPayload, contextPayload);
+      const responseText = await queryPancaAI({
+        userPrompt: query.trim(), 
+        messages: historyPayload, 
+        ctx: contextPayload,
+        preferredModel: selectedModel
+      });
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -1312,7 +1319,33 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           </div>
           <div>
             <h3 className="text-xs font-extrabold text-slate-900 dark:text-zinc-100 leading-tight">Panca AI Chat</h3>
-            <p className="text-[10px] text-slate-400 dark:text-zinc-400">Teks, Suara & Input Data Cepat</p>
+            <div className="relative mt-0.5">
+              <button 
+                onClick={() => setShowModelSelector(!showModelSelector)}
+                className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <span>Model: {SUPPORTED_GEMINI_MODELS.find(m => m.id === selectedModel)?.label || '3.5 Flash Lite'}</span>
+                <ChevronDown size={10} className={`transition-transform duration-200 ${showModelSelector ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {showModelSelector && (
+                <div className="absolute left-0 top-full mt-2 w-48 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 py-1.5 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                  {SUPPORTED_GEMINI_MODELS.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setSelectedModel(m.id);
+                        setShowModelSelector(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-[10px] font-bold flex items-center justify-between transition-colors ${selectedModel === m.id ? 'bg-slate-900 text-white' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
+                    >
+                      <span>{m.label}</span>
+                      {selectedModel === m.id && <CheckCircle size={10} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -2060,24 +2093,15 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             e.preventDefault();
             handleSendMessage();
           }}
-          className="flex items-center gap-2"
+          className="flex items-end gap-2"
         >
-          {/* Live Voice Call Button (Di sebelah kiri tombol Mic) */}
           <button
             type="button"
-            onClick={() => {
-              stopSpeaking();
-              stopVoiceInput();
-              setShowCallModal(true);
-            }}
-            className="w-11 h-11 rounded-2xl flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/25 transition active:scale-90 shrink-0 relative group border border-emerald-500/30"
-            title="Mulai Panggilan Telepon AI (Live Voice Audio Dialog)"
+            onClick={() => setShowModelSelector(!showModelSelector)}
+            className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all active:scale-90 shrink-0 border ${showModelSelector ? 'bg-black text-white border-black' : 'bg-white dark:bg-zinc-950 text-black dark:text-white border-slate-200 dark:border-zinc-800 hover:bg-slate-50'}`}
+            title="Pilih Model AI (Drop-up)"
           >
-            <PhoneCall className="w-5 h-5 text-white" />
-            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
+            <ChevronUp className={`w-5 h-5 transition-transform duration-300 ${showModelSelector ? 'rotate-180' : ''}`} />
           </button>
 
           {/* Voice Microphone Button */}
@@ -2098,19 +2122,31 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             )}
           </button>
 
-          {/* Text Input Box */}
+          {/* Auto-expanding Textarea */}
           <div className="relative flex-1">
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
+              rows={1}
               value={inputPrompt}
-              onChange={(e) => setInputPrompt(e.target.value)}
-              placeholder={isListening ? "Sedang mendengarkan suara Anda..." : "Tanyakan AI atau tambah customer / transaksi baru..."}
-              className={`w-full rounded-2xl px-4 py-3 text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 outline-none transition border shadow-inner ${
+              onChange={(e) => {
+                setInputPrompt(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                  if (inputRef.current) inputRef.current.style.height = 'auto';
+                }
+              }}
+              placeholder={isListening ? "Sedang mendengarkan suara Anda..." : "Tanyakan AI..."}
+              className={`w-full rounded-2xl px-4 py-3 text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 outline-none transition border shadow-inner resize-none overflow-y-auto custom-scrollbar ${
                 isListening
                   ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-300 text-rose-900 dark:text-rose-200'
                   : 'bg-slate-100 dark:bg-zinc-950 hover:bg-slate-100/80 focus:bg-white dark:focus:bg-zinc-950 border-slate-200 dark:border-zinc-800 focus:border-slate-800 focus:ring-2 focus:ring-slate-200 dark:focus:ring-zinc-800'
               }`}
+              style={{ minHeight: '44px', maxHeight: '150px' }}
             />
           </div>
 
@@ -2126,27 +2162,27 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         </form>
       </div>
 
-      {/* Live Audio Phone Call Dialog Modal */}
-      <PancaAICallModal
-        isOpen={showCallModal}
-        onClose={() => setShowCallModal(false)}
-        currentUser={currentUser}
-        context={{
-          currentUser,
-          activeCompany,
-          transactions,
-          customers,
-          products,
-          suppliers,
-          purchaseOrders,
-          employees,
-          taskAppData,
-          rolePermissions,
-          taskAppDataExt: {
-            qaQuestions
-          }
-        }}
-      />
+      {/* Model Selector Drop-up Panel */}
+      {showModelSelector && (
+        <div className="absolute bottom-20 left-4 w-48 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="px-3 py-1.5 border-b border-slate-100 dark:border-zinc-800 mb-1">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Pilih Model AI</p>
+          </div>
+          {SUPPORTED_GEMINI_MODELS.map(m => (
+            <button
+              key={m.id}
+              onClick={() => {
+                setSelectedModel(m.id);
+                setShowModelSelector(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-[10px] font-bold flex items-center justify-between transition-colors ${selectedModel === m.id ? 'bg-slate-900 text-white' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}
+            >
+              <span>{m.label}</span>
+              {selectedModel === m.id && <CheckCircle size={10} />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

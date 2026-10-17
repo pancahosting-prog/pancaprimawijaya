@@ -27,17 +27,20 @@ export interface GeminiSettings {
 const STORAGE_KEY = 'mypanca_gemini_settings';
 
 export const SUPPORTED_GEMINI_MODELS = [
-  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (Paling Canggih, Cepat & Cerdas)', isRecommended: true },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Stabil & Responsif)' },
-  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { id: 'gemini-3-flash', label: 'Gemini 3 Flash' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
+  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
+  { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
   { id: 'gemini-flash-latest', label: 'Gemini Flash Latest' }
 ];
 
 export const DEFAULT_GEMINI_SETTINGS: GeminiSettings = {
   apiKeys: [],
   activeKeyIndex: 0,
-  model: 'gemini-3.5-flash',
+  model: 'gemini-3-flash',
   temperature: 0.2,
   autoRotate: true,
   lastUpdated: new Date().toISOString()
@@ -197,7 +200,7 @@ export const loadGeminiSettingsFromDatabase = async (): Promise<GeminiSettings> 
  */
 export const testGeminiApiKey = async (
   apiKey: string,
-  modelName: string = 'gemini-3.5-flash'
+  modelName: string = 'gemini-3-flash'
 ): Promise<{ success: boolean; message: string; latencyMs: number; modelUsed?: string }> => {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
@@ -221,7 +224,7 @@ export const testGeminiApiKey = async (
 
   // 2. Direct browser test
   const startTime = Date.now();
-  const modelsToTry = [modelName, 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  const modelsToTry = [modelName, 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite'];
   const uniqueModels = Array.from(new Set(modelsToTry));
 
   for (const model of uniqueModels) {
@@ -320,7 +323,7 @@ export const callGeminiWithKeyRotation = async ({
   systemPrompt,
   messages,
   userPrompt,
-  preferredModel = 'gemini-3.5-flash',
+  preferredModel = 'gemini-3-flash',
   temperature = 0.2,
   maxTokens = 8192
 }: {
@@ -365,11 +368,9 @@ export const callGeminiWithKeyRotation = async ({
   });
 
   const modelCandidates = [
-    preferredModel || settings.model || 'gemini-3.5-flash',
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
+    preferredModel || settings.model || 'gemini-3-flash',
+    'gemini-3-flash',
+    'gemini-3.5-flash-lite',
     'gemini-flash-latest'
   ].filter((v, i, a) => a.indexOf(v) === i); // unique
 

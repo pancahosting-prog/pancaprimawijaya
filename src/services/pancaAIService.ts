@@ -662,25 +662,31 @@ export const getConversationalGreetingResponse = (userName: string, query: strin
 };
 
 // Unified LLM Calling Function with Strict Data Reading Rules and Friendly Tone
-export const queryPancaAI = async (
-  userQuery: string,
-  history: { role: 'user' | 'assistant'; content: string }[],
-  ctx: PancaAIContext
-): Promise<string> => {
+export const queryPancaAI = async ({
+  userPrompt,
+  messages,
+  ctx,
+  preferredModel = 'gemini-3-flash'
+}: {
+  userPrompt: string;
+  messages: { role: 'user' | 'assistant'; content: string }[];
+  ctx: PancaAIContext;
+  preferredModel?: string;
+}): Promise<string> => {
   const userName = ctx.currentUser?.nama || 'Bapak/Ibu';
 
   // 1. Instant Check: Conversational greeting or opening statement
-  if (isConversationalGreeting(userQuery)) {
-    return getConversationalGreetingResponse(userName, userQuery);
+  if (isConversationalGreeting(userPrompt)) {
+    return getConversationalGreetingResponse(userName, userPrompt);
   }
 
   // 2. Instant Check: If query lacks context, ask for clarification first!
-  const clarification = detectLackingContext(userQuery, history);
+  const clarification = detectLackingContext(userPrompt, messages);
   if (clarification) {
     return `Halo **${userName}**, ${clarification.clarificationQuestion}`;
   }
 
-  const dataDigest = generatePancaDataDigest(ctx, userQuery);
+  const dataDigest = generatePancaDataDigest(ctx, userPrompt);
 
   const systemPrompt = `Anda adalah "Panca AI Assistant", asisten kecerdasan buatan terpadu yang profesional, ramah, dan analis data bisnis untuk PT. Panca Prima Wijaya (MyPanca CRM & ERP).
 Nama Pengguna: ${userName}
@@ -691,12 +697,13 @@ Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
 ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
 ================================================================================
 
-1. PEMBATASAN RUANG LINGKUP (PENTING!):
-   - Anda adalah asisten BISNIS KHUSUS untuk PT. Panca Prima Wijaya.
-   - ANDA DILARANG KERAS MENJAWAB PERTANYAAN DI LUAR DATA SISTEM, KNOWLEDGE BASE TEKNIS, DAN INFORMASI WEBSITE PERUSAHAAN YANG DILAMPIRKAN.
-   - Jika pengguna menanyakan hal umum seperti resep masakan, hiburan, berita umum, tips gaya hidup, atau apa pun yang TIDAK ADA sumber datanya di lampiran database di bawah, Anda WAJIB menjawab:
-     "Mohon maaf **${userName}**, saya adalah asisten AI khusus sistem MyPanca. Saya hanya dapat membantu menjawab pertanyaan seputar data operasional perusahaan (CRM, ERP, Transaksi), informasi teknis di forum Q&A, atau layanan teknis PT Panca Prima Wijaya. Silakan tanyakan hal yang berkaitan dengan bisnis atau sistem."
-   - JANGAN PERNAH memberikan jawaban general knowledge/pengetahuan umum meskipun Anda mengetahuinya.
+1. PEMBATASAN RUANG LINGKUP (MUTLAK & KRITIKAL):
+   - Anda adalah asisten BISNIS EKSKLUSIF hanya untuk PT. Panca Prima Wijaya.
+   - ANDA DILARANG KERAS MEMBERIKAN INFORMASI ATAU MENJAWAB PERTANYAAN APAPUN YANG TIDAK BERSUMBER DARI DATA SISTEM, KNOWLEDGE BASE, ATAU WEBSITE PERUSAHAAN YANG DILAMPIRKAN.
+   - Jika pengguna bertanya tentang: Pengetahuan umum, tips hidup, resep masakan, berita dunia, hiburan, fakta sejarah umum, bantuan koding umum, atau APA PUN yang tidak ada di lampiran data bisnis di bawah, Anda WAJIB MENOLAK secara halus namun tegas.
+   - Jawaban Penolakan Standar:
+     "Mohon maaf **${userName}**, kapasitas saya sebagai asisten Panca AI dibatasi hanya untuk informasi operasional PT Panca Prima Wijaya (CRM, Transaksi, Stok) dan Knowledge Base teknis perusahaan. Saya tidak diperkenankan menjawab pertanyaan di luar lingkup data bisnis tersebut. Silakan tanyakan hal yang berkaitan dengan MyPanca."
+   - JANGAN PERNAH berasumsi atau menggunakan "Internal Knowledge" model dasar Anda untuk hal-hal umum. Jika tidak ada di teks lampiran, maka Anda tidak tahu.
 
 2. NADA BICARA & FORMAT RESPON:
    - Bersikaplah sopan, profesional, membantu, dan lugas.
@@ -726,23 +733,25 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
 8. AKURASI STOK PRODUK REAL DATABASE:
    - Nilai sisa stok produk tertera di [MENU 4]. DILARANG menyatakan stok 0 jika database menunjukkan ada stok.
 
-8. PENANGANAN HAK AKSES TERBATAS:
+9. PENANGANAN HAK AKSES TERBATAS:
    - Jika pengguna menanyakan data yang ada di kategori "Akses terbatas" atau "dibatasi" dalam digest database di bawah, Anda HARUS menjawab dengan tegas namun sopan bahwa mereka tidak memiliki hak akses untuk menanyakan hal tersebut.
-   - SETELAH memberitahu kekurangan akses, Anda WAJIB menyebutkan daftar topik atau menu apa saja yang BISA mereka tanyakan (berdasarkan "Status Akses Pengguna" di digest).
+   - SETELAH memberitahu kekurangan akses, Anda WAJIB menyebutkan daftar topik atau menu apa saja yang BISA mereka tanyakan.
 
-9. KNOWLEDGE BASE Q&A TEKNIS (PRIORITAS UTAMA):
-   - Di bagian akhir digest data, terdapat [=== KNOWLEDGE BASE Q&A TEKNIS ===].
-   - Jika pengguna bertanya tentang topik teknis yang ada di sana (misal: **Mitigasi Longsor** atau **Geohazard**), Anda WAJIB memberikan jawaban yang sangat akurat sesuai dengan daftar pertanyaan dan jawaban yang ada di knowledge base tersebut.
-   - Jika user menyebutkan nomor pertanyaan (misal: "Pertanyaan nomor 10 di topik Longsor"), Anda harus memberikan Jawaban nomor 10 yang tepat dari knowledge base tersebut.
+10. KNOWLEDGE BASE Q&A TEKNIS (PRIORITAS UTAMA):
+    - Di bagian akhir digest data, terdapat [=== KNOWLEDGE BASE Q&A TEKNIS ===].
+    - Jika pengguna bertanya tentang topik teknis yang ada di sana (misal: Mitigasi Longsor atau Geohazard), Anda WAJIB memberikan jawaban yang sangat akurat sesuai dengan daftar pertanyaan dan jawaban yang ada.
 
-10. KNOWLEDGE BASE WEBSITE EKSTERNAL (OTORITAS SALES/ADMIN):
-   - Jika tersedia di digest [=== KNOWLEDGE BASE WEBSITE EKSTERNAL ===], gunakan informasi tersebut untuk menjawab pertanyaan seputar profil perusahaan, rincian produk (Fumiphos, Silogard, dll), layanan fumigasi, atau spesifikasi sensor gempa.
-   - Informasi ini hanya muncul untuk user dengan role **Superadmin** atau **Sales**. Jika user role lain bertanya tentang hal ini dan datanya tidak muncul di digest, jawab bahwa informasi tersebut memerlukan otoritas akses tambahan.
+11. KNOWLEDGE BASE WEBSITE EKSTERNAL (OTORITAS SALES/ADMIN):
+    - Jika tersedia di digest [=== KNOWLEDGE BASE WEBSITE EKSTERNAL ===], gunakan informasi tersebut untuk menjawab pertanyaan seputar profil perusahaan, rincian produk (Fumiphos, Silogard, dll), layanan fumigasi, atau spesifikasi sensor gempa.
+    - Informasi ini hanya muncul untuk user dengan role Superadmin atau Sales.
 
+--- DATA SUMBER BISNIS (HANYA GUNAKAN DATA DI BAWAH INI) ---
 ${dataDigest}
+
+PENTING: Sekali lagi, jika pertanyaan tidak berkaitan dengan data di atas, TOLAK dengan jawaban penolakan standar.
 `;
 
-  const recentHistory = history.slice(-8).map(m => ({
+  const recentHistory = messages.slice(-8).map(m => ({
     role: m.role as 'user' | 'assistant',
     content: m.content
   }));
@@ -750,8 +759,8 @@ ${dataDigest}
   return await callGeminiWithKeyRotation({
     systemPrompt,
     messages: recentHistory,
-    userPrompt: userQuery,
-    preferredModel: 'gemini-3.5-flash',
+    userPrompt: userPrompt,
+    preferredModel: preferredModel,
     temperature: 0.15,
     maxTokens: 8192
   });

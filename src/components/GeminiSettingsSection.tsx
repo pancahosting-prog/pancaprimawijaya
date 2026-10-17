@@ -37,6 +37,8 @@ export const GeminiSettingsSection: React.FC = () => {
     isChecking: true,
     isReady: false
   });
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkInputText, setBulkInputText] = useState('');
 
   const checkTable = async () => {
     try {
@@ -120,6 +122,43 @@ export const GeminiSettingsSection: React.FC = () => {
     }));
   };
 
+  const handleBulkImport = () => {
+    const lines = bulkInputText.split('\n');
+    const newKeysConfigs: GeminiApiKeyConfig[] = [];
+    const existingKeys = settings.apiKeys.map(k => k.key.trim());
+
+    lines.forEach((line, idx) => {
+      const trimmed = line.trim();
+      if (trimmed && !existingKeys.includes(trimmed)) {
+        newKeysConfigs.push({
+          id: `key-bulk-${Date.now()}-${idx}`,
+          key: trimmed,
+          label: `Key Impor ${settings.apiKeys.length + newKeysConfigs.length + 1}`,
+          isActive: true,
+          isExhausted: false,
+          successCount: 0,
+          failCount: 0
+        });
+      }
+    });
+
+    if (newKeysConfigs.length > 0) {
+      setSettings(prev => ({
+        ...prev,
+        apiKeys: [...prev.apiKeys, ...newKeysConfigs]
+      }));
+      setSaveMessage(`Berhasil menambah ${newKeysConfigs.length} API Key baru! Klik Simpan untuk memperbarui database.`);
+      setSaveSuccess(true);
+      setSaveCloudStatus('local_only');
+      setTimeout(() => setSaveSuccess(false), 5000);
+    } else {
+      alert("Tidak ada API Key baru yang valid ditemukan atau kunci sudah terdaftar.");
+    }
+    
+    setIsBulkModalOpen(false);
+    setBulkInputText('');
+  };
+
   const handleTestKey = async (keyConfig: GeminiApiKeyConfig) => {
     if (!keyConfig.key.trim()) return;
     setTestingKeyId(keyConfig.id);
@@ -171,7 +210,7 @@ export const GeminiSettingsSection: React.FC = () => {
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-black tracking-tight text-white">Pengaturan Google Gemini AI</h3>
                 <span className="bg-emerald-400/20 text-emerald-300 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-400/30 uppercase tracking-widest">
-                  Gemini 3.5 Flash
+                  Gemini 3 Flash
                 </span>
               </div>
               <p className="text-xs text-violet-100 mt-0.5">
@@ -319,14 +358,24 @@ export const GeminiSettingsSection: React.FC = () => {
                 Anda dapat menambahkan lebih dari 1 API Key. Sistem akan memakai kunci utama dan bergulir otomatis ke kunci cadangan jika kuota habis.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleAddKey}
-              className="flex items-center gap-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold px-3 py-1.5 rounded-lg border border-violet-200 text-xs transition active:scale-95"
-            >
-              <Plus size={14} />
-              Tambah API Key Baru
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsBulkModalOpen(true)}
+                className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg border border-slate-200 text-xs transition active:scale-95"
+              >
+                <FileText size={14} />
+                Tempel Masal
+              </button>
+              <button
+                type="button"
+                onClick={handleAddKey}
+                className="flex items-center gap-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold px-3 py-1.5 rounded-lg border border-violet-200 text-xs transition active:scale-95"
+              >
+                <Plus size={14} />
+                Tambah API Key Baru
+              </button>
+            </div>
           </div>
 
           {settings.apiKeys.length === 0 ? (
@@ -617,6 +666,62 @@ export const GeminiSettingsSection: React.FC = () => {
                 className="px-4 py-2 bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-semibold rounded-xl text-xs transition cursor-pointer"
               >
                 Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Bulk Import API Keys */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="text-violet-600" size={18} />
+                <h3 className="font-bold text-sm text-slate-800 dark:text-zinc-100">Tempel Masal API Key Gemini</h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsBulkModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
+                Tempelkan daftar API Key dari Notepad/Catatan Anda di bawah ini (pisahkan dengan baris baru). Sistem akan otomatis membersihkan spasi dan mengabaikan kunci yang sudah ada.
+              </p>
+              
+              <textarea
+                value={bulkInputText}
+                onChange={(e) => setBulkInputText(e.target.value)}
+                placeholder="AIzaSy...&#10;AIzaSy...&#10;AIzaSy..."
+                className="w-full h-64 p-3 bg-slate-50 dark:bg-zinc-950 font-mono text-xs text-slate-800 dark:text-zinc-200 border border-slate-200 dark:border-zinc-800 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none resize-none transition"
+              />
+
+              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                <Globe size={12} />
+                <span>Pastikan format API Key valid dari Google AI Studio.</span>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 dark:border-zinc-800 flex justify-end gap-2 bg-slate-50/50 dark:bg-zinc-900/50">
+              <button
+                type="button"
+                onClick={() => setIsBulkModalOpen(false)}
+                className="px-4 py-2 text-slate-600 dark:text-zinc-400 font-bold text-xs hover:underline"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkImport}
+                disabled={!bulkInputText.trim()}
+                className="px-6 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-sm transition active:scale-95 cursor-pointer"
+              >
+                Tambah Semua Kunci
               </button>
             </div>
           </div>

@@ -33,6 +33,7 @@ interface PancaMobileAppProps {
   onLogout?: () => void;
   rolePermissions?: { id: string; canView: boolean; canEdit: boolean }[];
   qaQuestions?: any[];
+  onOpenTaskApp?: () => void;
 }
 
 export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
@@ -51,7 +52,8 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
   onOpenDesktopCRM,
   onLogout,
   rolePermissions = [],
-  qaQuestions = []
+  qaQuestions = [],
+  onOpenTaskApp
 }) => {
   // If no logged in user provided in props, use session or default to superadmin
   const currentUser = propUser || {
