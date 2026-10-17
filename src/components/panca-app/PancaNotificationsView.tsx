@@ -96,7 +96,7 @@ export const PancaNotificationsView: React.FC<PancaNotificationsViewProps> = ({
       {/* Top Header */}
       <div className="bg-white px-5 py-3.5 border-b border-slate-200/80 shadow-sm shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
+          <div className="w-9 h-9 rounded-2xl bg-slate-50 text-slate-600 flex items-center justify-center font-bold">
             <Bell className="w-5 h-5" />
           </div>
           <div>
@@ -107,7 +107,7 @@ export const PancaNotificationsView: React.FC<PancaNotificationsViewProps> = ({
 
         <button
           onClick={markAllAsRead}
-          className="text-xs font-bold text-violet-600 hover:text-violet-700 flex items-center gap-1 active:scale-95 transition"
+          className="text-xs font-bold text-slate-600 hover:text-slate-700 flex items-center gap-1 active:scale-95 transition"
         >
           <CheckCheck className="w-3.5 h-3.5" />
           <span>Tandai Semua</span>
@@ -120,7 +120,7 @@ export const PancaNotificationsView: React.FC<PancaNotificationsViewProps> = ({
           onClick={() => setFilter('all')}
           className={`px-3 py-1 rounded-full text-xs font-bold transition ${
             filter === 'all'
-              ? 'bg-violet-600 text-white shadow-sm shadow-violet-200'
+              ? 'bg-slate-600 text-white shadow-sm shadow-slate-200'
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
           }`}
         >
@@ -130,7 +130,7 @@ export const PancaNotificationsView: React.FC<PancaNotificationsViewProps> = ({
           onClick={() => setFilter('unread')}
           className={`px-3 py-1 rounded-full text-xs font-bold transition ${
             filter === 'unread'
-              ? 'bg-violet-600 text-white shadow-sm shadow-violet-200'
+              ? 'bg-slate-600 text-white shadow-sm shadow-slate-200'
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
           }`}
         >
@@ -153,12 +153,12 @@ export const PancaNotificationsView: React.FC<PancaNotificationsViewProps> = ({
               className={`p-4 rounded-2xl border transition active:scale-[0.99] cursor-pointer shadow-sm ${
                 item.read
                   ? 'bg-white border-slate-200/80 text-slate-600 opacity-80'
-                  : 'bg-violet-50/60 border-violet-200 text-slate-900 shadow-violet-100'
+                  : 'bg-slate-50/60 border-slate-200 text-slate-900 shadow-slate-100'
               }`}
             >
               <div className="flex items-start justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${item.read ? 'bg-slate-300' : 'bg-violet-600 animate-pulse'}`} />
+                  <span className={`w-2 h-2 rounded-full ${item.read ? 'bg-slate-300' : 'bg-slate-600 animate-pulse'}`} />
                   <h4 className="text-xs font-extrabold line-clamp-1">{item.title}</h4>
                 </div>
                 <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-1">

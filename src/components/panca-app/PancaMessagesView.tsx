@@ -88,7 +88,7 @@ export const PancaMessagesView: React.FC<PancaMessagesViewProps> = ({ currentUse
       {/* Top Header */}
       <div className="bg-white px-5 py-3.5 border-b border-slate-200/80 shadow-sm shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+          <div className="w-9 h-9 rounded-2xl bg-zinc-50 text-zinc-600 flex items-center justify-center font-bold">
             <MessageSquare className="w-5 h-5" />
           </div>
           <div>
@@ -107,7 +107,7 @@ export const PancaMessagesView: React.FC<PancaMessagesViewProps> = ({ currentUse
             placeholder="Cari pesan atau nama anggota..."
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-700 placeholder:text-slate-400 outline-none focus:border-indigo-400 transition"
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-700 placeholder:text-slate-400 outline-none focus:border-zinc-400 transition"
           />
         </div>
       </div>
@@ -127,7 +127,7 @@ export const PancaMessagesView: React.FC<PancaMessagesViewProps> = ({ currentUse
               <div
                 className={`p-3.5 rounded-2xl text-xs leading-relaxed shadow-sm ${
                   isMe
-                    ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-tr-none'
+                    ? 'bg-gradient-to-r from-zinc-600 to-slate-600 text-white rounded-tr-none'
                     : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-none'
                 }`}
               >
@@ -136,7 +136,7 @@ export const PancaMessagesView: React.FC<PancaMessagesViewProps> = ({ currentUse
               <div className="flex items-center gap-1 mt-1 px-1 text-[9px] text-slate-400">
                 <Clock className="w-2.5 h-2.5" />
                 <span>{msg.time}</span>
-                {isMe && <CheckCheck className="w-3 h-3 text-indigo-500 ml-0.5" />}
+                {isMe && <CheckCheck className="w-3 h-3 text-zinc-500 ml-0.5" />}
               </div>
             </div>
           );
@@ -151,12 +151,12 @@ export const PancaMessagesView: React.FC<PancaMessagesViewProps> = ({ currentUse
             placeholder="Ketik pesan untuk tim..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            className="flex-1 bg-slate-100 hover:bg-slate-100/80 focus:bg-white border border-transparent focus:border-indigo-400 rounded-2xl px-4 py-3 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition"
+            className="flex-1 bg-slate-100 hover:bg-slate-100/80 focus:bg-white border border-transparent focus:border-zinc-400 rounded-2xl px-4 py-3 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition"
           />
           <button
             type="submit"
             disabled={!inputMessage.trim()}
-            className="w-10 h-10 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-md shadow-indigo-200 disabled:opacity-40 transition active:scale-95 shrink-0"
+            className="w-10 h-10 rounded-2xl bg-zinc-600 hover:bg-zinc-700 text-white flex items-center justify-center shadow-md shadow-zinc-200 disabled:opacity-40 transition active:scale-95 shrink-0"
           >
             <Send className="w-4 h-4 ml-0.5" />
           </button>

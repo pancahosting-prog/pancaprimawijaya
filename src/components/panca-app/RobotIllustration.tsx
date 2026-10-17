@@ -10,7 +10,7 @@ export const RobotIllustration: React.FC<RobotIllustrationProps> = ({ className 
     <div className={`relative flex items-center justify-center select-none ${className}`}>
       {/* Soft Glow behind robot */}
       <div 
-        className="absolute rounded-full bg-violet-400/30 blur-2xl animate-pulse pointer-events-none"
+        className="absolute rounded-full bg-white/5 blur-2xl animate-pulse pointer-events-none"
         style={{ width: size * 0.9, height: size * 0.9 }}
       />
 
@@ -35,19 +35,19 @@ export const RobotIllustration: React.FC<RobotIllustrationProps> = ({ className 
           </linearGradient>
 
           <linearGradient id="robotVisorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#1e1b4b" />
-            <stop offset="50%" stopColor="#2e1065" />
-            <stop offset="100%" stopColor="#3b0764" />
+            <stop offset="0%" stopColor="#000000" />
+            <stop offset="50%" stopColor="#1a1a1a" />
+            <stop offset="100%" stopColor="#333333" />
           </linearGradient>
 
           <linearGradient id="robotEyeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#38bdf8" />
-            <stop offset="100%" stopColor="#818cf8" />
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="100%" stopColor="#cbd5e1" />
           </linearGradient>
 
           <linearGradient id="coreLightGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#a855f7" />
-            <stop offset="100%" stopColor="#6366f1" />
+            <stop offset="0%" stopColor="#333333" />
+            <stop offset="100%" stopColor="#000000" />
           </linearGradient>
 
           <filter id="eyeGlow" x="-30%" y="-30%" width="160%" height="160%">
@@ -58,8 +58,8 @@ export const RobotIllustration: React.FC<RobotIllustrationProps> = ({ className 
 
         {/* --- Antenna --- */}
         <path d="M160 82 V48" stroke="#ffffff" strokeWidth="6" strokeLinecap="round" />
-        <circle cx="160" cy="42" r="10" fill="#38bdf8" filter="url(#eyeGlow)" />
-        <circle cx="160" cy="42" r="5" fill="#ffffff" />
+        <circle cx="160" cy="42" r="10" fill="#ffffff" filter="url(#eyeGlow)" />
+        <circle cx="160" cy="42" r="5" fill="#e2e8f0" />
 
         {/* --- Left Arm (Waving Raised Up) --- */}
         <g className="origin-[100px_160px] animate-[wiggle_3s_ease-in-out_infinite]">
@@ -123,7 +123,7 @@ export const RobotIllustration: React.FC<RobotIllustrationProps> = ({ className 
           height="64" 
           rx="22" 
           fill="url(#robotVisorGrad)" 
-          stroke="#4338ca" 
+          stroke="#475569" 
           strokeWidth="2" 
         />
 

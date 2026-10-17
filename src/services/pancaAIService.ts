@@ -1,6 +1,7 @@
 // Unified Data Digest & AI Service for Panca AI (Web CRM & Mobile /app)
 // Powered by Google Gemini with Multi-Key Auto-Rolling
 import { callGeminiWithKeyRotation } from './geminiKeyService';
+import { generateWebKnowledgeDigest } from './webKnowledgeService';
 
 export interface PancaAIContext {
   currentUser: {
@@ -25,6 +26,10 @@ export interface PancaAIContext {
   };
   appUsers?: any[];
   deletedItems?: any[];
+  rolePermissions?: { id: string; canView: boolean; canEdit: boolean }[];
+  taskAppDataExt?: {
+    qaQuestions: any[];
+  };
 }
 
 // Helper to calculate exact amount of a transaction
@@ -102,6 +107,14 @@ export const getProductStock = (p: any, purchaseOrders: any[] = [], transactions
 export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string = '') => {
   const currentCompId = ctx.activeCompany?.id || '1';
   const isSuperAdmin = ctx.currentUser?.role?.toLowerCase() === 'superadmin';
+  const perms = ctx.rolePermissions || [];
+
+  // Helper to check permission
+  const canView = (id: string) => {
+    if (isSuperAdmin) return true;
+    if (perms.length === 0) return true; // Default to allow if not provided
+    return perms.find(p => p.id === id)?.canView ?? false;
+  };
 
   const allTransactions = ctx.transactions || [];
   const allCustomers = ctx.customers || [];
@@ -110,10 +123,23 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
   const allPOs = ctx.purchaseOrders || [];
   const allEmployees = ctx.employees || [];
 
+  // Data Restriction Logic based on Menu Access Control
+  const allowedTransactions = canView('Transaksi') 
+    ? allTransactions 
+    : canView('Penawaran') 
+      ? allTransactions.filter(t => t.status === 'Penawaran' || t.isQuote)
+      : [];
+
+  const allowedCustomers = canView('Contacts') ? allCustomers : [];
+  const allowedProducts = canView('Produk') || canView('purchasing_produk') || canView('stocklist_produk') || canView('asset_produk') ? allProducts : [];
+  const allowedSuppliers = canView('Suppliers') || canView('purchasing_suppliers') || canView('stocklist_suppliers') ? allSuppliers : [];
+  const allowedPOs = canView('Purchase Orders') || canView('purchasing_po') || canView('stocklist_po') ? allPOs : [];
+  const allowedEmployees = canView('Employees') ? allEmployees : [];
+
   // Filter by company where applicable
-  const compTransactions = allTransactions.filter(t => !t.companyId || t.companyId === currentCompId);
-  const compCustomers = allCustomers.filter(c => !c.companyId || c.companyId === currentCompId);
-  const compProducts = allProducts.filter(p => !p.companyId || p.companyId === currentCompId);
+  const compTransactions = allowedTransactions.filter(t => !t.companyId || t.companyId === currentCompId);
+  const compCustomers = allowedCustomers.filter(c => !c.companyId || c.companyId === currentCompId);
+  const compProducts = allowedProducts.filter(p => !p.companyId || p.companyId === currentCompId);
 
   // Sales & Trade Analysis
   let totalOmzetReal = 0;
@@ -222,7 +248,9 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
     // Unpaid invoices / Piutang
     const hasSisa = typeof (t as any).sisaPembayaran === 'number' && (t as any).sisaPembayaran > 0;
     const isUnpaid = isRealDeal && (payStatus === 'Belum Lunas' || hasSisa || status === 'Pengiriman');
-    if (isUnpaid) {
+    
+    // Piutang filter based on permission
+    if (isUnpaid && canView('Piutang')) {
       const sisa = hasSisa ? (t as any).sisaPembayaran : amt;
       totalPiutangAmount += sisa;
       unpaidInvoicesList.push({
@@ -247,12 +275,12 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
   let totalPOAmount = 0;
   let totalHutangAmount = 0;
   const poStatusCounts: Record<string, number> = {};
-  allPOs.forEach(po => {
+  allowedPOs.forEach(po => {
     const amt = Number(po.total) || 0;
     totalPOAmount += amt;
     const st = po.status || 'Draft';
     poStatusCounts[st] = (poStatusCounts[st] || 0) + 1;
-    if (st !== 'Lunas') totalHutangAmount += amt;
+    if (st !== 'Lunas' && canView('Hutang')) totalHutangAmount += amt;
   });
 
   return {
@@ -260,19 +288,19 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
     compTransactions,
     compCustomers,
     compProducts,
-    allSuppliers,
-    allPOs,
-    allEmployees,
-    totalOmzetReal,
-    totalOmzetLunas,
+    allSuppliers: allowedSuppliers,
+    allPOs: allowedPOs,
+    allEmployees: allowedEmployees,
+    totalOmzetReal: canView('Dashboard') || canView('Transaksi') ? totalOmzetReal : 0,
+    totalOmzetLunas: canView('Dashboard') || canView('Transaksi') ? totalOmzetLunas : 0,
     totalNilaiPenawaran,
     totalNilaiBatal,
     tradeStatusCounts,
     paymentStatusCounts,
-    salesPerformance,
-    customerSpendMap,
+    salesPerformance: canView('Dashboard') || canView('KPI') ? salesPerformance : {},
+    customerSpendMap: canView('Dashboard') || canView('Transaksi') ? customerSpendMap : {},
     soldProductQuantities,
-    monthlyOmzetMap,
+    monthlyOmzetMap: canView('Dashboard') || canView('Transaksi') ? monthlyOmzetMap : {},
     totalPiutangAmount,
     unpaidInvoicesList,
     totalQuotes,
@@ -281,7 +309,14 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
     lowStockProducts,
     totalPOAmount,
     totalHutangAmount,
-    poStatusCounts
+    poStatusCounts,
+    permissions: {
+      canViewTransactions: canView('Transaksi'),
+      canViewCustomers: canView('Contacts'),
+      canViewProducts: canView('Produk'),
+      canViewFinance: canView('Piutang') || canView('Hutang'),
+      canViewHR: canView('Employees')
+    }
   };
 };
 
@@ -290,9 +325,12 @@ export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string =
   const agg = compileSystemAggregations(ctx, queryText);
   const isSuperAdmin = ctx.currentUser?.role?.toLowerCase() === 'superadmin';
   const queryLower = queryText.toLowerCase();
+  const allowedMenus = (ctx.rolePermissions || []).filter(p => p.canView).map(p => p.id);
+  const allowedListStr = isSuperAdmin ? "SELURUH AKSES SISTEM (SUPERADMIN)" : (allowedMenus.length > 0 ? allowedMenus.join(', ') : "Akses Menu Sangat Terbatas");
 
   let digest = `=== DATABASE REAL-TIME SISTEM MYPANCA (PT. PANCA PRIMA WIJAYA) ===
 - Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
+- Status Akses Pengguna: ${allowedListStr}
 - Total Seluruh Transaksi: ${agg.compTransactions.length} Transaksi Tercatat
 - Skema Nomor Transaksi: Transaksi LAMA memakai "TRX-..." | Transaksi BARU memakai "PP-..."
 - Total Omzet Real (Selesai/Lunas): Rp ${agg.totalOmzetLunas.toLocaleString('id-ID')}
@@ -301,35 +339,35 @@ export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string =
 - Total Piutang Belum Lunas: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan belum lunas)
 
 --- [REKAP OMZET PER BULAN] ---
-${Object.entries(agg.monthlyOmzetMap).map(([m, data]) => `* Periode ${m}: Total Omzet Selesai Rp ${data.omzetSelesai.toLocaleString('id-ID')} (${data.totalDeals} transaksi: ${data.customers.join(', ')})`).join('\n') || '* (Belum ada data bulanan)'}
+${Object.entries(agg.monthlyOmzetMap).map(([m, data]) => `* Periode ${m}: Total Omzet Selesai Rp ${data.omzetSelesai.toLocaleString('id-ID')} (${data.totalDeals} transaksi: ${data.customers.join(', ')})`).join('\n') || '* (Akses terbatas atau belum ada data)'}
 
 --- [MENU 1: TRANSAKSI PENJUALAN LENGKAP (LAMA TRX & BARU PP)] ---
 * Status Pesanan Breakdown: ${Object.entries(agg.tradeStatusCounts).map(([k, v]) => `${k}: ${v} transaksi`).join(' | ')}
 * Status Pembayaran: ${Object.entries(agg.paymentStatusCounts).map(([k, v]) => `${k}: ${v} transaksi`).join(' | ')}
 * Performa Sales Rep:
-${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.count} trx deals | Total Omzet: Rp ${d.omzet.toLocaleString('id-ID')}`).join('\n') || '  (Belum ada data sales)'}
+${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.count} trx deals | Total Omzet: Rp ${d.omzet.toLocaleString('id-ID')}`).join('\n') || '  (Akses terbatas atau belum ada data)'}
 
 * Top Pelanggan dengan Belanja Terbesar:
-${Object.entries(agg.customerSpendMap).sort((a, b) => b[1].total - a[1].total).slice(0, 15).map(([c, d], i) => `  ${i + 1}. ${c}: ${d.count} transaksi | Total Belanja: Rp ${d.total.toLocaleString('id-ID')}`).join('\n') || '  (Belum ada)'}
+${Object.entries(agg.customerSpendMap).sort((a, b) => b[1].total - a[1].total).slice(0, 15).map(([c, d], i) => `  ${i + 1}. ${c}: ${d.count} transaksi | Total Belanja: Rp ${d.total.toLocaleString('id-ID')}`).join('\n') || '  (Akses terbatas)'}
 
 * Daftar Transaksi Real Database (Setiap Transaksi Terbaca Presisi):
-${agg.compTransactions.map(t => {
+${agg.compTransactions.length > 0 ? agg.compTransactions.map(t => {
   const amt = getTransactionAmount(t);
   const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} unit @ Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : '';
   return `  - [${t.noTrx || t.id}] Tanggal: ${t.tanggal || '-'} | Pelanggan: ${t.customerName || t.customer || '-'} | Total Nilai: Rp ${amt.toLocaleString('id-ID')} | Status: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales: ${t.sales || t.salesName || '-'} | Item: [${itemsStr || 'N/A'}]`;
-}).join('\n')}
+}).join('\n') : '  (Akses menu Transaksi dibatasi atau data tidak ada)'}
 
 --- [MENU 2: DAFTAR KONTAK & PELANGGAN LENGKAP] ---
 * Total Kontak: ${agg.compCustomers.length} Pelanggan
-${agg.compCustomers.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales: ${c.sales || '-'}, Status: ${c.leadType || 'Aktif'})`).join('\n')}
+${agg.compCustomers.length > 0 ? agg.compCustomers.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales: ${c.sales || '-'}, Status: ${c.leadType || 'Aktif'})`).join('\n') : '  (Akses menu Contacts dibatasi)'}
 
 --- [MENU 3: PENAWARAN (QUOTATIONS) & FOLLOW-UP DETAIL] ---
 * Total Penawaran: ${agg.totalQuotes} penawaran (Nilai Total: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')})
-${agg.quoteList.map(q => `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Status: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu'} | Terakhir: ${q.lastFollowUpDate} | Catatan: ${q.notes} | Sales: ${q.sales}`).join('\n')}
+${agg.quoteList.length > 0 ? agg.quoteList.map(q => `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Status: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu'} | Terakhir: ${q.lastFollowUpDate} | Catatan: ${q.notes} | Sales: ${q.sales}`).join('\n') : '  (Akses menu Penawaran dibatasi)'}
 
 --- [MENU 4: KATALOG & STOK PRODUK LENGKAP] ---
 * Total SKU: ${agg.compProducts.length} Produk
-${agg.compProducts.map(p => {
+${agg.compProducts.length > 0 ? agg.compProducts.map(p => {
   const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
   const specStr = p.specifications || p.deskripsi || p.description || 'Belum diisi';
   const mainFunc = p.mainFunction || p.fungsi || 'Belum diisi';
@@ -339,20 +377,38 @@ ${agg.compProducts.map(p => {
   const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
   return `  - SKU [${p.kode || p.id}] ${p.nama || p.name} (SISA STOK AKURAT: ${stockVal} ${p.satuan || p.unit || 'unit'}) | Harga Jual: Rp ${price.toLocaleString('id-ID')}
     * Fungsi: ${mainFunc} | Aplikasi: ${mainApp} | Dimensi: ${dim} | Berat: ${weight} | Spesifikasi: ${specStr}`;
-}).join('\n') || '  (Belum ada data produk di database)'}
+}).join('\n') : '  (Akses menu Produk dibatasi)'}
 
 --- [MENU 5: FINANCE - PIUTANG USAHA (TAGIHAN BELUM LUNAS)] ---
 * Total Piutang: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan)
-${agg.unpaidInvoicesList.map(u => `  - Invoice [${u.noTrx}] Pelanggan: ${u.customer} | Tanggal: ${u.tanggal} | Total: Rp ${u.total.toLocaleString('id-ID')} | Sisa: Rp ${u.sisa.toLocaleString('id-ID')} | Sales: ${u.sales}`).join('\n') || '  - ✅ Tidak ada piutang tertunggak.'}
+${agg.unpaidInvoicesList.length > 0 ? agg.unpaidInvoicesList.map(u => `  - Invoice [${u.noTrx}] Pelanggan: ${u.customer} | Tanggal: ${u.tanggal} | Total: Rp ${u.total.toLocaleString('id-ID')} | Sisa: Rp ${u.sisa.toLocaleString('id-ID')} | Sales: ${u.sales}`).join('\n') : '  - ✅ Tidak ada piutang tertunggak atau akses dibatasi.'}
 
 --- [MENU 6: PURCHASING & SUPPLIER] ---
 * Total Supplier: ${agg.allSuppliers.length} vendor | PO: ${agg.allPOs.length} PO (Total: Rp ${agg.totalPOAmount.toLocaleString('id-ID')})
-${agg.allPOs.map(po => `  - PO [${po.noPO || po.id}] Vendor: ${po.supplierName || '-'} | Tanggal: ${po.tanggal || po.tanggalPembelian || '-'} | Total: Rp ${(Number(po.total) || 0).toLocaleString('id-ID')} | Status: ${po.status || 'Draft'}`).join('\n')}
+${agg.allPOs.length > 0 ? agg.allPOs.map(po => `  - PO [${po.noPO || po.id}] Vendor: ${po.supplierName || '-'} | Tanggal: ${po.tanggal || po.tanggalPembelian || '-'} | Total: Rp ${(Number(po.total) || 0).toLocaleString('id-ID')} | Status: ${po.status || 'Draft'}`).join('\n') : '  (Akses menu Purchasing dibatasi)'}
 
 --- [MENU 7: HR - KARYAWAN & TIM] ---
 * Total Karyawan: ${agg.allEmployees.length} staf
-${agg.allEmployees.map(e => `  - ${e.nama} | Jabatan: ${e.role || '-'} | WA: ${e.whatsapp || '-'}${isSuperAdmin && e.gaji ? ` | Gaji: Rp ${Number(e.gaji).toLocaleString('id-ID')}` : ''}`).join('\n')}
+${agg.allEmployees.length > 0 ? agg.allEmployees.map(e => `  - ${e.nama} | Jabatan: ${e.role || '-'} | WA: ${e.whatsapp || '-'}${isSuperAdmin && e.gaji ? ` | Gaji: Rp ${Number(e.gaji).toLocaleString('id-ID')}` : ''}`).join('\n') : '  (Akses menu Karyawan dibatasi)'}
 `;
+
+  // Include Q&A Forum data from taskAppDataExt (Real-Time Knowledge Base)
+  if (ctx.taskAppDataExt?.qaQuestions && ctx.taskAppDataExt.qaQuestions.length > 0) {
+    digest += `\n--- [MENU 9: Q&A FORUM & TECHNICAL KNOWLEDGE BASE] ---\n`;
+    ctx.taskAppDataExt.qaQuestions.forEach(q => {
+      digest += `* TOPIK DISKUSI: "${q.title}" (${q.category})\n`;
+      digest += `  - PERTANYAAN/ISI: ${q.content}\n`;
+      if (q.answers && q.answers.length > 0) {
+        q.answers.forEach((ans: any, idx: number) => {
+          digest += `  - JAWABAN #${idx + 1} (${ans.author_name}): ${ans.content}\n`;
+        });
+      } else {
+        digest += `  - STATUS: Belum ada jawaban dari tim teknis.\n`;
+      }
+    });
+  }
+
+  digest += generateWebKnowledgeDigest(ctx.currentUser?.role || '');
 
   // Include Task App data if available (SuperAdmin / Team)
   if (ctx.taskAppData && (ctx.taskAppData.tasks?.length || ctx.taskAppData.projects?.length)) {
@@ -538,7 +594,7 @@ export const isConversationalGreeting = (query: string): boolean => {
   const hasSpecificContext = /(trx|pp)[-_ ]?\d+|inv[-_ ]?\d+|po[-_ ]?\d+|agustus|september|oktober|november|desember|januari|februari|maret|april|mei|juni|juli|2024|2025|2026|rp\b|indofood|mayora/i.test(q);
   if (hasSpecificContext) return false;
 
-  const hasBusinessDataTerm = /\b(omset|omzet|transaksi|stok|stock|piutang|tagihan|laporan|produk|customer|pelanggan|karyawan|supplier|vendor|po|invoice|harga|gaji|penjualan)\b/i.test(q);
+  const hasBusinessDataTerm = /\b(omset|omzet|transaksi|stok|stock|piutang|tagihan|laporan|produk|customer|pelanggan|karyawan|supplier|vendor|po|invoice|harga|gaji|penjualan|ews|banjir|longsor|mitigasi|geohazard|teknis|forum|diskusi)\b/i.test(q);
   if (hasBusinessDataTerm) return false;
 
   const exactGreetings = [
@@ -632,40 +688,56 @@ Peran Pengguna: ${ctx.currentUser?.role || 'Staff'}
 Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
 
 ================================================================================
-ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (NO-EMOJI CLUTTER GUARANTEE):
+ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
 ================================================================================
 
-1. NADA BICARA & FORMAT RESPON:
+1. PEMBATASAN RUANG LINGKUP (PENTING!):
+   - Anda adalah asisten BISNIS KHUSUS untuk PT. Panca Prima Wijaya.
+   - ANDA DILARANG KERAS MENJAWAB PERTANYAAN DI LUAR DATA SISTEM, KNOWLEDGE BASE TEKNIS, DAN INFORMASI WEBSITE PERUSAHAAN YANG DILAMPIRKAN.
+   - Jika pengguna menanyakan hal umum seperti resep masakan, hiburan, berita umum, tips gaya hidup, atau apa pun yang TIDAK ADA sumber datanya di lampiran database di bawah, Anda WAJIB menjawab:
+     "Mohon maaf **${userName}**, saya adalah asisten AI khusus sistem MyPanca. Saya hanya dapat membantu menjawab pertanyaan seputar data operasional perusahaan (CRM, ERP, Transaksi), informasi teknis di forum Q&A, atau layanan teknis PT Panca Prima Wijaya. Silakan tanyakan hal yang berkaitan dengan bisnis atau sistem."
+   - JANGAN PERNAH memberikan jawaban general knowledge/pengetahuan umum meskipun Anda mengetahuinya.
+
+2. NADA BICARA & FORMAT RESPON:
    - Bersikaplah sopan, profesional, membantu, dan lugas.
    - Gunakan sapaan "Bapak/Ibu" atau sebut nama "${userName}" secara wajar.
-   - DILARANG MENGGUNAKAN BANYAK EMOJI ATAU SIMBOL DEKORATIF BERLEBIHAN. Jangan gunakan emoji di setiap baris, setiap poin, atau setiap sel tabel. Maksimal 0 sampai 1 emoji sederhana jika sangat diperlukan. Tampilan harus bersih dan elegan.
+   - DILARANG MENGGUNAKAN BANYAK EMOJI ATAU SIMBOL DEKORATIF BERLEBIHAN. Maksimal 0 sampai 1 emoji sederhana jika sangat diperlukan.
 
-2. PENGETAHUAN KODE TRANSAKSI LAMA (TRX) & BARU (PP):
+3. PENGETAHUAN KODE TRANSAKSI LAMA (TRX) & BARU (PP):
    - Sistem MyPanca menggunakan 2 format nomor transaksi:
-     * Format LAMA: Memakai awalan "TRX-..." (Contoh: TRX-01, TRX-70, TRX70).
-     * Format BARU: Memakai awalan "PP-..." (Contoh: PP-001, PP-2026-01, PP001).
-   - Anda HARUS mengenali kedua format tersebut secara setara dari database real-time yang dilampirkan.
+     * Format LAMA: Memakai awalan "TRX-..." (Contoh: TRX-01, TRX-70).
+     * Format BARU: Memakai awalan "PP-..." (Contoh: PP-001, PP-2026-01).
+   - Anda HARUS mengenali kedua format tersebut.
 
-3. AKURASI UTAMA & DILARANG MEMOTONG JAWABAN:
-   - JAWABAN ANDA HARUS DITULIS LENGKAP DARI AWAL SAMPAI AKHIR TANPA TERPOTONG DI TENGAH JALAN.
+4. AKURASI UTAMA & DILARANG MEMOTONG JAWABAN:
+   - JAWABAN ANDA HARUS DITULIS LENGKAP DARI AWAL SAMPAI AKHIR TANPA TERPOTONG.
    - Utamakan AKURASI DATA berdasarkan database faktual yang dilampirkan.
-   - JANGAN MENGARANG DRAFT ATAU DATA TRANSAKSI JIKA TIDAK ADA DI DATABASE. Jika transaksi tidak ditemukan, jawab jujur:
-     "Maaf **${userName}**, nomor transaksi **[Nomor]** tidak ditemukan di database MyPanca. Silakan periksa kembali nomor transaksinya."
+   - JANGAN MENGARANG DATA. Jika data tidak ditemukan, jawab jujur.
 
-4. SAJIKAN TABEL MARKDOWN DENGAN RAPI & TERSTRUKTUR:
-   - Ketika menyajikan daftar transaksi, piutang, produk, atau laporan, gunakan TABEL MARKDOWN LENGKAP dengan header yang jelas tanpa hiasan emoji di judul/kolom.
-   - Contoh Header Tabel Transaksi:
-     | No. Transaksi | Tanggal | Pelanggan | Nominal Rp | Status Pesanan | Status Pembayaran | Sales Rep |
+5. SAJIKAN TABEL MARKDOWN DENGAN RAPI & TERSTRUKTUR:
+   - Gunakan TABEL MARKDOWN LENGKAP dengan header yang jelas tanpa hiasan emoji.
 
-5. KLARIFIKASI DAHULU JIKA PERTANYAAN TERLALU UMUM:
-   - Jika pengguna bertanya hal umum tanpa periode (seperti hanya "omset" atau "transaksi"), tanyakan periode bulan/tahun yang ingin diperiksa secara jelas.
+6. KLARIFIKASI DAHULU JIKA PERTANYAAN TERLALU UMUM:
+   - Jika pengguna bertanya hal umum tanpa periode (seperti hanya "omset"), tanyakan periode bulan/tahun yang ingin diperiksa.
 
-6. BILA PENGGUNA INGIN INPUT DATA BARU (CUSTOMER, TRANSAKSI, PENAWARAN):
-   - Pandu pengguna mengisi data secara BERTAHAP (satu per satu sesuai kolom form asli), lalu di akhir tampilkan tabel pratinjau draft dan minta konfirmasi simpan.
+7. BILA PENGGUNA INGIN INPUT DATA BARU:
+   - Pandu pengguna mengisi data secara BERTAHAP (satu per satu sesuai kolom form asli).
 
-7. AKURASI STOK PRODUK REAL DATABASE:
-   - Nilai sisa stok produk tertera dengan jelas di [MENU 4: KATALOG & STOK PRODUK LENGKAP] dan di bagian [PENCARIAN SANGAT SPESIFIK & PRESISI LENGKAP UNTUK PRODUK] sebagai "SISA STOK AKURAT DATABASE REAL-TIME: X unit".
-   - Jika nilai stok pada database tertera > 0 (misalnya 1 unit, 5 unit, dsb.), ANDA WAJIB MENJAWAB DENGAN JUMLAH STOK TERSEBUT. DILARANG KERAS MENYATAKAN STOK 0 ATAU KOSONG BILA DATABASE MENUNJUKKAN STOK TERSEDIA.
+8. AKURASI STOK PRODUK REAL DATABASE:
+   - Nilai sisa stok produk tertera di [MENU 4]. DILARANG menyatakan stok 0 jika database menunjukkan ada stok.
+
+8. PENANGANAN HAK AKSES TERBATAS:
+   - Jika pengguna menanyakan data yang ada di kategori "Akses terbatas" atau "dibatasi" dalam digest database di bawah, Anda HARUS menjawab dengan tegas namun sopan bahwa mereka tidak memiliki hak akses untuk menanyakan hal tersebut.
+   - SETELAH memberitahu kekurangan akses, Anda WAJIB menyebutkan daftar topik atau menu apa saja yang BISA mereka tanyakan (berdasarkan "Status Akses Pengguna" di digest).
+
+9. KNOWLEDGE BASE Q&A TEKNIS (PRIORITAS UTAMA):
+   - Di bagian akhir digest data, terdapat [=== KNOWLEDGE BASE Q&A TEKNIS ===].
+   - Jika pengguna bertanya tentang topik teknis yang ada di sana (misal: **Mitigasi Longsor** atau **Geohazard**), Anda WAJIB memberikan jawaban yang sangat akurat sesuai dengan daftar pertanyaan dan jawaban yang ada di knowledge base tersebut.
+   - Jika user menyebutkan nomor pertanyaan (misal: "Pertanyaan nomor 10 di topik Longsor"), Anda harus memberikan Jawaban nomor 10 yang tepat dari knowledge base tersebut.
+
+10. KNOWLEDGE BASE WEBSITE EKSTERNAL (OTORITAS SALES/ADMIN):
+   - Jika tersedia di digest [=== KNOWLEDGE BASE WEBSITE EKSTERNAL ===], gunakan informasi tersebut untuk menjawab pertanyaan seputar profil perusahaan, rincian produk (Fumiphos, Silogard, dll), layanan fumigasi, atau spesifikasi sensor gempa.
+   - Informasi ini hanya muncul untuk user dengan role **Superadmin** atau **Sales**. Jika user role lain bertanya tentang hal ini dan datanya tidak muncul di digest, jawab bahwa informasi tersebut memerlukan otoritas akses tambahan.
 
 ${dataDigest}
 `;

@@ -106,7 +106,7 @@ const TypewriterText: React.FC<{
           p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
           strong: ({ children }) => <strong className="font-extrabold text-slate-900 dark:text-zinc-100">{children}</strong>,
           code: ({ children }) => (
-            <code className="px-1.5 py-0.5 rounded-md bg-violet-50 dark:bg-zinc-800 text-violet-700 dark:text-violet-300 font-mono text-[11px]">
+            <code className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-slate-400 font-mono text-[11px]">
               {children}
             </code>
           )
@@ -115,7 +115,7 @@ const TypewriterText: React.FC<{
         {displayedText}
       </Markdown>
       {isTyping && (
-        <span className="inline-block w-2 h-4 ml-1 bg-violet-600 animate-pulse rounded-xs align-middle" />
+        <span className="inline-block w-2 h-4 ml-1 bg-slate-900 animate-pulse rounded-xs align-middle" />
       )}
     </div>
   );
@@ -139,6 +139,8 @@ interface PancaAIChatViewProps {
   setProducts?: React.Dispatch<React.SetStateAction<any[]>>;
   syncToSupabase?: (table: string, data: any) => void;
   initialPrompt?: string;
+  rolePermissions?: { id: string; canView: boolean; canEdit: boolean }[];
+  qaQuestions?: any[];
   onBack: () => void;
 }
 
@@ -174,6 +176,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   setProducts,
   syncToSupabase,
   initialPrompt = '',
+  rolePermissions = [],
+  qaQuestions = [],
   onBack
 }) => {
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -1252,7 +1256,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         suppliers,
         purchaseOrders,
         employees,
-        taskAppData
+        taskAppData,
+        rolePermissions,
+        taskAppDataExt: {
+          qaQuestions
+        }
       };
 
       const responseText = await queryPancaAI(query.trim(), historyPayload, contextPayload);
@@ -1502,7 +1510,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
         {/* EMBEDDED INTERACTIVE CRM FORM CARD WHEN ACTIVE SESSION IS OPEN */}
         {activeSession && (
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-violet-200 dark:border-violet-800/80 shadow-xl p-4 my-2 text-xs space-y-3.5 animate-in fade-in slide-in-from-bottom-3 duration-300">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-slate-300 dark:border-slate-950/80 shadow-xl p-4 my-2 text-xs space-y-3.5 animate-in fade-in slide-in-from-bottom-3 duration-300">
             {/* Header with Type Selector & Close Button */}
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3">
               <div className="flex items-center gap-2">
@@ -1540,7 +1548,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                     onClick={() => updateActiveData('docType', 'transaction')}
                     className={`flex-1 py-2 px-3 rounded-xl font-extrabold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
                       activeSession.type === 'transaction'
-                        ? 'bg-violet-600 text-white shadow-xs'
+                        ? 'bg-slate-900 text-white shadow-xs'
                         : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900'
                     }`}
                   >
@@ -1564,15 +1572,15 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                 {/* 1. CUSTOMER SEARCH & SELECTOR */}
                 <div className="space-y-1.5 bg-slate-50/80 dark:bg-zinc-950/50 p-3 rounded-2xl border border-slate-200/50 dark:border-zinc-800/60">
                   <label className="font-extrabold text-slate-800 dark:text-zinc-200 text-xs flex items-center gap-1.5">
-                    <User size={14} className="text-violet-600" />
+                    <User size={14} className="text-slate-900" />
                     <span>Pilih Pelanggan / Customer (Search Database):</span>
                   </label>
 
                   {activeSession.data.customerName ? (
-                    <div className="flex items-center justify-between p-2.5 bg-violet-50 dark:bg-violet-950/80 border border-violet-200 dark:border-violet-800 rounded-xl text-violet-900 dark:text-violet-200 font-extrabold">
+                    <div className="flex items-center justify-between p-2.5 bg-slate-100 dark:bg-violet-950/80 border border-slate-300 dark:border-slate-950 rounded-xl text-black dark:text-slate-300 font-extrabold">
                       <div className="min-w-0">
                         <p className="truncate text-xs">✅ {activeSession.data.customerName}</p>
-                        <p className="text-[10px] text-violet-600 dark:text-violet-400 font-normal">
+                        <p className="text-[10px] text-slate-900 dark:text-slate-500 font-normal">
                           {customers.find(c => c.nama === activeSession.data.customerName)?.perusahaan || 'Pelanggan Terdaftar'}
                         </p>
                       </div>
@@ -1593,7 +1601,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                           value={wizardCustSearch}
                           onChange={(e) => setWizardCustSearch(e.target.value)}
                           placeholder="Cari nama pelanggan, perusahaan, atau whatsapp..."
-                          className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs font-medium focus:ring-2 focus:ring-violet-500 outline-none shadow-xs"
+                          className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs font-medium focus:ring-2 focus:ring-slate-1000 outline-none shadow-xs"
                         />
                       </div>
 
@@ -1614,13 +1622,13 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                                 updateActiveData('customerName', cust.nama);
                                 setWizardCustSearch('');
                               }}
-                              className="w-full p-2 bg-white dark:bg-zinc-900 hover:bg-violet-100 dark:hover:bg-zinc-800 border border-slate-200 dark:border-zinc-800 rounded-xl text-left flex items-center justify-between transition cursor-pointer"
+                              className="w-full p-2 bg-white dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 border border-slate-200 dark:border-zinc-800 rounded-xl text-left flex items-center justify-between transition cursor-pointer"
                             >
                               <div className="min-w-0 pr-2">
                                 <p className="font-extrabold text-slate-900 dark:text-zinc-100 text-xs truncate">{cust.nama}</p>
                                 <p className="text-[10px] text-slate-400 truncate">{cust.perusahaan || '-'} • {cust.kota || '-'} ({cust.whatsapp || '-'})</p>
                               </div>
-                              <span className="px-2 py-0.5 bg-violet-600 text-white rounded-md text-[10px] font-bold">Pilih</span>
+                              <span className="px-2 py-0.5 bg-slate-900 text-white rounded-md text-[10px] font-bold">Pilih</span>
                             </button>
                           ))}
 
@@ -1646,10 +1654,10 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                 <div className="space-y-2.5 bg-slate-50 dark:bg-zinc-950/60 p-3 rounded-xl border border-slate-200/80 dark:border-zinc-800">
                   <label className="font-extrabold text-slate-800 dark:text-zinc-200 text-xs flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      <Package size={14} className="text-violet-600" />
+                      <Package size={14} className="text-slate-900" />
                       <span>Keranjang Item Produk & Barang:</span>
                     </span>
-                    <span className="text-[11px] font-extrabold text-violet-600 dark:text-violet-400 bg-violet-100 dark:bg-violet-950 px-2 py-0.5 rounded-full">
+                    <span className="text-[11px] font-extrabold text-slate-900 dark:text-slate-500 bg-slate-200 dark:bg-violet-950 px-2 py-0.5 rounded-full">
                       {activeSession.data.items?.length || 0} Item
                     </span>
                   </label>
@@ -1725,7 +1733,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                         value={wizardProdSearch}
                         onChange={(e) => setWizardProdSearch(e.target.value)}
                         placeholder="Cari & tambah barang dari katalog..."
-                        className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs font-medium focus:ring-2 focus:ring-violet-500 outline-none shadow-xs"
+                        className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl text-xs font-medium focus:ring-2 focus:ring-slate-1000 outline-none shadow-xs"
                       />
                     </div>
 
@@ -1733,13 +1741,13 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setWizardProdQty(Math.max(1, wizardProdQty - 1))}
-                        className="px-1.5 font-extrabold text-slate-600 dark:text-zinc-300 hover:text-violet-600 cursor-pointer"
+                        className="px-1.5 font-extrabold text-slate-600 dark:text-zinc-300 hover:text-slate-900 cursor-pointer"
                       >-</button>
                       <span className="px-2 font-bold text-xs">{wizardProdQty}</span>
                       <button
                         type="button"
                         onClick={() => setWizardProdQty(wizardProdQty + 1)}
-                        className="px-1.5 font-extrabold text-slate-600 dark:text-zinc-300 hover:text-violet-600 cursor-pointer"
+                        className="px-1.5 font-extrabold text-slate-600 dark:text-zinc-300 hover:text-slate-900 cursor-pointer"
                       >+</button>
                     </div>
                   </div>
@@ -1781,7 +1789,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                               setWizardProdSearch('');
                               setWizardProdQty(1);
                             }}
-                            className="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-[10px] font-extrabold cursor-pointer flex items-center gap-1 transition active:scale-95 shrink-0"
+                            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-950 text-white rounded-xl text-[10px] font-extrabold cursor-pointer flex items-center gap-1 transition active:scale-95 shrink-0"
                           >
                             <Plus size={12} />
                             <span>+ Tambah</span>
@@ -1804,7 +1812,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                         type="checkbox"
                         checked={Boolean(activeSession.data.ppn)}
                         onChange={(e) => updateActiveData('ppn', e.target.checked)}
-                        className="rounded text-violet-600 w-4 h-4"
+                        className="rounded text-slate-900 w-4 h-4"
                       />
                       <span>Kenakan Pajak PPN (11%)</span>
                     </label>
@@ -1814,7 +1822,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                         type="checkbox"
                         checked={Boolean(activeSession.data.ongkir)}
                         onChange={(e) => updateActiveData('ongkir', e.target.checked)}
-                        className="rounded text-violet-600 w-4 h-4"
+                        className="rounded text-slate-900 w-4 h-4"
                       />
                       <span>Biaya Kirim / Shipping Fee</span>
                     </label>
@@ -1896,15 +1904,15 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                   const grandTotal = subtotal + ppnAmt + ongkirAmt;
 
                   return (
-                    <div className="p-3.5 bg-gradient-to-r from-violet-900 via-indigo-900 to-slate-900 text-white rounded-xl space-y-3 shadow-md">
-                      <div className="flex justify-between items-center text-xs border-b border-violet-700/60 pb-2">
+                    <div className="p-3.5 bg-gradient-to-r from-black via-black to-slate-900 text-white rounded-xl space-y-3 shadow-md">
+                      <div className="flex justify-between items-center text-xs border-b border-slate-950/60 pb-2">
                         <span>Subtotal Produk: <strong>Rp {subtotal.toLocaleString('id-ID')}</strong></span>
                         <span>PPN: <strong>Rp {ppnAmt.toLocaleString('id-ID')}</strong></span>
                         <span>Ongkir: <strong>Rp {ongkirAmt.toLocaleString('id-ID')}</strong></span>
                       </div>
 
                       <div className="flex justify-between items-center font-black text-sm">
-                        <span className="text-violet-200">TOTAL AKHIR TRANSAKSI:</span>
+                        <span className="text-slate-300">TOTAL AKHIR TRANSAKSI:</span>
                         <span className="text-emerald-400 text-base">Rp {grandTotal.toLocaleString('id-ID')}</span>
                       </div>
 
@@ -2132,7 +2140,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           suppliers,
           purchaseOrders,
           employees,
-          taskAppData
+          taskAppData,
+          rolePermissions,
+          taskAppDataExt: {
+            qaQuestions
+          }
         }}
       />
     </div>

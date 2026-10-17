@@ -6,8 +6,7 @@ import { PancaMessagesView } from './PancaMessagesView';
 import { PancaNotificationsView } from './PancaNotificationsView';
 import { PancaDriveView } from './PancaDriveView';
 import { 
-  Bot, MessageSquare, Bell, HardDrive, ArrowLeft, ExternalLink, 
-  Wifi, Battery, Signal, Home as HomeIcon
+  Bot, MessageSquare, Bell, HardDrive, ArrowLeft, Home as HomeIcon
 } from 'lucide-react';
 import { PWAInstallButton } from '../PWAInstallButton';
 
@@ -32,6 +31,8 @@ interface PancaMobileAppProps {
   syncToSupabase?: (table: string, data: any) => void;
   onOpenDesktopCRM?: () => void;
   onLogout?: () => void;
+  rolePermissions?: { id: string; canView: boolean; canEdit: boolean }[];
+  qaQuestions?: any[];
 }
 
 export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
@@ -48,7 +49,9 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
   setProducts,
   syncToSupabase,
   onOpenDesktopCRM,
-  onLogout
+  onLogout,
+  rolePermissions = [],
+  qaQuestions = []
 }) => {
   // If no logged in user provided in props, use session or default to superadmin
   const currentUser = propUser || {
@@ -108,30 +111,6 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
     <div className="min-h-screen w-full bg-slate-900 dark:bg-zinc-950 flex items-center justify-center p-0 sm:p-4 font-sans select-none">
       {/* Mobile Screen Shell Frame */}
       <div className="relative w-full max-w-md h-screen sm:h-[844px] bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 flex flex-col overflow-hidden sm:rounded-[40px] shadow-2xl border-0 sm:border-8 sm:border-slate-800 dark:sm:border-zinc-800">
-        
-        {/* Top Status Bar Simulation */}
-        <div className="pt-3 px-6 pb-1 bg-white dark:bg-zinc-900 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between text-slate-700 dark:text-zinc-300 text-xs font-semibold shrink-0">
-          <span className="tracking-tight font-bold">8:15</span>
-
-          {/* Quick Switch to Desktop & PWA Install Button */}
-          <div className="flex items-center gap-2">
-            <PWAInstallButton variant="pill" className="!bg-violet-50 dark:!bg-violet-950 !text-violet-700 dark:!text-violet-300 !border-violet-200 dark:!border-violet-800" />
-            <button
-              onClick={navigateToDesktop}
-              className="text-[10px] font-bold text-slate-400 dark:text-zinc-400 hover:text-slate-600 dark:hover:text-zinc-200 flex items-center gap-0.5 px-2 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 transition active:scale-95"
-              title="Buka Web CRM Utama"
-            >
-              <span>Web CRM</span>
-              <ExternalLink className="w-2.5 h-2.5" />
-            </button>
-            <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-400 pl-1">
-              <Signal className="w-3.5 h-3.5" />
-              <Wifi className="w-3.5 h-3.5" />
-              <Battery className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
-
         {/* Dynamic Screen Content */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
           {activeTab === 'home' && (
@@ -161,6 +140,8 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
               setProducts={setProducts}
               syncToSupabase={syncToSupabase}
               initialPrompt={pendingPromptForAI}
+              rolePermissions={rolePermissions}
+              qaQuestions={qaQuestions}
               onBack={() => {
                 setPendingPromptForAI('');
                 setActiveTab('home');

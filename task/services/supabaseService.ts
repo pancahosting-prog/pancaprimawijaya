@@ -646,6 +646,46 @@ export const supabaseService = {
             created_at: '2026-02-10T10:15:00Z'
           }
         ]
+      },
+      {
+        id: 'qa_mitigasi_longsor',
+        title: 'Pertanyaan Mitigasi Longsor (Technical Knowledge Base)',
+        content: 'Daftar pertanyaan krusial yang harus diajukan ke customer terkait sistem mitigasi longsor (Landslide Monitoring) di area operasional.',
+        category: 'Teknis & Engineering',
+        attachments: [],
+        author_username: 'arie',
+        author_name: 'Arie',
+        author_role: 'Engineer',
+        created_at: '2026-10-16T10:00:00Z',
+        latest_answer_at: '2026-10-16T10:13:04Z',
+        answers: [
+          {
+            id: 'ans_longsor_001',
+            question_id: 'qa_mitigasi_longsor',
+            content: `Penjelasan Lengkap Terkait Pertanyaan Mitigasi Longsor:
+
+1. Tantangan Geohazard: Tantangan di area pertambangan dan industri umumnya meliputi pergerakan highwall/slope (deformasi dan retakan), getaran dari aktivitas blasting dan alat berat (hauling/crushing), serta infiltrasi air hujan yang mempengaruhi kestabilan massa batuan/tanah.
+2. Area Pantau: Difokuskan pada zona-zona kritis berdasarkan hazard map, seperti dinding pit aktif (highwall), jalan hauling, area pembuangan (waste dump), atau fasilitas pendukung di sekitar lereng.
+3. Riwayat Retakan: Jika ada histori retakan, sistem akan mendeteksi apakah pergerakannya masih stabil atau menunjukkan tren percepatan (accelerating movement) yang berpotensi longsor.
+4. Jenis Pemantauan: Mencakup pemantauan permukaan (surface monitoring) menggunakan sensor laser/radar/GNSS untuk deteksi dini pergeseran, serta pemantauan bawah tanah jika diperlukan untuk mengetahui slip plane.
+5. Parameter Terintegrasi: Sistem dapat mengintegrasikan data curah hujan (Rain Gauge), tekanan air pori (Piezometer), serta pergerakan tanah (Inclinometer/GNSS) untuk analisis korelasi penyebab ketidakstabilan.
+6. Tingkat Ketelitian: Sistem pemantauan kami mampu mendeteksi pergerakan hingga tingkat sub-milimeter (high precision) untuk memberikan peringatan sedini mungkin sebelum kegagalan lereng terjadi.
+7. Level Peringatan: Threshold disusun berdasarkan kecepatan pergerakan (velocity) dan percepatan (acceleration). Dibagi menjadi level Normal, Alert (Waspada), Warning (Peringatan), hingga Critical (Evakuasi).
+8. Alarm Lokal: Sistem dapat dihubungkan ke alat peringatan dini lapangan (sirene/strobe light) yang otomatis aktif saat data sensor melewati batas aman, guna melindungi pekerja secara langsung.
+9. Media Komunikasi: Pengiriman data dapat dilakukan via Wireless Radio Telemetry (Long Range), jaringan seluler 4G/LTE, atau kabel fiber optic untuk memastikan data sampai ke server secara real-time tanpa putus.
+10. Sistem Penyimpanan: Kami mendukung instalasi server lokal (on-premise) untuk area remote dengan internet terbatas, maupun penyimpanan cloud untuk kemudahan akses dashboard dari mana saja.
+11. Tim Monitoring: Dashboard dapat diakses oleh tim Geoteknik untuk analisis mendalam, tim HSE untuk keamanan kerja, serta manajemen untuk pengambilan keputusan operasional.
+12. Histori Data: Semua data tersimpan secara permanen dalam database untuk audit, pembuatan laporan bulanan, serta evaluasi teknis jika terjadi insiden di masa depan.
+13. Kondisi Lingkungan: Perangkat kami didesain dengan standar industri (IP67/IP68) yang tahan terhadap debu tambang ekstrem, kelembapan tinggi, getaran, serta suhu cuaca yang berfluktuasi.
+14. Sumber Daya Listrik: Untuk lokasi terpencil, sistem dilengkapi dengan panel surya dan baterai cadangan yang memungkinkan operasional mandiri 24/7 tanpa bergantung pada kabel listrik PLN.
+15. Alur SOP: Jika pergerakan mencapai level Critical, sistem akan otomatis mengirim notifikasi (SMS/WA/Email) dan memicu protokol evakuasi sesuai dengan standar keselamatan pertambangan yang berlaku.`,
+            attachments: [],
+            author_username: 'arie',
+            author_name: 'Arie',
+            author_role: 'Engineer',
+            created_at: '2026-10-16T10:13:04Z'
+          }
+        ]
       }
     ];
 

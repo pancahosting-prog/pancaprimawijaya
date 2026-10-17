@@ -2,6 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { supabase, testSupabaseConnection, withRetry } from "./src/lib/supabase";
 import { loadDataFromSupabase, saveTransactionToSupabase, saveProductToSupabase, savePurchaseOrderToSupabase, saveAllToSupabase, saveRecycledItemToSupabase, deleteRecycledItemFromSupabase, saveUserLogToSupabase, saveTutorialToSupabase } from "./src/lib/supabaseSync";
+import { supabaseService as taskSupabaseService } from "./task/services/supabaseService";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import html2pdf from 'html2pdf.js';
 import * as XLSX from 'xlsx';
@@ -2091,6 +2092,20 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [qaQuestions, setQaQuestions] = useState<any[]>([]);
+
+  const fetchQaQuestions = async () => {
+    try {
+      const data = await taskSupabaseService.getQAQuestions();
+      setQaQuestions(data);
+    } catch (e) {
+      console.error('Failed to fetch QA questions for AI context:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchQaQuestions();
+  }, []);
   const [appUsers, setAppUsers] = useState<UserAccount[]>([
     { id: 'U1', nama: 'Superadmin', username: 'superadmin', password: 'suksesbersamaa', whatsapp: '628000000001', role: 'superadmin', createdAt: new Date().toISOString(), companyId: '1' },
     { id: 'U2', nama: 'Angel', username: 'angel1', password: 'tanogaidomaju', whatsapp: '628000000002', role: 'admin', createdAt: new Date().toISOString(), companyId: '1' },
@@ -4768,6 +4783,8 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
   }
 
   if (isAppRoute) {
+    const userPermissions = currentUser ? (roleTemplates[currentUser.role] || ROLE_TEMPLATES[currentUser.role] || []) : [];
+    
     return (
       <PancaMobileApp
         currentUser={currentUser ? { username: currentUser.username, role: currentUser.role, nama: currentUser.nama } : null}
@@ -4784,6 +4801,8 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
         onOpenDesktopCRM={handleClosePancaApp}
         onOpenTaskApp={() => setShowTaskApp(true)}
         onLogout={handleLogout}
+        rolePermissions={userPermissions}
+        qaQuestions={qaQuestions}
       />
     );
   }
