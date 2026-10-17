@@ -171,7 +171,8 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
         </div>
 
         {/* Bottom Navigation Bar */}
-        <div className="shrink-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200 dark:border-zinc-800 px-3 py-2 z-30 flex items-center justify-around shadow-[0_-4px_15px_rgba(0,0,0,0.05)]">
+        {activeTab !== 'ai' && (
+          <div className="shrink-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200 dark:border-zinc-800 px-3 py-2 z-30 flex items-center justify-around shadow-[0_-4px_15px_rgba(0,0,0,0.05)]">
           {/* Menu Home / Beranda */}
           <button
             onClick={() => {
@@ -256,6 +257,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             <span className="text-[10px] mt-0.5">File</span>
           </button>
         </div>
+        )}
       </div>
     </div>
   );
