@@ -287,7 +287,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     title: string;
     subtitle: string;
     color: string;
-    icon: React.ReactNode;
+    icon: JSX.Element;
     restrictedRoles: string;
   }[] = [
     {

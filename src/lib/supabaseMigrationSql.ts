@@ -99,7 +99,6 @@ END $$;
 CREATE TABLE IF NOT EXISTS public.wa_chats (
   id TEXT PRIMARY KEY,                       -- Format: {connected_phone}_{jid}
   connected_phone TEXT NOT NULL,             -- Nomor WhatsApp terhubung (cth: 6281234567890)
-  owner_user TEXT,                           -- Username akun pengguna (cth: maria, yadi, superadmin)
   jid TEXT NOT NULL,                         -- JID kontak lawan bicara
   name TEXT,                                 -- Nama kontak lawan bicara
   phone TEXT,                                -- Nomor telepon lawan bicara (+62...)
@@ -107,15 +106,12 @@ CREATE TABLE IF NOT EXISTS public.wa_chats (
   last_message TEXT,
   last_message_time BIGINT,
   messages JSONB DEFAULT '[]'::jsonb,        -- Array JSON riwayat pesan masuk & keluar
-  profile_pic_url TEXT,                      -- URL foto profil kontak lawan bicara
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- JIKA TABEL SUDAH ADA SEBELUMNYA: Tambahkan kolom yang mungkin belum ada
 ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS connected_phone TEXT;
-ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS owner_user TEXT;
-ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS profile_pic_url TEXT;
 ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS jid TEXT;
 ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS name TEXT;
 ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS phone TEXT;
@@ -128,7 +124,6 @@ ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH T
 
 -- Index performa pencarian chat
 CREATE INDEX IF NOT EXISTS idx_wa_chats_connected_phone ON public.wa_chats(connected_phone);
-CREATE INDEX IF NOT EXISTS idx_wa_chats_owner_user ON public.wa_chats(owner_user);
 CREATE INDEX IF NOT EXISTS idx_wa_chats_last_message_time ON public.wa_chats(last_message_time DESC);
 CREATE INDEX IF NOT EXISTS idx_wa_chats_jid ON public.wa_chats(jid);
 

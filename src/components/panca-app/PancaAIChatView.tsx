@@ -13,7 +13,6 @@ import { Task, Project, DrivePost } from '../../../task/types';
 import { queryPancaAI, PancaAIContext, generateSmartDynamicFallback } from '../../services/pancaAIService';
 import { SUPPORTED_GEMINI_MODELS } from '../../services/geminiKeyService';
 import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl, extractProductPhoto, hasDatabaseProductImage } from '../../services/pancaProductCatalog';
-import { safeSetLocalStorage } from '../../lib/apiUtils';
 
 export interface DraftData {
   type: 'customer' | 'transaction' | 'penawaran';
@@ -510,14 +509,16 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     }
   }, [isSuperAdmin]);
 
-  // Save chat to localStorage safely
+  // Save chat to localStorage
   useEffect(() => {
-    safeSetLocalStorage('mypanca_mobile_ai_chat', JSON.stringify(messages.slice(-50)));
+    try {
+      localStorage.setItem('mypanca_mobile_ai_chat', JSON.stringify(messages));
+    } catch (e) {}
   }, [messages]);
 
   // Save auto-speak preference
   useEffect(() => {
-    safeSetLocalStorage('mypanca_ai_autospeak', autoSpeak ? 'true' : 'false');
+    localStorage.setItem('mypanca_ai_autospeak', autoSpeak ? 'true' : 'false');
   }, [autoSpeak]);
 
   // Scroll to bottom

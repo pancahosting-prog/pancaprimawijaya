@@ -11,7 +11,6 @@ import {
   ResponsiveContainer, LineChart, Line, RadarChart, PolarGrid, 
   PolarAngleAxis, PolarRadiusAxis, Radar
 } from 'recharts';
-import { safeSetLocalStorage } from '../lib/apiUtils';
 
 interface Employee {
   id: string;
@@ -441,27 +440,27 @@ export default function KPIModule({
 
   // Sync to local storage
   useEffect(() => {
-    safeSetLocalStorage('mypanca_kpi_jabatans', JSON.stringify(jabatans));
+    localStorage.setItem('mypanca_kpi_jabatans', JSON.stringify(jabatans));
   }, [jabatans]);
 
   useEffect(() => {
-    safeSetLocalStorage('mypanca_kpi_employees', JSON.stringify(kpiEmployees));
+    localStorage.setItem('mypanca_kpi_employees', JSON.stringify(kpiEmployees));
   }, [kpiEmployees]);
 
   useEffect(() => {
-    safeSetLocalStorage('mypanca_kpi_grading_items', JSON.stringify(gradingKPIItems));
+    localStorage.setItem('mypanca_kpi_grading_items', JSON.stringify(gradingKPIItems));
   }, [gradingKPIItems]);
 
   useEffect(() => {
-    safeSetLocalStorage('mypanca_kpi_omset_tiers', JSON.stringify(omsetTiers));
+    localStorage.setItem('mypanca_kpi_omset_tiers', JSON.stringify(omsetTiers));
   }, [omsetTiers]);
 
   useEffect(() => {
-    safeSetLocalStorage('mypanca_kpi_commissions', JSON.stringify(salesCommissions));
+    localStorage.setItem('mypanca_kpi_commissions', JSON.stringify(salesCommissions));
   }, [salesCommissions]);
 
   useEffect(() => {
-    safeSetLocalStorage('mypanca_kpi_monthly_financials', JSON.stringify(kpiMonthlyFinancials));
+    localStorage.setItem('mypanca_kpi_monthly_financials', JSON.stringify(kpiMonthlyFinancials));
   }, [kpiMonthlyFinancials]);
 
   // Derived financial computations for selected month

@@ -40,8 +40,6 @@ export interface WAChat {
   lastMessageTime: number;
   messages: WAChatMessage[];
   connectedPhone?: string; // Nomor terhubung pemilik sesi chat
-  ownerUser?: string; // Username akun terhubung (e.g. maria, yadi, superadmin)
-  profilePicUrl?: string; // URL Foto profil pengguna WhatsApp
 }
 
 export interface WAISettings {
@@ -66,60 +64,6 @@ export interface WAISettings {
     reply: string;
     modelUsed: string;
   }[];
-}
-
-function extractMessageContent(msg: any): { text: string; media?: WAChatMedia } {
-  let m = msg.message;
-  if (!m) return { text: "" };
-
-  // Unwrap message containers (ephemeral, viewOnce, etc.)
-  if (m.ephemeralMessage) m = m.ephemeralMessage.message;
-  if (m.viewOnceMessage) m = m.viewOnceMessage.message;
-  if (m.documentWithCaptionMessage) m = m.documentWithCaptionMessage.message;
-  if (!m) return { text: "" };
-
-  let text = m.conversation || m.extendedTextMessage?.text || "";
-  let media: WAChatMedia | undefined = undefined;
-
-  if (m.imageMessage) {
-    text = text || m.imageMessage.caption || "📷 [Foto]";
-    media = {
-      type: "image",
-      mimetype: m.imageMessage.mimetype || "image/jpeg"
-    };
-  } else if (m.videoMessage) {
-    text = text || m.videoMessage.caption || "🎥 [Video]";
-    media = {
-      type: "video",
-      mimetype: m.videoMessage.mimetype || "video/mp4"
-    };
-  } else if (m.audioMessage) {
-    text = "🎵 [Pesan Suara]";
-    media = {
-      type: "audio",
-      mimetype: m.audioMessage.mimetype || "audio/ogg"
-    };
-  } else if (m.documentMessage) {
-    const fileName = m.documentMessage.fileName || "Dokumen";
-    text = text || m.documentMessage.caption || `📄 [${fileName}]`;
-    media = {
-      type: "document",
-      fileName,
-      mimetype: m.documentMessage.mimetype || "application/octet-stream"
-    };
-  } else if (m.stickerMessage) {
-    text = "🎨 [Stiker]";
-  } else if (m.locationMessage || m.liveLocationMessage) {
-    text = "📍 [Lokasi]";
-  } else if (m.contactMessage || m.contactsArrayMessage) {
-    text = "👤 [Kontak]";
-  }
-
-  if (!text && !media) {
-    text = "[Pesan WhatsApp]";
-  }
-
-  return { text, media };
 }
 
 class WAService {
@@ -318,7 +262,6 @@ class WAService {
           await supabaseServer.from("wa_chats").upsert({
             id: `${cleanPhone}_${cleanJid}`,
             connected_phone: cleanPhone,
-            owner_user: c.ownerUser || "",
             jid: cleanJid,
             name: c.name || "",
             phone: c.phone || "",
@@ -326,7 +269,6 @@ class WAService {
             last_message: c.lastMessage || "",
             last_message_time: c.lastMessageTime || Date.now(),
             messages: c.messages || [],
-            profile_pic_url: c.profilePicUrl || "",
             updated_at: new Date().toISOString()
           });
         }
@@ -405,94 +347,55 @@ class WAService {
   }
 
   /**
-   * Get chats for a specific connected number or ownerUser or all numbers
+   * Get chats for a specific connected number or current active session or all numbers
    */
-  public getChats(connectedPhone?: string, ownerUser?: string, isSuperAdmin: boolean = false): WAChat[] {
-    let result: WAChat[] = [];
-
-    if (connectedPhone === "all" || (isSuperAdmin && (!connectedPhone || connectedPhone === "all") && (!ownerUser || ownerUser === "all"))) {
+  public getChats(connectedPhone?: string): WAChat[] {
+    if (connectedPhone === "all") {
       const allChatsMap = new Map<string, WAChat>();
       this.chatsByPhone.forEach((phoneMap) => {
         phoneMap.forEach((chat) => {
-          const key = chat.jid + "_" + (chat.connectedPhone || "def");
-          allChatsMap.set(key, chat);
+          const existing = allChatsMap.get(chat.jid);
+          if (!existing || chat.lastMessageTime > existing.lastMessageTime) {
+            allChatsMap.set(chat.jid, chat);
+          }
         });
       });
-      result = Array.from(allChatsMap.values());
-    } else {
-      const key = this.getConnectedPhoneKey(connectedPhone);
-      let map = this.chatsByPhone.get(key);
+      return Array.from(allChatsMap.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+    }
 
-      if (map) {
-        result = Array.from(map.values());
-      } else if (key === "default") {
-        const defaultMap = this.chatsByPhone.get("default");
-        if (defaultMap) result = Array.from(defaultMap.values());
+    const key = this.getConnectedPhoneKey(connectedPhone);
+    let map = this.chatsByPhone.get(key);
+
+    if ((!map || map.size === 0) && key !== "default") {
+      // If requested phone has no chats yet, check default
+      const defaultMap = this.chatsByPhone.get("default");
+      if (defaultMap && defaultMap.size > 0) {
+        return Array.from(defaultMap.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
       }
     }
 
-    // If a specific connected phone is selected, return all chats belonging to that phone
-    if (connectedPhone && connectedPhone !== "all" && connectedPhone !== "active") {
-      return result.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
-    }
-
-    // Access control filtering for non-superadmin or all view
-    if (!isSuperAdmin && ownerUser) {
-      result = result.filter(c => 
-        !c.ownerUser || 
-        c.ownerUser === ownerUser || 
-        c.connectedPhone === connectedPhone || 
-        c.connectedPhone === this.userPhone
-      );
-    } else if (isSuperAdmin && ownerUser && ownerUser !== "all") {
-      result = result.filter(c => !c.ownerUser || c.ownerUser === ownerUser);
-    }
-
-    return result.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+    if (!map) return [];
+    return Array.from(map.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
   }
 
   /**
-   * Delete a chat conversation locally and from database
-   */
-  public async deleteChat(jid: string, connectedPhone?: string) {
-    const cleanPhone = this.getConnectedPhoneKey(connectedPhone);
-    const phoneMap = this.chatsByPhone.get(cleanPhone);
-    if (phoneMap) {
-      phoneMap.delete(jid);
-      this.saveChatsForPhone(cleanPhone);
-    }
-    const defaultMap = this.chatsByPhone.get("default");
-    if (defaultMap) {
-      defaultMap.delete(jid);
-      this.saveChatsForPhone("default");
-    }
-    if (supabaseServer) {
-      try {
-        const docId = `${cleanPhone}_${jid}`;
-        await supabaseServer.from("wa_chats").delete().eq("id", docId);
-      } catch (err) {}
-    }
-  }
-
-  /**
-   * Returns metadata of all known connected numbers with chat counts and active status
+   * Returns metadata of all known connected numbers with chat counts
    */
   public getKnownNumbers(): { phone: string; active: boolean; chatCount: number }[] {
-    const isConnected = this.connectionState === "connected" || this.connectionState === "connecting";
-    const activeClean = isConnected && this.userPhone ? this.getConnectedPhoneKey(this.userPhone) : null;
+    const activeClean = this.userPhone ? this.getConnectedPhoneKey(this.userPhone) : null;
     const allPhones = new Set<string>(this.knownConnectedPhones);
     if (activeClean) allPhones.add(activeClean);
+    allPhones.add("default");
 
-    return Array.from(allPhones)
-      .map(phone => {
-        const map = this.chatsByPhone.get(phone);
-        const chatCount = map ? map.size : 0;
-        return {
-          phone,
-          active: Boolean(activeClean && phone === activeClean),
-          chatCount
-        };
-      });
+    return Array.from(allPhones).map(phone => {
+      const map = this.chatsByPhone.get(phone);
+      const chatCount = map ? map.size : 0;
+      return {
+        phone,
+        active: Boolean(activeClean && phone === activeClean),
+        chatCount
+      };
+    });
   }
 
   public async initBaileys() {
@@ -535,9 +438,9 @@ class WAService {
         if (connection === "close") {
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-          this.connectionState = shouldReconnect ? "connecting" : "disconnected";
+          this.connectionState = "disconnected";
           if (shouldReconnect) {
-            setTimeout(() => this.initBaileys(), 2000);
+            setTimeout(() => this.initBaileys(), 3000);
           } else {
             try {
               fs.rmSync(SESSION_DIR, { recursive: true, force: true });
@@ -562,11 +465,38 @@ class WAService {
         }
       });
 
-      // 1. History Sync from WhatsApp Phone on connection
-      this.socket.ev.on("messaging-history.set", async (history: any) => {
-        try {
-          const { chats, messages } = history || {};
-          console.log(`[waService] Received history sync: ${chats?.length || 0} chats, ${messages?.length || 0} messages`);
+      this.socket.ev.on("messages.upsert", async (m: any) => {
+        if (m.type !== "notify") return;
+
+        for (const msg of m.messages) {
+          if (!msg.message) continue;
+          const remoteJid = msg.key.remoteJid;
+          if (!remoteJid || remoteJid.endsWith("@g.us")) continue; // 1-on-1 chats only
+
+          let text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+          let incomingMedia: WAChatMedia | undefined = undefined;
+
+          if (msg.message.imageMessage) {
+            text = msg.message.imageMessage.caption || "📷 [Foto]";
+            incomingMedia = {
+              type: "image",
+              mimetype: msg.message.imageMessage.mimetype || "image/jpeg"
+            };
+          } else if (msg.message.documentMessage) {
+            const fileName = msg.message.documentMessage.fileName || "Dokumen";
+            text = msg.message.documentMessage.caption || `📄 [${fileName}]`;
+            incomingMedia = {
+              type: "document",
+              fileName,
+              mimetype: msg.message.documentMessage.mimetype || "application/octet-stream"
+            };
+          }
+
+          if (!text && !incomingMedia) continue;
+
+          const senderName = msg.pushName || remoteJid.split("@")[0];
+          const isFromMe = Boolean(msg.key.fromMe);
+
           const connectedPhone = this.getConnectedPhoneKey();
           let phoneMap = this.chatsByPhone.get(connectedPhone);
           if (!phoneMap) {
@@ -574,158 +504,45 @@ class WAService {
             this.chatsByPhone.set(connectedPhone, phoneMap);
           }
 
-          if (Array.isArray(chats)) {
-            for (const c of chats) {
-              if (!c.id || c.id.endsWith("@g.us") || c.id === "status@broadcast") continue;
-              let chat = phoneMap.get(c.id);
-              if (!chat) {
-                chat = {
-                  id: c.id,
-                  jid: c.id,
-                  name: c.name || c.id.split("@")[0],
-                  phone: "+" + c.id.split("@")[0],
-                  unreadCount: c.unreadCount || 0,
-                  lastMessage: "Sesi terhubung",
-                  lastMessageTime: Date.now(),
-                  messages: [],
-                  connectedPhone,
-                  ownerUser: "superadmin"
-                };
-                phoneMap.set(c.id, chat);
-              }
-            }
-          }
-
-          if (Array.isArray(messages)) {
-            for (const msg of messages) {
-              if (!msg.message) continue;
-              const remoteJid = msg.key.remoteJid;
-              if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") continue;
-
-              const { text, media } = extractMessageContent(msg);
-              if (!text && !media) continue;
-
-              const senderName = msg.pushName || remoteJid.split("@")[0];
-              const isFromMe = Boolean(msg.key.fromMe);
-
-              let chat = phoneMap.get(remoteJid);
-              if (!chat) {
-                chat = {
-                  id: remoteJid,
-                  jid: remoteJid,
-                  name: senderName,
-                  phone: "+" + remoteJid.split("@")[0],
-                  unreadCount: 0,
-                  lastMessage: text,
-                  lastMessageTime: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
-                  messages: [],
-                  connectedPhone,
-                  ownerUser: "superadmin"
-                };
-                phoneMap.set(remoteJid, chat);
-              }
-
-              const newMsg: WAChatMessage = {
-                id: msg.key.id || "msg-" + Date.now(),
-                fromMe: isFromMe,
-                sender: remoteJid,
-                senderName,
-                text,
-                timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
-                status: "read",
-                media
-              };
-
-              if (!chat.messages.some(m => m.id === newMsg.id)) {
-                chat.messages.push(newMsg);
-                chat.lastMessage = text;
-                chat.lastMessageTime = newMsg.timestamp;
-              }
-            }
-          }
-
-          this.saveChatsForPhone(connectedPhone);
-        } catch (histErr) {
-          console.error("[waService] Error processing history sync:", histErr);
-        }
-      });
-
-      // 2. Incoming Messages Upsert Listener
-      this.socket.ev.on("messages.upsert", async (m: any) => {
-        try {
-          for (const msg of m.messages) {
-            if (!msg.message) continue;
-            const remoteJid = msg.key.remoteJid;
-            if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") continue;
-
-            const { text, media } = extractMessageContent(msg);
-            if (!text && !media) continue;
-
-            const senderName = msg.pushName || remoteJid.split("@")[0];
-            const isFromMe = Boolean(msg.key.fromMe);
-
-            const connectedPhone = this.getConnectedPhoneKey();
-            let phoneMap = this.chatsByPhone.get(connectedPhone);
-            if (!phoneMap) {
-              phoneMap = new Map();
-              this.chatsByPhone.set(connectedPhone, phoneMap);
-            }
-
-            let chat = phoneMap.get(remoteJid);
-            if (!chat) {
-              chat = {
-                id: remoteJid,
-                jid: remoteJid,
-                name: senderName,
-                phone: "+" + remoteJid.split("@")[0],
-                unreadCount: 0,
-                lastMessage: text,
-                lastMessageTime: Date.now(),
-                messages: [],
-                connectedPhone,
-                ownerUser: "superadmin"
-              };
-              phoneMap.set(remoteJid, chat);
-            }
-
-            const newMsg: WAChatMessage = {
-              id: msg.key.id || "msg-" + Date.now(),
-              fromMe: isFromMe,
-              sender: remoteJid,
-              senderName,
-              text,
-              timestamp: Date.now(),
-              status: "unread",
-              media
+          let chat = phoneMap.get(remoteJid);
+          if (!chat) {
+            chat = {
+              id: remoteJid,
+              jid: remoteJid,
+              name: senderName,
+              phone: "+" + remoteJid.split("@")[0],
+              unreadCount: 0,
+              lastMessage: text,
+              lastMessageTime: Date.now(),
+              messages: [],
+              connectedPhone
             };
-
-            if (!chat.messages.some(existing => existing.id === newMsg.id)) {
-              chat.messages.push(newMsg);
-              chat.lastMessage = text;
-              chat.lastMessageTime = Date.now();
-              if (!isFromMe) chat.unreadCount += 1;
-            }
-
-            // Fetch user profile picture automatically on incoming message
-            if (this.socket && this.connectionState === "connected" && !chat.profilePicUrl) {
-              try {
-                const ppUrl = await this.socket.profilePictureUrl(remoteJid, "image").catch(() => null);
-                if (ppUrl) {
-                  chat.profilePicUrl = ppUrl;
-                }
-              } catch (ppErr) {}
-            }
-
-            // Save to local file & Supabase for this connected phone
-            this.saveChatsForPhone(connectedPhone, chat);
-
-            // Auto reply AI logic
-            if (!isFromMe && this.aiSettings.autoReplyEnabled) {
-              this.handleAIAutoReply(remoteJid, senderName, text);
-            }
+            phoneMap.set(remoteJid, chat);
           }
-        } catch (msgErr) {
-          console.error("[waService] Error processing messages.upsert:", msgErr);
+
+          const newMsg: WAChatMessage = {
+            id: msg.key.id || "msg-" + Date.now(),
+            fromMe: isFromMe,
+            sender: remoteJid,
+            senderName,
+            text,
+            timestamp: Date.now(),
+            status: "unread",
+            media: incomingMedia
+          };
+
+          chat.messages.push(newMsg);
+          chat.lastMessage = text;
+          chat.lastMessageTime = Date.now();
+          if (!isFromMe) chat.unreadCount += 1;
+
+          // Save to local file & Supabase for this connected phone
+          this.saveChatsForPhone(connectedPhone, chat);
+
+          // Auto reply AI logic
+          if (!isFromMe && this.aiSettings.autoReplyEnabled) {
+            this.handleAIAutoReply(remoteJid, senderName, text);
+          }
         }
       });
     } catch (err) {
@@ -832,7 +649,7 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
     }
   }
 
-  public async sendMessage(jid: string, text: string, media?: WAChatMedia, ownerUser?: string): Promise<{ success: boolean; message: WAChatMessage; chat: WAChat }> {
+  public async sendMessage(jid: string, text: string, media?: WAChatMedia): Promise<{ success: boolean; message: WAChatMessage }> {
     const connectedPhone = this.getConnectedPhoneKey();
     let phoneMap = this.chatsByPhone.get(connectedPhone);
     if (!phoneMap) {
@@ -853,12 +670,9 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
         lastMessage: displaySummary,
         lastMessageTime: Date.now(),
         messages: [],
-        connectedPhone,
-        ownerUser: ownerUser || ""
+        connectedPhone
       };
       phoneMap.set(jid, chat);
-    } else if (ownerUser) {
-      chat.ownerUser = ownerUser;
     }
 
     const msg: WAChatMessage = {
@@ -907,50 +721,18 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
     return { success: true, message: msg };
   }
 
-  public async disconnectSession(phone?: string) {
+  public async disconnectSession() {
     if (this.socket) {
       try {
-        await this.socket.logout().catch(() => {});
-        this.socket.end(undefined);
+        await this.socket.logout();
       } catch (e) {}
       this.socket = null;
     }
-
     this.connectionState = "disconnected";
     this.userJid = null;
     this.userPhone = null;
     this.userName = null;
     this.qrCodeBase64 = null;
-
-    try {
-      if (fs.existsSync(SESSION_DIR)) {
-        fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-      }
-    } catch (e) {}
-
-    if (phone && phone !== "active") {
-      const clean = this.getConnectedPhoneKey(phone);
-      this.knownConnectedPhones.delete(clean);
-      this.saveKnownNumbers();
-    }
-  }
-
-  public async disconnectAllSessions() {
-    if (this.socket) {
-      try {
-        await this.socket.logout().catch(() => {});
-        this.socket.end(undefined);
-      } catch (e) {}
-      this.socket = null;
-    }
-
-    this.connectionState = "disconnected";
-    this.userJid = null;
-    this.userPhone = null;
-    this.userName = null;
-    this.qrCodeBase64 = null;
-    this.knownConnectedPhones.clear();
-    this.saveKnownNumbers();
 
     try {
       if (fs.existsSync(SESSION_DIR)) {
