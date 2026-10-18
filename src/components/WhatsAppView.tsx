@@ -209,37 +209,64 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Filter list of ONLY ACTUALLY CONNECTED user devices
+  // Helper to resolve actual clean phone number from active selection or session
+  const getActualConnectedPhone = (phoneFilter?: string): string => {
+    if (phoneFilter && phoneFilter !== 'active' && phoneFilter !== 'all') {
+      const clean = phoneFilter.replace(/[^a-zA-Z0-9]/g, '');
+      if (clean) return clean;
+    }
+    if (connectionStatus.userPhone) {
+      const clean = connectionStatus.userPhone.replace(/[^a-zA-Z0-9]/g, '');
+      if (clean) return clean;
+    }
+    if (currentUser?.whatsapp) {
+      const clean = currentUser.whatsapp.replace(/[^a-zA-Z0-9]/g, '');
+      if (clean) return clean;
+    }
+    return 'default';
+  };
+
+  // Filter list of ALL CONNECTED user devices (from active session + Supabase wa_chats)
   const connectedDevicesList = useMemo(() => {
-    // If device is NOT connected, do NOT list any connected device
-    if (connectionStatus.connectionState !== 'connected' || !connectionStatus.userPhone) {
-      return [];
+    const list: { key: string; label: string; phone: string; username: string; nama: string }[] = [];
+    const phoneSet = new Set<string>();
+
+    const activePhoneClean = connectionStatus.userPhone ? connectionStatus.userPhone.replace(/[^a-zA-Z0-9]/g, '') : '';
+    if (activePhoneClean && connectionStatus.connectionState === 'connected') {
+      phoneSet.add(activePhoneClean);
     }
 
-    const list: { key: string; label: string; phone: string; username: string; nama: string }[] = [];
-    const activePhoneClean = connectionStatus.userPhone.replace(/[^a-zA-Z0-9]/g, '');
-
-    if (!activePhoneClean) return [];
-
-    // Match active connected phone to registered user account
-    const matchedUser = appUsers.find(u => {
-      const uPhone = (u.whatsapp || '').replace(/[^a-zA-Z0-9]/g, '');
-      return uPhone && (uPhone === activePhoneClean || uPhone.endsWith(activePhoneClean) || activePhoneClean.endsWith(uPhone));
+    knownNumbers.forEach(kn => {
+      const clean = kn.phone ? kn.phone.replace(/[^a-zA-Z0-9]/g, '') : '';
+      if (clean && clean !== 'default') {
+        phoneSet.add(clean);
+      }
     });
 
-    const username = matchedUser ? matchedUser.username : (currentUser?.username || 'superadmin');
-    const nama = matchedUser ? matchedUser.nama : (currentUser?.nama || 'Superadmin');
+    phoneSet.forEach(phoneClean => {
+      const matchedUser = appUsers.find(u => {
+        const uPhone = (u.whatsapp || '').replace(/[^a-zA-Z0-9]/g, '');
+        return uPhone && (uPhone === phoneClean || uPhone.endsWith(phoneClean) || phoneClean.endsWith(uPhone));
+      });
 
-    list.push({
-      key: activePhoneClean,
-      phone: activePhoneClean,
-      username: username,
-      nama: nama,
-      label: `${username}: (+${activePhoneClean} - ${nama})`
+      const username = matchedUser ? matchedUser.username : (currentUser?.username || 'user');
+      const nama = matchedUser ? matchedUser.nama : (currentUser?.nama || 'Pengguna');
+
+      if (!isSuperAdmin && username !== activeUsername && activeUsername !== 'superadmin' && phoneClean !== activePhoneClean) {
+        return;
+      }
+
+      list.push({
+        key: phoneClean,
+        phone: phoneClean,
+        username: username,
+        nama: nama,
+        label: `${username}: (+${phoneClean} - ${nama})`
+      });
     });
 
     return list;
-  }, [connectionStatus.connectionState, connectionStatus.userPhone, appUsers, currentUser]);
+  }, [connectionStatus.connectionState, connectionStatus.userPhone, knownNumbers, appUsers, currentUser, isSuperAdmin, activeUsername]);
 
   // Fetch WA Connection Status & Known Connected Numbers
   const fetchStatus = async () => {
@@ -278,10 +305,11 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
   const fetchChats = async (targetPhone?: string) => {
     try {
       const activePhoneFilter = targetPhone || selectedConnectedPhone;
+      const realPhone = getActualConnectedPhone(activePhoneFilter);
 
       let url = `/api/wa/chats?username=${encodeURIComponent(activeUsername)}&role=${encodeURIComponent(currentUser?.role || '')}`;
-      if (activePhoneFilter && activePhoneFilter !== 'all' && activePhoneFilter !== 'active') {
-        url += `&connectedPhone=${encodeURIComponent(activePhoneFilter)}`;
+      if (realPhone && realPhone !== 'all' && realPhone !== 'default') {
+        url += `&connectedPhone=${encodeURIComponent(realPhone)}`;
       }
 
       const res = await fetch(getApiUrl(url));
@@ -296,13 +324,21 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
 
       // Direct client fallback from Supabase with access control
       const cloudChats = await loadWAChatsFromSupabase(
-        activePhoneFilter !== 'all' && activePhoneFilter !== 'active' ? activePhoneFilter : undefined,
+        realPhone !== 'default' ? realPhone : undefined,
         activeUsername,
         isSuperAdmin
       );
 
       if (cloudChats && cloudChats.length > 0) {
-        fetchedChats = cloudChats;
+        const chatMap = new Map<string, WAChat>();
+        fetchedChats.forEach(c => chatMap.set(c.jid, c));
+        cloudChats.forEach(c => {
+          const existing = chatMap.get(c.jid);
+          if (!existing || (c.messages && existing.messages && c.messages.length >= existing.messages.length)) {
+            chatMap.set(c.jid, c);
+          }
+        });
+        fetchedChats = Array.from(chatMap.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
       }
 
       setChats(fetchedChats);
@@ -534,12 +570,15 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
       media: mediaToSend || undefined
     };
 
+    const realConnectedPhone = getActualConnectedPhone(selectedConnectedPhone);
+
     setChats(prevChats => {
       return prevChats.map(c => {
         if (c.jid === selectedChatJid) {
           const updatedMessages = [...c.messages, tempMsg];
           const updatedChat = {
             ...c,
+            connectedPhone: realConnectedPhone,
             lastMessage: textToSend || (mediaToSend?.type === 'image' ? '📷 [Foto]' : `📄 [${mediaToSend?.fileName || 'Dokumen'}]`),
             lastMessageTime: Date.now(),
             messages: updatedMessages,
@@ -548,7 +587,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
           // Sync to Supabase in background
           saveWAChatToSupabase(
             updatedChat, 
-            selectedConnectedPhone !== 'all' ? selectedConnectedPhone : (connectionStatus.userPhone || 'default'),
+            realConnectedPhone,
             currentUser?.username || 'user'
           ).catch(console.warn);
           return updatedChat;
@@ -570,7 +609,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
       });
 
       if (res.ok) {
-        await fetchChats();
+        await fetchChats(realConnectedPhone);
       }
     } catch (err) {
       console.error('Error sending message:', err);

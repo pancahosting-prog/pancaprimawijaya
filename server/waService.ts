@@ -675,7 +675,7 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
     }
   }
 
-  public async sendMessage(jid: string, text: string, media?: WAChatMedia): Promise<{ success: boolean; message: WAChatMessage }> {
+  public async sendMessage(jid: string, text: string, media?: WAChatMedia, ownerUser?: string): Promise<{ success: boolean; message: WAChatMessage; chat: WAChat }> {
     const connectedPhone = this.getConnectedPhoneKey();
     let phoneMap = this.chatsByPhone.get(connectedPhone);
     if (!phoneMap) {
@@ -696,9 +696,12 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
         lastMessage: displaySummary,
         lastMessageTime: Date.now(),
         messages: [],
-        connectedPhone
+        connectedPhone,
+        ownerUser: ownerUser || ""
       };
       phoneMap.set(jid, chat);
+    } else if (ownerUser) {
+      chat.ownerUser = ownerUser;
     }
 
     const msg: WAChatMessage = {

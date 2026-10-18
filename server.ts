@@ -124,11 +124,11 @@ async function startServer() {
   });
 
   app.post("/api/wa/send", async (req, res) => {
-    const { jid, text } = req.body;
-    if (!jid || !text) {
-      return res.status(400).json({ success: false, error: "JID dan teks pesan diperlukan." });
+    const { jid, text, media, username } = req.body;
+    if (!jid || (!text && !media)) {
+      return res.status(400).json({ success: false, error: "JID dan teks/media pesan diperlukan." });
     }
-    const result = await waService.sendMessage(jid, text);
+    const result = await waService.sendMessage(jid, text, media, username);
     res.json(result);
   });
 
