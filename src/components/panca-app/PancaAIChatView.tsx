@@ -3,7 +3,7 @@ import {
   Send, ArrowLeft, Trash2, Copy, Check, Sparkles, 
   Bot, User, Download, Mic, Square, Volume2, VolumeX,
   AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package,
-  ChevronUp, ChevronDown, CheckCircle
+  ChevronUp, ChevronDown, CheckCircle, MessageSquare
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -313,6 +313,12 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     return () => { isMounted = false; };
   }, []);
 
+  const salesOptions = Array.from(new Set([
+    currentUser?.nama,
+    ...(employees || []).map((e: any) => e.nama || e.username).filter(Boolean),
+    'maria', 'yadi', 'superadmin', 'angel1', 'dwi1'
+  ])).filter(Boolean);
+
   // Active Session for guided multi-step form wizard (Customer, Transaksi, Penawaran)
   const [activeSession, setActiveSession] = useState<{
     type: 'customer' | 'transaction' | 'penawaran';
@@ -341,20 +347,28 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     const activeCompanyId = activeCompany?.id || '1';
 
     if (type === 'customer') {
-      const name = data.nama?.trim() || 'Customer Baru';
-      const wa = data.whatsapp?.trim() || '08123456789';
+      const name = data.nama?.trim() || data.perusahaan?.trim() || 'Customer Baru';
+      const phoneCode = data.phoneCode || '+62';
+      const rawWa = data.whatsapp?.trim() || '8123456789';
+      const wa = rawWa.startsWith('+') ? rawWa : `${phoneCode} ${rawWa}`;
       const city = data.kota?.trim() || 'Surabaya';
-      const salesName = data.sales || currentUser?.nama || 'General Sales';
+      const salesName = data.sales || currentUser?.nama || 'maria';
 
       const newCust = {
         id: 'CUST-' + Date.now(),
         nama: name,
-        perusahaan: name,
+        perusahaan: data.perusahaan || name,
+        jenisKontak: data.jenisKontak || 'Perusahaan',
         whatsapp: wa,
         phone: wa,
+        email: data.email || '',
+        negara: data.negara || 'Indonesia',
+        alamat: data.alamat || '',
         kota: city,
         sales: salesName,
         leadType: data.leadType || 'Belum Transaksi',
+        source: data.source || 'Organic',
+        npwp: data.npwp || '',
         pic: name,
         companyId: activeCompanyId,
         company_id: activeCompanyId,
@@ -368,7 +382,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       const successMsg: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `### ✅ DATA CUSTOMER BERHASIL DISIMPAN KE DATABASE MYPANCA!\n\n| Field Customer | Data Tersimpan |\n|---|---|\n| **Nama Pelanggan** | **${newCust.nama}** |\n| **WhatsApp / Telp** | **${newCust.whatsapp}** |\n| **Kota / Wilayah** | **${newCust.kota}** |\n| **Sales Penanggung Jawab** | **${newCust.sales}** |\n| **Status Lead** | **${newCust.leadType}** |\n\nData pelanggan telah aktif dan siap digunakan untuk transaksi/penawaran selanjutnya! 🎉`,
+        content: `### ✅ DATA CUSTOMER BERHASIL DISIMPAN KE DATABASE MYPANCA!\n\n| Field Customer | Data Tersimpan |\n|---|---|\n| **Nama / Perusahaan** | **${newCust.nama}** |\n| **Jenis Kontak** | **${newCust.jenisKontak}** |\n| **WhatsApp / Telp** | **${newCust.whatsapp}** |\n| **Email** | **${newCust.email || '-'}** |\n| **Negara & Alamat** | **${newCust.negara}** (${newCust.alamat || '-'}) |\n| **Sales Representative** | **${newCust.sales}** |\n| **Status Lead Type** | **${newCust.leadType}** |\n| **Source / Sumber** | **${newCust.source}** |\n| **NPWP** | **${newCust.npwp || '-'}** |\n\nData pelanggan telah tersimpan di database MyPanca dan dapat langsung digunakan! 🎉`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, successMsg]);
@@ -388,29 +402,41 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     const grandTotal = subtotal + ppnAmt + ongkirAmt;
 
     const docNo = (isQuote ? 'QUO-' : 'PP-') + new Date().getFullYear() + (new Date().getMonth() + 1).toString().padStart(2, '0') + '-' + Math.floor(1000 + Math.random() * 9000);
+
+    // Status mapping:
+    // If quote: status is 'Penawaran'
+    // If transaction: status is taken from data.status dropdown ('Invoice', 'Pembayaran', 'Pengiriman', 'Pesanan Selesai', 'Batal')
+    let rawStatus = isQuote ? 'Penawaran' : (data.status || 'Invoice');
+    let mappedStatus = rawStatus;
+    if (rawStatus === 'Pesanan Selesai') mappedStatus = 'Selesai';
+    if (rawStatus === 'Pembayaran') mappedStatus = 'Payment';
+
     const payStatus = isQuote ? 'Penawaran' : (data.paymentStatus || 'Belum Lunas');
     const dpAmt = payStatus === 'Lunas' ? grandTotal : (Number(data.dpAmt) || 0);
     const sisaPay = Math.max(0, grandTotal - dpAmt);
-    const todayStr = new Date().toISOString().split('T')[0];
+    const dateVal = data.tanggal || new Date().toISOString().split('T')[0];
 
     const newTrx = {
       id: docNo,
       noTrx: docNo,
       customerName: data.customerName || 'Pelanggan Umum',
-      tanggal: todayStr,
+      tanggal: dateVal,
       total: grandTotal,
       nilaiProyek: grandTotal,
       items: items,
       ppn: Boolean(data.ppn),
       ongkir: Boolean(data.ongkir),
       biayaOngkir: ongkirAmt,
-      jasaKirim: data.jasaKirim || 'JNE',
-      status: isQuote ? 'Penawaran' : 'Selesai',
+      jasaKirim: data.jasaKirim || 'JNE Regular',
+      status: mappedStatus,
+      rawStatusText: rawStatus,
       paymentStatus: payStatus,
       pembayaranDiterima: dpAmt,
       sisaPembayaran: sisaPay,
-      sales: currentUser?.nama || 'General Sales',
+      sales: data.sales || currentUser?.nama || 'General Sales',
       keterangan: data.keterangan || 'Input via Panca AI Assistant',
+      followUpDate: data.followUpDate || '',
+      followUpMethod: data.followUpMethod || '',
       companyId: activeCompanyId,
       company_id: activeCompanyId,
       createdAt: new Date().toISOString()
@@ -429,7 +455,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     const successMsg: Message = {
       id: Date.now().toString(),
       role: 'assistant',
-      content: `### 🎉 ${isQuote ? 'PENAWARAN HARGA' : 'TRANSAKSI PENJUALAN'} BERHASIL DISIMPAN KE DATABASE MYPANCA!\n\n| Detail Dokumen | Data Terdaftar |\n|---|---|\n| **No. Dokumen** | **${docNo}** (Resmi) |\n| **Pelanggan** | **${newTrx.customerName}** |\n| **Subtotal Produk** | **Rp ${subtotal.toLocaleString('id-ID')}** |\n| **PPN 11%** | **${data.ppn ? `Rp ${ppnAmt.toLocaleString('id-ID')}` : 'Tidak PPN'}** |\n| **Biaya Kirim** | **Rp ${ongkirAmt.toLocaleString('id-ID')}** (${newTrx.jasaKirim}) |\n| **GRAND TOTAL** | **Rp ${grandTotal.toLocaleString('id-ID')}** |\n| **Status Pembayaran** | **${payStatus}** (Diterima: Rp ${dpAmt.toLocaleString('id-ID')}, Sisa: Rp ${sisaPay.toLocaleString('id-ID')}) |\n| **Sales Representative** | **${newTrx.sales}** |\n\n**Rincian Barang:**\n${itemsTable}\n\nDokumen transaksi telah resmi terdata di CRM MyPanca & Supabase! 🚀`,
+      content: `### 🎉 ${isQuote ? 'PENAWARAN HARGA' : 'TRANSAKSI PENJUALAN'} BERHASIL DISIMPAN KE DATABASE MYPANCA!\n\n| Detail Dokumen | Data Terdaftar |\n|---|---|\n| **No. Dokumen** | **${docNo}** (Resmi) |\n| **Pelanggan** | **${newTrx.customerName}** |\n| **Tanggal** | **${newTrx.tanggal}** |\n| **Status Transaksi** | **${rawStatus}** (Langsung masuk tab ${rawStatus}) |\n| **Status Pembayaran** | **${payStatus}** |\n| **Jasa Kirim** | **${newTrx.jasaKirim}** |\n| **Subtotal Produk** | **Rp ${subtotal.toLocaleString('id-ID')}** |\n| **PPN 11%** | **${data.ppn ? `Rp ${ppnAmt.toLocaleString('id-ID')}` : 'Tidak PPN'}** |\n| **Biaya Kirim** | **Rp ${ongkirAmt.toLocaleString('id-ID')}** |\n| **GRAND TOTAL** | **Rp ${grandTotal.toLocaleString('id-ID')}** |\n| **Sales Responsible** | **${newTrx.sales}** |\n${data.followUpDate ? `| **Follow-up Scheduled** | **${data.followUpDate}** (${data.followUpMethod || 'WhatsApp'}) |\n` : ''}\n**Rincian Barang:**\n${itemsTable}\n\nDokumen transaksi telah resmi terdata dan langsung masuk ke status **${rawStatus}** di CRM MyPanca & Supabase! 🚀`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
@@ -1130,61 +1156,265 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
               <button onClick={() => setActiveSession(null)} className="text-slate-400 hover:text-rose-500"><XCircle size={18} /></button>
             </div>
             
+            {/* 1. FORM CUSTOMER BARU (Data Kontak - Matches Image 1) */}
             {activeSession.type === 'customer' && (
-              <div className="space-y-2">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">Nama Pelanggan / Perusahaan</label>
-                  <input type="text" value={activeSession.data.nama || ''} onChange={(e) => updateActiveData('nama', e.target.value)} placeholder="Contoh: PT Sumber Rejeki" className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" />
+              <div className="space-y-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">JENIS KONTAK</label>
+                    <select 
+                      value={activeSession.data.jenisKontak || 'Perusahaan'} 
+                      onChange={(e) => updateActiveData('jenisKontak', e.target.value)} 
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100"
+                    >
+                      <option value="Perusahaan">Perusahaan</option>
+                      <option value="Perorangan">Perorangan</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">NAMA PERUSAHAAN / PELANGGAN</label>
+                    <input 
+                      type="text" 
+                      value={activeSession.data.nama || activeSession.data.perusahaan || ''} 
+                      onChange={(e) => {
+                        updateActiveData('nama', e.target.value);
+                        updateActiveData('perusahaan', e.target.value);
+                      }} 
+                      placeholder="Masukkan nama perusahaan..." 
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400" 
+                    />
+                  </div>
                 </div>
+
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">Nomor WhatsApp / HP</label>
-                  <input type="text" value={activeSession.data.whatsapp || ''} onChange={(e) => updateActiveData('whatsapp', e.target.value)} placeholder="Contoh: 08123456789" className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" />
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">TELEPON / WHATSAPP</label>
+                  <div className="flex gap-2">
+                    <select 
+                      value={activeSession.data.phoneCode || '+62'} 
+                      onChange={(e) => updateActiveData('phoneCode', e.target.value)} 
+                      className="w-36 p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100 shrink-0"
+                    >
+                      <option value="+62">ID +62 (Indonesia)</option>
+                      <option value="+65">SG +65 (Singapore)</option>
+                      <option value="+60">MY +60 (Malaysia)</option>
+                      <option value="+1">US +1 (USA)</option>
+                    </select>
+                    <input 
+                      type="text" 
+                      value={activeSession.data.whatsapp || ''} 
+                      onChange={(e) => updateActiveData('whatsapp', e.target.value)} 
+                      placeholder="8123456789" 
+                      className="flex-1 p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400" 
+                    />
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">EMAIL</label>
+                    <input 
+                      type="email" 
+                      value={activeSession.data.email || ''} 
+                      onChange={(e) => updateActiveData('email', e.target.value)} 
+                      placeholder="email@example.com" 
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400" 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">NEGARA</label>
+                    <input 
+                      type="text" 
+                      value={activeSession.data.negara !== undefined ? activeSession.data.negara : 'Indonesia'} 
+                      onChange={(e) => updateActiveData('negara', e.target.value)} 
+                      placeholder="Indonesia" 
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400" 
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">Kota / Wilayah</label>
-                  <input type="text" value={activeSession.data.kota || ''} onChange={(e) => updateActiveData('kota', e.target.value)} placeholder="Contoh: Surabaya" className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" />
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">ALAMAT LENGKAP</label>
+                  <textarea 
+                    rows={2} 
+                    value={activeSession.data.alamat || activeSession.data.kota || ''} 
+                    onChange={(e) => {
+                      updateActiveData('alamat', e.target.value);
+                      updateActiveData('kota', e.target.value);
+                    }} 
+                    placeholder="Jl. ..." 
+                    className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 resize-none" 
+                  />
                 </div>
-                <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-lg mt-2">Simpan Customer Baru</button>
+
+                {/* Sales & Marketing Card */}
+                <div className="bg-slate-50/80 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/80 rounded-2xl p-3 space-y-2.5">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-zinc-300">SALES & MARKETING</div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 mb-1 block">SALES REPRESENTATIVE</label>
+                      <select 
+                        value={activeSession.data.sales || currentUser?.nama || 'maria'} 
+                        onChange={(e) => updateActiveData('sales', e.target.value)} 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100"
+                      >
+                        {salesOptions.map((s, idx) => (
+                          <option key={idx} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 mb-1 block">LEAD TYPE</label>
+                      <select 
+                        value={activeSession.data.leadType || 'Belum Transaksi'} 
+                        onChange={(e) => updateActiveData('leadType', e.target.value)} 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100"
+                      >
+                        <option value="Belum Transaksi">Belum Transaksi</option>
+                        <option value="Prospek">Prospek</option>
+                        <option value="Pelanggan">Pelanggan</option>
+                        <option value="Aktif">Aktif</option>
+                        <option value="Prioritas">Prioritas</option>
+                        <option value="Inaktif">Inaktif</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 mb-1 block">SOURCE</label>
+                      <select 
+                        value={activeSession.data.source || 'Organic'} 
+                        onChange={(e) => updateActiveData('source', e.target.value)} 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100"
+                      >
+                        <option value="Organic">Organic</option>
+                        <option value="Ads">Ads / Iklan</option>
+                        <option value="Referral">Referral</option>
+                        <option value="Website">Website</option>
+                        <option value="Pameran">Pameran</option>
+                        <option value="Lainnya">Lainnya</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 mb-1 block">NPWP</label>
+                      <input 
+                        type="text" 
+                        value={activeSession.data.npwp || ''} 
+                        onChange={(e) => updateActiveData('npwp', e.target.value)} 
+                        placeholder="00.000.000.0-000.000" 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg mt-2 transition">Simpan Customer Baru</button>
               </div>
             )}
 
-            {(activeSession.type === 'transaction' || activeSession.type === 'penawaran') && (
-              <div className="space-y-3">
-                {/* 1. Search Box Nama Customer */}
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">1. Cari / Pilih Nama Customer</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                      <Search size={12} />
+            {/* 2. FORM PENAWARAN BARU (Quotation - Matches Image 2) */}
+            {activeSession.type === 'penawaran' && (
+              <div className="space-y-3 text-xs">
+                <div className="bg-slate-50/80 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/80 rounded-2xl p-3 space-y-2.5">
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">CUSTOMER</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                        <Search size={12} />
+                      </div>
+                      <input 
+                        type="text" 
+                        value={wizardCustSearch !== undefined ? wizardCustSearch : (activeSession.data.customerName || '')} 
+                        onChange={(e) => {
+                          setWizardCustSearch(e.target.value);
+                          updateActiveData('customerName', e.target.value);
+                        }} 
+                        placeholder="Cari Customer..." 
+                        className="w-full pl-8 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100" 
+                      />
                     </div>
-                    <input 
-                      type="text" 
-                      value={wizardCustSearch !== undefined ? wizardCustSearch : (activeSession.data.customerName || '')} 
-                      onChange={(e) => {
-                        setWizardCustSearch(e.target.value);
-                        updateActiveData('customerName', e.target.value);
-                      }} 
-                      placeholder="Ketik nama customer..." 
-                      className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" 
+                    {wizardCustSearch && (
+                      <div className="mt-1 max-h-32 overflow-y-auto bg-white dark:bg-zinc-800 border rounded-xl shadow-md divide-y text-[10px] z-10 relative">
+                        {customers.filter(c => (c.nama || '').toLowerCase().includes(wizardCustSearch.toLowerCase())).slice(0, 5).map(c => (
+                          <div key={c.id} onClick={() => { updateActiveData('customerName', c.nama); setWizardCustSearch(''); }} className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-700 cursor-pointer font-bold">
+                            {c.nama} ({c.kota || 'Kota -'})
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {activeSession.data.customerName && !wizardCustSearch && (
+                      <div className="text-[10px] text-emerald-600 font-bold mt-1">Customer terpilih: {activeSession.data.customerName}</div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">SALES RESPONSIBLE</label>
+                    <select 
+                      value={activeSession.data.sales || currentUser?.nama || 'maria'} 
+                      onChange={(e) => updateActiveData('sales', e.target.value)} 
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100"
+                    >
+                      {salesOptions.map((s, idx) => (
+                        <option key={idx} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">KETERANGAN</label>
+                    <textarea 
+                      rows={2} 
+                      value={activeSession.data.keterangan || ''} 
+                      onChange={(e) => updateActiveData('keterangan', e.target.value)} 
+                      placeholder="Masukkan keterangan..." 
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 resize-none" 
                     />
                   </div>
-                  {wizardCustSearch && (
-                    <div className="mt-1 max-h-32 overflow-y-auto bg-white dark:bg-zinc-800 border rounded-xl shadow-md divide-y text-[10px]">
-                      {customers.filter(c => (c.nama || '').toLowerCase().includes(wizardCustSearch.toLowerCase())).slice(0, 5).map(c => (
-                        <div key={c.id} onClick={() => { updateActiveData('customerName', c.nama); setWizardCustSearch(''); }} className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-700 cursor-pointer font-bold">
-                          {c.nama} ({c.kota || 'Kota -'})
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {activeSession.data.customerName && !wizardCustSearch && (
-                    <div className="text-[10px] text-emerald-600 font-bold mt-1">Customer terpilih: {activeSession.data.customerName}</div>
-                  )}
                 </div>
 
-                {/* 2. Search Box Produk */}
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">2. Cari & Tambah Produk</label>
+                {/* Follow-Up Information Box */}
+                <div className="bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/60 rounded-2xl p-3 space-y-2.5">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                    <MessageSquare size={12} />
+                    <span>FOLLOW-UP INFORMATION</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 mb-1 block">TANGGAL FOLLOW-UP</label>
+                      <input 
+                        type="date" 
+                        value={activeSession.data.followUpDate || new Date().toISOString().split('T')[0]} 
+                        onChange={(e) => updateActiveData('followUpDate', e.target.value)} 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 mb-1 block">METODE FOLLOW-UP</label>
+                      <select 
+                        value={activeSession.data.followUpMethod || 'WhatsApp'} 
+                        onChange={(e) => updateActiveData('followUpMethod', e.target.value)} 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100"
+                      >
+                        <option value="Pilih Metode...">Pilih Metode...</option>
+                        <option value="WhatsApp">WhatsApp</option>
+                        <option value="Telepon">Telepon</option>
+                        <option value="Email">Email</option>
+                        <option value="Meeting Direct">Meeting Direct</option>
+                        <option value="Kunjungan">Kunjungan</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Item Penawaran */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400">ITEM PENAWARAN</label>
+                    <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">+ Tambah Produk di bawah</span>
+                  </div>
+
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
                       <Package size={12} />
@@ -1194,12 +1424,12 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                       value={wizardProdSearch} 
                       onChange={(e) => setWizardProdSearch(e.target.value)} 
                       placeholder="Cari nama produk / SKU..." 
-                      className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs" 
+                      className="w-full pl-8 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100" 
                     />
                   </div>
                   {wizardProdSearch && (
                     <div className="mt-1 max-h-36 overflow-y-auto bg-white dark:bg-zinc-800 border rounded-xl shadow-md divide-y text-[10px]">
-                      {products.filter(p => (p.nama || '').toLowerCase().includes(wizardProdSearch.toLowerCase()) || (p.kode || '').toLowerCase().includes(wizardProdSearch.toLowerCase())).slice(0, 6).map(p => (
+                      {effectiveProducts.filter(p => (p.nama || '').toLowerCase().includes(wizardProdSearch.toLowerCase()) || (p.kode || '').toLowerCase().includes(wizardProdSearch.toLowerCase())).slice(0, 6).map(p => (
                         <div key={p.id} onClick={() => {
                           const existingItems = activeSession.data.items || [];
                           const foundIndex = existingItems.findIndex((it: any) => it.produkId === p.id);
@@ -1225,13 +1455,9 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                       ))}
                     </div>
                   )}
-                </div>
 
-                {/* Selected Items List */}
-                {activeSession.data.items && activeSession.data.items.length > 0 && (
-                  <div className="space-y-1.5 border-t pt-2">
-                    <span className="text-[10px] font-bold text-slate-500">Daftar Item ({activeSession.data.items.length})</span>
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {activeSession.data.items && activeSession.data.items.length > 0 ? (
+                    <div className="space-y-1.5 border-t pt-2">
                       {activeSession.data.items.map((it: any, idx: number) => (
                         <div key={idx} className="flex items-center justify-between bg-slate-50 dark:bg-zinc-800 p-2 rounded-xl text-[10px]">
                           <div>
@@ -1255,35 +1481,255 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
-
-                {/* Toggles PPN & Ongkir */}
-                <div className="flex items-center gap-4 pt-1 text-[10px]">
-                  <label className="flex items-center gap-1.5 cursor-pointer font-bold">
-                    <input type="checkbox" checked={Boolean(activeSession.data.ppn)} onChange={(e) => updateActiveData('ppn', e.target.checked)} className="rounded" />
-                    <span>PPN 11%</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer font-bold">
-                    <input type="checkbox" checked={Boolean(activeSession.data.ongkir)} onChange={(e) => updateActiveData('ongkir', e.target.checked)} className="rounded" />
-                    <span>Ongkir</span>
-                  </label>
+                  ) : (
+                    <div className="p-4 border-2 border-dashed border-slate-200 dark:border-zinc-800 rounded-2xl text-center text-slate-400 text-[11px] font-medium">
+                      Belum ada produk dipilih
+                    </div>
+                  )}
                 </div>
 
-                {activeSession.type === 'transaction' && (
+                <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg mt-2 transition">Simpan Penawaran Sekarang</button>
+              </div>
+            )}
+
+            {/* 3. FORM TRANSAKSI BARU (Matches Image 3 & Image 4 with Status Transaksi Dropdown) */}
+            {activeSession.type === 'transaction' && (
+              <div className="space-y-3 text-xs">
+                <div className="bg-slate-50/80 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/80 rounded-2xl p-3 space-y-2.5">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 mb-1 block">Status Pembayaran</label>
-                    <select value={activeSession.data.paymentStatus || 'Belum Lunas'} onChange={(e) => updateActiveData('paymentStatus', e.target.value)} className="w-full p-2 bg-slate-50 dark:bg-zinc-800 border rounded-xl text-xs font-bold">
-                      <option value="Belum Lunas">Belum Lunas (Piutang)</option>
-                      <option value="Lunas">Lunas</option>
-                      <option value="DP">DP (Sebagian)</option>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">CUSTOMER</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                        <Search size={12} />
+                      </div>
+                      <input 
+                        type="text" 
+                        value={wizardCustSearch !== undefined ? wizardCustSearch : (activeSession.data.customerName || '')} 
+                        onChange={(e) => {
+                          setWizardCustSearch(e.target.value);
+                          updateActiveData('customerName', e.target.value);
+                        }} 
+                        placeholder="Cari Customer..." 
+                        className="w-full pl-8 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100" 
+                      />
+                    </div>
+                    {wizardCustSearch && (
+                      <div className="mt-1 max-h-32 overflow-y-auto bg-white dark:bg-zinc-800 border rounded-xl shadow-md divide-y text-[10px] z-10 relative">
+                        {customers.filter(c => (c.nama || '').toLowerCase().includes(wizardCustSearch.toLowerCase())).slice(0, 5).map(c => (
+                          <div key={c.id} onClick={() => { updateActiveData('customerName', c.nama); setWizardCustSearch(''); }} className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-700 cursor-pointer font-bold">
+                            {c.nama} ({c.kota || 'Kota -'})
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {activeSession.data.customerName && !wizardCustSearch && (
+                      <div className="text-[10px] text-emerald-600 font-bold mt-1">Customer terpilih: {activeSession.data.customerName}</div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">TANGGAL</label>
+                      <input 
+                        type="date" 
+                        value={activeSession.data.tanggal || new Date().toISOString().split('T')[0]} 
+                        onChange={(e) => updateActiveData('tanggal', e.target.value)} 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100" 
+                      />
+                    </div>
+                    <div>
+                      {/* STATUS TRANSAKSI DROPDOWN (Directly routes transaction to selected status, matches Image 3 & Image 4) */}
+                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">STATUS TRANSAKSI</label>
+                      <select 
+                        value={activeSession.data.status || 'Invoice'} 
+                        onChange={(e) => updateActiveData('status', e.target.value)} 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-blue-500 dark:border-blue-400 rounded-xl text-xs font-bold text-blue-700 dark:text-blue-300 shadow-xs focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="Invoice">Invoice</option>
+                        <option value="Pembayaran">Pembayaran</option>
+                        <option value="Pengiriman">Pengiriman</option>
+                        <option value="Pesanan Selesai">Pesanan Selesai</option>
+                        <option value="Batal">Batal</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">PAYMENT STATUS</label>
+                      <select 
+                        value={activeSession.data.paymentStatus || 'Belum Lunas'} 
+                        onChange={(e) => updateActiveData('paymentStatus', e.target.value)} 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                      >
+                        <option value="Belum Lunas">Belum Lunas</option>
+                        <option value="Lunas">Lunas</option>
+                        <option value="DP">DP</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">SALES RESPONSIBLE</label>
+                      <select 
+                        value={activeSession.data.sales || currentUser?.nama || 'yadi'} 
+                        onChange={(e) => updateActiveData('sales', e.target.value)} 
+                        className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100"
+                      >
+                        {salesOptions.map((s, idx) => (
+                          <option key={idx} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">KETERANGAN</label>
+                    <textarea 
+                      rows={2} 
+                      value={activeSession.data.keterangan || ''} 
+                      onChange={(e) => updateActiveData('keterangan', e.target.value)} 
+                      placeholder="Masukkan keterangan transaksi..." 
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 resize-none" 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">JASA KIRIM</label>
+                    <select 
+                      value={activeSession.data.jasaKirim || 'JNE Regular'} 
+                      onChange={(e) => updateActiveData('jasaKirim', e.target.value)} 
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100"
+                    >
+                      <option value="JNE Regular">JNE Regular</option>
+                      <option value="JNE YES">JNE YES</option>
+                      <option value="J&T Express">J&T Express</option>
+                      <option value="SiCepat">SiCepat</option>
+                      <option value="Kargo / Truk">Kargo / Truk</option>
+                      <option value="Kurir PPW">Kurir PPW</option>
+                      <option value="Self Pickup">Self Pickup (Ambil Sendiri)</option>
                     </select>
                   </div>
-                )}
+                </div>
 
-                <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-lg mt-2">
-                  Simpan {activeSession.type === 'penawaran' ? 'Penawaran' : 'Transaksi'} Sekarang
-                </button>
+                {/* Item Transaksi */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400">ITEM TRANSAKSI</label>
+                    <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">+ Tambah Produk di bawah</span>
+                  </div>
+
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                      <Package size={12} />
+                    </div>
+                    <input 
+                      type="text" 
+                      value={wizardProdSearch} 
+                      onChange={(e) => setWizardProdSearch(e.target.value)} 
+                      placeholder="Cari nama produk / SKU..." 
+                      className="w-full pl-8 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100" 
+                    />
+                  </div>
+                  {wizardProdSearch && (
+                    <div className="mt-1 max-h-36 overflow-y-auto bg-white dark:bg-zinc-800 border rounded-xl shadow-md divide-y text-[10px]">
+                      {effectiveProducts.filter(p => (p.nama || '').toLowerCase().includes(wizardProdSearch.toLowerCase()) || (p.kode || '').toLowerCase().includes(wizardProdSearch.toLowerCase())).slice(0, 6).map(p => (
+                        <div key={p.id} onClick={() => {
+                          const existingItems = activeSession.data.items || [];
+                          const foundIndex = existingItems.findIndex((it: any) => it.produkId === p.id);
+                          let newItems = [...existingItems];
+                          if (foundIndex >= 0) {
+                            newItems[foundIndex].qty += 1;
+                          } else {
+                            newItems.push({
+                              produkId: p.id,
+                              kode: p.kode || 'SKU',
+                              nama: p.nama,
+                              harga: p.hargaJual || p.harga || 100000,
+                              qty: 1,
+                              diskon: 0
+                            });
+                          }
+                          updateActiveData('items', newItems);
+                          setWizardProdSearch('');
+                        }} className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-700 cursor-pointer flex justify-between items-center">
+                          <span className="font-bold">{p.nama} ({p.kode})</span>
+                          <span className="text-emerald-600 font-extrabold">Rp {(p.hargaJual || p.harga || 100000).toLocaleString('id-ID')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {activeSession.data.items && activeSession.data.items.length > 0 ? (
+                    <div className="space-y-1.5 border-t pt-2">
+                      {activeSession.data.items.map((it: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between bg-slate-50 dark:bg-zinc-800 p-2 rounded-xl text-[10px]">
+                          <div>
+                            <div className="font-bold">{it.nama}</div>
+                            <div className="text-slate-400">Rp {it.harga.toLocaleString('id-ID')} x {it.qty}</div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button type="button" onClick={() => {
+                              const items = [...activeSession.data.items];
+                              if (items[idx].qty > 1) items[idx].qty -= 1;
+                              else items.splice(idx, 1);
+                              updateActiveData('items', items);
+                            }} className="w-5 h-5 bg-slate-200 dark:bg-zinc-700 rounded-md font-bold flex items-center justify-center">-</button>
+                            <span className="font-bold w-4 text-center">{it.qty}</span>
+                            <button type="button" onClick={() => {
+                              const items = [...activeSession.data.items];
+                              items[idx].qty += 1;
+                              updateActiveData('items', items);
+                            }} className="w-5 h-5 bg-slate-200 dark:bg-zinc-700 rounded-md font-bold flex items-center justify-center">+</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 border-2 border-dashed border-slate-200 dark:border-zinc-800 rounded-2xl text-center text-slate-400 text-[11px] font-medium">
+                      Belum ada produk dipilih
+                    </div>
+                  )}
+                </div>
+
+                {/* Ringkasan & PPN / Ongkir */}
+                <div className="bg-slate-50/80 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/80 rounded-2xl p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={Boolean(activeSession.data.ppn)} 
+                        onChange={(e) => updateActiveData('ppn', e.target.checked)} 
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" 
+                      />
+                      <span>PPN 11%</span>
+                    </label>
+                    <span className="text-slate-500">
+                      Rp {((activeSession.data.items || []).reduce((s: number, it: any) => s + (it.harga * it.qty), 0) * (activeSession.data.ppn ? 0.11 : 0)).toLocaleString('id-ID')}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={Boolean(activeSession.data.ongkir)} 
+                        onChange={(e) => updateActiveData('ongkir', e.target.checked)} 
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" 
+                      />
+                      <span>Biaya Kirim</span>
+                    </label>
+                    {activeSession.data.ongkir && (
+                      <input 
+                        type="number" 
+                        value={activeSession.data.biayaOngkir || 0} 
+                        onChange={(e) => updateActiveData('biayaOngkir', Number(e.target.value))} 
+                        placeholder="Nominal Ongkir" 
+                        className="w-32 p-1 bg-white dark:bg-zinc-900 border rounded-lg text-xs text-right font-bold" 
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg mt-2 transition">Simpan Transaksi Sekarang</button>
               </div>
             )}
           </div>
