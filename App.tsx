@@ -31,6 +31,7 @@ import { PancaMobileApp } from './src/components/panca-app/PancaMobileApp';
 import { GeminiSettingsSection } from './src/components/GeminiSettingsSection';
 import { WhatsAppView } from './src/components/WhatsAppView';
 import { callGeminiWithKeyRotation, loadGeminiSettingsFromDatabase } from './src/services/geminiKeyService';
+import { safeSetLocalStorage } from './src/lib/apiUtils';
 
 // --- Interfaces ---
 interface TutorialSection {
@@ -2284,7 +2285,7 @@ const App: React.FC = () => {
         const savedLogs = localStorage.getItem('mypanca_db_user_logs');
         const logs = savedLogs ? JSON.parse(savedLogs) : [];
         logs.unshift(newLog);
-        localStorage.setItem('mypanca_db_user_logs', JSON.stringify(logs));
+        safeSetLocalStorage('mypanca_db_user_logs', JSON.stringify(logs.slice(0, 100)));
         if (import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY) {
             try { await saveUserLogToSupabase(newLog); } catch (e) {}
         }
@@ -2437,7 +2438,7 @@ const App: React.FC = () => {
       entity,
       createdAt: new Date().toISOString()
     };
-    setUserLogs(prev => [newLog, ...prev]);
+    setUserLogs(prev => [newLog, ...prev].slice(0, 100));
     if (import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY) {
         saveUserLogToSupabase(newLog).catch(e => console.warn('Failed to save log to Supabase:', e));
     }
@@ -2787,21 +2788,21 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
   useEffect(() => {
     if (!isMounted) return; // Prevent overwriting history on first mount
     
-    localStorage.setItem('mypanca_db_trx', JSON.stringify(transactions));
-    localStorage.setItem('mypanca_db_cust', JSON.stringify(customers));
-    localStorage.setItem('mypanca_db_prod', JSON.stringify(products));
-    localStorage.setItem('mypanca_db_supp', JSON.stringify(suppliers));
-    localStorage.setItem('mypanca_db_po', JSON.stringify(purchaseOrders));
-    localStorage.setItem('mypanca_db_deleted', JSON.stringify(deletedItems));
-    localStorage.setItem('mypanca_db_user_logs', JSON.stringify(userLogs));
-    localStorage.setItem('mypanca_db_app_users', JSON.stringify(appUsers));
-    localStorage.setItem('mypanca_db_employees', JSON.stringify(employees));
-    localStorage.setItem('mypanca_db_companies', JSON.stringify(companies));
-    localStorage.setItem('mypanca_db_tutorials', JSON.stringify(tutorials));
-    if (currentUser) localStorage.setItem('mypanca_current_user', JSON.stringify(currentUser));
-    localStorage.setItem('mypanca_db_auto_notify', autoNotifyEnabled.toString());
-    localStorage.setItem('mypanca_db_auto_notify_days', autoNotifyDays.toString());
-    localStorage.setItem('mypanca_db_auto_notify_superadmin', autoNotifySuperadmin.toString());
+    safeSetLocalStorage('mypanca_db_trx', JSON.stringify(transactions));
+    safeSetLocalStorage('mypanca_db_cust', JSON.stringify(customers));
+    safeSetLocalStorage('mypanca_db_prod', JSON.stringify(products));
+    safeSetLocalStorage('mypanca_db_supp', JSON.stringify(suppliers));
+    safeSetLocalStorage('mypanca_db_po', JSON.stringify(purchaseOrders));
+    safeSetLocalStorage('mypanca_db_deleted', JSON.stringify(deletedItems));
+    safeSetLocalStorage('mypanca_db_user_logs', JSON.stringify(userLogs.slice(0, 100)));
+    safeSetLocalStorage('mypanca_db_app_users', JSON.stringify(appUsers));
+    safeSetLocalStorage('mypanca_db_employees', JSON.stringify(employees));
+    safeSetLocalStorage('mypanca_db_companies', JSON.stringify(companies));
+    safeSetLocalStorage('mypanca_db_tutorials', JSON.stringify(tutorials));
+    if (currentUser) safeSetLocalStorage('mypanca_current_user', JSON.stringify(currentUser));
+    safeSetLocalStorage('mypanca_db_auto_notify', autoNotifyEnabled.toString());
+    safeSetLocalStorage('mypanca_db_auto_notify_days', autoNotifyDays.toString());
+    safeSetLocalStorage('mypanca_db_auto_notify_superadmin', autoNotifySuperadmin.toString());
   }, [transactions, customers, products, suppliers, purchaseOrders, deletedItems, appUsers, employees, currentUser, autoNotifyEnabled, autoNotifyDays, autoNotifySuperadmin, isMounted, tutorials, userLogs]);
 
   // --- NEW: Background Sync to Supabase ---

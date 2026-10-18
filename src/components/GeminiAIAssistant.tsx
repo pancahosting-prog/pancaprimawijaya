@@ -12,6 +12,7 @@ import { supabaseService } from '../../task/services/supabaseService';
 import { Task, Project, DrivePost } from '../../task/types';
 import { detectLackingContext, isConversationalGreeting, getConversationalGreetingResponse } from '../services/pancaAIService';
 import { callGeminiWithKeyRotation, getStoredGeminiSettings } from '../services/geminiKeyService';
+import { safeSetLocalStorage } from '../lib/apiUtils';
 
 interface UserAccount {
   id: string;
@@ -301,11 +302,7 @@ export const GeminiAIAssistant: React.FC<GeminiAIAssistantProps> = ({
 
   // Save conversation to local storage
   useEffect(() => {
-    try {
-      localStorage.setItem('mypanca_gemini_ai_chat', JSON.stringify(messages));
-    } catch (e) {
-      console.warn("Failed saving chat history", e);
-    }
+    safeSetLocalStorage('mypanca_gemini_ai_chat', JSON.stringify(messages.slice(-50)));
   }, [messages]);
 
   // Auto scroll to bottom
