@@ -259,6 +259,7 @@ class WAService {
         const chatsToSync = singleChat ? [singleChat] : list;
         for (const c of chatsToSync) {
           const cleanJid = c.jid || c.id;
+          const assignedUser = (c as any).assignedUser || (cleanPhone === this.getConnectedPhoneKey() ? this.userName : null);
           await supabaseServer.from("wa_chats").upsert({
             id: `${cleanPhone}_${cleanJid}`,
             connected_phone: cleanPhone,
@@ -269,6 +270,7 @@ class WAService {
             last_message: c.lastMessage || "",
             last_message_time: c.lastMessageTime || Date.now(),
             messages: c.messages || [],
+            assigned_user: assignedUser || null,
             updated_at: new Date().toISOString()
           });
         }
@@ -306,7 +308,7 @@ class WAService {
             this.chatsByPhone.set(phone, phoneMap);
           }
 
-          const chatObj: WAChat = {
+          const chatObj: WAChat & { assignedUser?: string } = {
             id: row.jid,
             jid: row.jid,
             name: row.name || "",
@@ -315,7 +317,8 @@ class WAService {
             lastMessage: row.last_message || "",
             lastMessageTime: Number(row.last_message_time) || Date.now(),
             messages: Array.isArray(row.messages) ? row.messages : [],
-            connectedPhone: phone
+            connectedPhone: phone,
+            assignedUser: row.assigned_user || ""
           };
 
           phoneMap.set(row.jid, chatObj);
@@ -379,9 +382,9 @@ class WAService {
   }
 
   /**
-   * Returns metadata of all known connected numbers with chat counts
+   * Returns metadata of all known connected numbers with chat counts and assigned user info
    */
-  public getKnownNumbers(): { phone: string; active: boolean; chatCount: number }[] {
+  public getKnownNumbers(): { phone: string; active: boolean; chatCount: number; assignedUser?: string; lastActive?: number }[] {
     const activeClean = this.userPhone ? this.getConnectedPhoneKey(this.userPhone) : null;
     const allPhones = new Set<string>(this.knownConnectedPhones);
     if (activeClean) allPhones.add(activeClean);
@@ -390,10 +393,20 @@ class WAService {
     return Array.from(allPhones).map(phone => {
       const map = this.chatsByPhone.get(phone);
       const chatCount = map ? map.size : 0;
+      let assignedUser = "";
+      let lastActive = 0;
+      if (map && map.size > 0) {
+        const firstChat = Array.from(map.values())[0];
+        assignedUser = (firstChat as any).assignedUser || "";
+        lastActive = Math.max(...Array.from(map.values()).map(c => c.lastMessageTime || 0));
+      }
+
       return {
         phone,
         active: Boolean(activeClean && phone === activeClean),
-        chatCount
+        chatCount,
+        assignedUser: assignedUser || (phone === activeClean ? (this.userName || "User WA") : ""),
+        lastActive: lastActive || Date.now()
       };
     });
   }

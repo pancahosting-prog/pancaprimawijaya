@@ -83,10 +83,14 @@ async function startServer() {
     });
   });
 
-  // Get Chats per Connected Phone Number
+  // Get Chats per Connected Phone Number or Owner User
   app.get("/api/wa/chats", (req, res) => {
     const requestedPhone = req.query.connectedPhone as string | undefined;
-    const list = waService.getChats(requestedPhone);
+    const username = req.query.username as string | undefined;
+    const role = req.query.role as string | undefined;
+    const isSuperAdmin = role === "superadmin";
+
+    const list = waService.getChats(requestedPhone, username, isSuperAdmin);
     const activeTargetPhone = requestedPhone || waService.userPhone || "default";
     res.json({ 
       success: true, 
@@ -107,21 +111,34 @@ async function startServer() {
   // Force sync chats from Supabase
   app.post("/api/wa/sync-supabase", async (req, res) => {
     const phone = req.body?.connectedPhone;
+    const username = req.body?.username;
+    const role = req.body?.role;
+    const isSuperAdmin = role === "superadmin";
+
     await waService.syncAllChatsFromSupabase(phone);
     res.json({
       success: true,
       message: "Sinkronisasi riwayat chat dengan Supabase selesai.",
-      chats: waService.getChats(phone)
+      chats: waService.getChats(phone, username, isSuperAdmin)
     });
   });
 
   app.post("/api/wa/send", async (req, res) => {
-    const { jid, text } = req.body;
-    if (!jid || !text) {
-      return res.status(400).json({ success: false, error: "JID dan teks pesan diperlukan." });
+    const { jid, text, media, username } = req.body;
+    if (!jid || (!text && !media)) {
+      return res.status(400).json({ success: false, error: "JID dan teks/media pesan diperlukan." });
     }
-    const result = await waService.sendMessage(jid, text);
+    const result = await waService.sendMessage(jid, text, media, username);
     res.json(result);
+  });
+
+  app.post("/api/wa/chats/delete", async (req, res) => {
+    const { jid, connectedPhone } = req.body || {};
+    if (!jid) {
+      return res.status(400).json({ success: false, error: "JID percakapan diperlukan." });
+    }
+    await waService.deleteChat(jid, connectedPhone);
+    res.json({ success: true, message: "Percakapan berhasil dihapus." });
   });
 
   app.get("/api/wa/settings", (_req, res) => {
@@ -133,9 +150,14 @@ async function startServer() {
     res.json({ success: true, settings: waService.aiSettings });
   });
 
-  app.post("/api/wa/logout", async (_req, res) => {
-    await waService.disconnectSession();
-    res.json({ success: true, message: "Sesi WhatsApp berhasil diputuskan." });
+  app.post("/api/wa/logout", async (req, res) => {
+    const { phone, all } = req.body || {};
+    if (all) {
+      await waService.disconnectAllSessions();
+      return res.json({ success: true, message: "Seluruh koneksi sesi perangkat WhatsApp berhasil diputuskan." });
+    }
+    await waService.disconnectSession(phone);
+    res.json({ success: true, message: `Sesi WhatsApp ${phone ? '+' + phone : ''} berhasil diputuskan.` });
   });
 
   // Gemini Settings & Multi-Key Storage File

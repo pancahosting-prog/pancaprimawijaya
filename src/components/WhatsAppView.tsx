@@ -91,11 +91,18 @@ export interface WAISettings {
 
 interface WhatsAppViewProps {
   initialSubTab?: 'chat' | 'setting-ai' | 'perangkat';
+  currentUser?: {
+    id?: string;
+    nama?: string;
+    username?: string;
+    role?: string;
+  };
 }
 
-export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'chat' }) => {
+export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'chat', currentUser }) => {
   const [activeSubTab, setActiveSubTab] = useState<'chat' | 'setting-ai' | 'perangkat'>(initialSubTab);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const isSuperAdmin = currentUser?.role === 'superadmin' || currentUser?.role === 'admin';
 
   useEffect(() => {
     setActiveSubTab(initialSubTab);
@@ -124,7 +131,8 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
   // Connected Phone Partitioning & Multi-SIM History
   const [selectedConnectedPhone, setSelectedConnectedPhone] = useState<string>('active');
-  const [knownNumbers, setKnownNumbers] = useState<{ phone: string; active: boolean; chatCount: number }[]>([]);
+  const [knownNumbers, setKnownNumbers] = useState<{ phone: string; active: boolean; chatCount: number; assignedUser?: string; lastActive?: number }[]>([]);
+
   const [isSyncingSupabase, setIsSyncingSupabase] = useState<boolean>(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState<boolean>(false);
@@ -871,70 +879,195 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
         {/* SUB-TAB 3: PERANGKAT */}
         {activeSubTab === 'perangkat' && (
-          <div className="h-full flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-2xl max-w-md w-full text-center space-y-6">
-              <div>
-                <h2 className="text-2xl font-black tracking-tight">WhatsApp QR</h2>
-                <p className="text-xs text-zinc-500 mt-1">Sambungkan perangkat WhatsApp Anda ke sistem.</p>
+          <div className="h-full overflow-y-auto p-4 md:p-6 space-y-6">
+            <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* Card Scanner QR Perangkat */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-xl text-center space-y-6">
+                <div>
+                  <h2 className="text-xl font-black tracking-tight text-zinc-900 dark:text-zinc-100">WhatsApp QR Code</h2>
+                  <p className="text-xs text-zinc-500 mt-1">Sambungkan perangkat WhatsApp Anda ke sistem MyPanca.</p>
+                </div>
+
+                <div className="p-6 bg-zinc-50 dark:bg-zinc-950 rounded-3xl border border-zinc-100 dark:border-zinc-800">
+                  {connectionStatus.connectionState === 'connected' ? (
+                    <div className="space-y-5">
+                      <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+                        <CheckCircle2 size={36}/>
+                      </div>
+                      <div>
+                        <h3 className="font-black text-emerald-600 text-xs uppercase tracking-wider">PERANGKAT TERHUBUNG</h3>
+                        <p className="text-xl font-mono font-bold mt-1 text-zinc-900 dark:text-zinc-100">+{connectionStatus.userPhone}</p>
+                      </div>
+                      <button 
+                        onClick={handleLogoutWA} 
+                        className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black shadow-lg shadow-rose-600/20 transition cursor-pointer"
+                      >
+                        LOGOUT PERANGKAT INI
+                      </button>
+                    </div>
+                  ) : connectionStatus.qrCodeBase64 ? (
+                    <div className="space-y-5">
+                      <div className="p-4 bg-white rounded-2xl shadow-xl inline-block border border-zinc-100 dark:border-zinc-800">
+                        <img src={connectionStatus.qrCodeBase64} alt="QR" className="w-52 h-52" />
+                      </div>
+                      <p className="text-[10px] font-black text-zinc-400 animate-pulse tracking-widest uppercase">
+                        Scan via Perangkat Tertaut di WhatsApp HP
+                      </p>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={handleInitConnection} 
+                      disabled={isLoadingStatus} 
+                      className="w-full py-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-xl transition cursor-pointer"
+                    >
+                      <RefreshCw size={16} className={isLoadingStatus ? 'animate-spin' : ''}/>
+                      BUAT BARCODE LOGIN
+                    </button>
+                  )}
+                </div>
+
+                {/* Info Cloud Sync per Nomor Terhubung */}
+                <div className="p-3.5 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/50 rounded-2xl text-left space-y-2 text-xs">
+                  <div className="flex items-center gap-2 text-violet-800 dark:text-violet-300 font-bold">
+                    <Database size={15} />
+                    <span>Riwayat Chat Per Nomor Terhubung</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Setiap nomor yang Anda sambungkan disimpan riwayat percakapannya secara terpisah (berdasarkan <strong>no terhubung</strong>) dan otomatis disinkronkan ke Cloud Database Supabase (tabel <code>wa_chats</code>).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsSqlModalOpen(true)}
+                    className="w-full mt-1 py-2 px-3 bg-white dark:bg-zinc-900 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-xl text-xs font-bold hover:bg-violet-100/50 dark:hover:bg-zinc-800 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Code size={13} />
+                    <span>Lihat & Salin Script SQL Supabase</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="p-6 bg-zinc-50 dark:bg-zinc-950 rounded-3xl border border-zinc-100 dark:border-zinc-800">
-                {connectionStatus.connectionState === 'connected' ? (
-                  <div className="space-y-5">
-                    <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
-                      <CheckCircle2 size={36}/>
+              {/* Status Ringkasan & Informasi Role Akses */}
+              <div className="space-y-4">
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-700 dark:text-zinc-300">
+                      <Smartphone size={20} />
                     </div>
                     <div>
-                      <h3 className="font-black text-emerald-600 text-sm">PERANGKAT TERHUBUNG</h3>
-                      <p className="text-xl font-mono font-bold mt-1 text-zinc-900 dark:text-zinc-100">+{connectionStatus.userPhone}</p>
+                      <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Status Akses Akun</h3>
+                      <p className="text-xs text-zinc-500">
+                        {isSuperAdmin ? 'Akses Superadmin (Dapat memantau semua nomor)' : 'Akses CS / Staf (Mengelola nomor milik sendiri)'}
+                      </p>
                     </div>
-                    <button 
-                      onClick={handleLogoutWA} 
-                      className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black shadow-lg shadow-rose-600/20 transition cursor-pointer"
-                    >
-                      LOGOUT PERANGKAT
-                    </button>
                   </div>
-                ) : connectionStatus.qrCodeBase64 ? (
-                  <div className="space-y-5">
-                    <div className="p-4 bg-white rounded-2xl shadow-xl inline-block border border-zinc-100 dark:border-zinc-800">
-                      <img src={connectionStatus.qrCodeBase64} alt="QR" className="w-56 h-56" />
-                    </div>
-                    <p className="text-[10px] font-black text-zinc-400 animate-pulse tracking-widest uppercase">
-                      Scan via Perangkat Tertaut di WhatsApp HP
-                    </p>
+                  <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-100 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-400 space-y-1">
+                    <div>User Login: <strong className="text-zinc-900 dark:text-zinc-200">{currentUser?.nama || 'Pengguna'}</strong></div>
+                    <div>Role: <span className="uppercase font-bold text-violet-600 dark:text-violet-400">{currentUser?.role || 'User'}</span></div>
                   </div>
-                ) : (
-                  <button 
-                    onClick={handleInitConnection} 
-                    disabled={isLoadingStatus} 
-                    className="w-full py-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-xl transition cursor-pointer"
-                  >
-                    <RefreshCw size={16} className={isLoadingStatus ? 'animate-spin' : ''}/>
-                    BUAT BARCODE LOGIN
-                  </button>
-                )}
-              </div>
-
-              {/* Info Cloud Sync per Nomor Terhubung */}
-              <div className="p-3.5 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/50 rounded-2xl text-left space-y-2 text-xs">
-                <div className="flex items-center gap-2 text-violet-800 dark:text-violet-300 font-bold">
-                  <Database size={15} />
-                  <span>Riwayat Chat Per Nomor Terhubung</span>
                 </div>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  Setiap nomor yang Anda sambungkan disimpan riwayat percakapannya secara terpisah (berdasarkan <strong>no terhubung</strong>) dan otomatis disinkronkan ke Cloud Database Supabase (tabel <code>wa_chats</code>).
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsSqlModalOpen(true)}
-                  className="w-full mt-1 py-2 px-3 bg-white dark:bg-zinc-900 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-xl text-xs font-bold hover:bg-violet-100/50 dark:hover:bg-zinc-800 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Code size={13} />
-                  <span>Lihat & Salin Script SQL Supabase</span>
-                </button>
+
+                {/* Quick Info list of registered numbers */}
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400">Nomor Terdaftar di Sistem ({knownNumbers.length})</h4>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {knownNumbers.map((num, i) => (
+                      <div key={i} className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${num.active ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-300'}`}></span>
+                          <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">+{num.phone}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-zinc-400">{num.chatCount} Chat</span>
+                          <button 
+                            onClick={() => {
+                              setSelectedConnectedPhone(num.phone);
+                              fetchChats(num.phone);
+                              setActiveSubTab('chat');
+                            }}
+                            className="px-2.5 py-1 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-lg text-[10px] font-bold transition"
+                          >
+                            Lihat
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* SUPERADMIN SPECIFIC: Full Organization Devices Table */}
+            {isSuperAdmin && (
+              <div className="max-w-4xl mx-auto bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-zinc-100 dark:border-zinc-800">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                      <Smartphone size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-zinc-900 dark:text-zinc-100">Daftar Seluruh Perangkat Terhubung (Akses Superadmin)</h3>
+                      <p className="text-xs text-zinc-500">Superadmin dapat memantau dan membuka riwayat chat dari setiap nomor WhatsApp user yang terdaftar</p>
+                    </div>
+                  </div>
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 shrink-0">
+                    {knownNumbers.filter(n => n.active).length} Aktif Online
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-zinc-100 dark:border-zinc-800 text-[11px] font-black uppercase tracking-wider text-zinc-400">
+                        <th className="py-3 px-4">Perangkat / Nomor WA</th>
+                        <th className="py-3 px-4">User / Penanggung Jawab</th>
+                        <th className="py-3 px-4 text-center">Status</th>
+                        <th className="py-3 px-4 text-center">Total Chat</th>
+                        <th className="py-3 px-4 text-right">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
+                      {knownNumbers.map((num, idx) => (
+                        <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                          <td className="py-3.5 px-4 font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                            +{num.phone}
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-zinc-700 dark:text-zinc-300">
+                            {num.assignedUser || (num.active ? (connectionStatus.userName || currentUser?.nama || 'User WA') : 'Staf CS')}
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            {num.active ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> ONLINE
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                                TERSIMPAN
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-center font-bold text-zinc-800 dark:text-zinc-200">
+                            {num.chatCount} Chat
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                setSelectedConnectedPhone(num.phone);
+                                fetchChats(num.phone);
+                                setActiveSubTab('chat');
+                              }}
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer inline-flex items-center gap-1"
+                            >
+                              <MessageSquare size={13} />
+                              Lihat Chat
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -6911,6 +6911,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                       </div>
                   ) : ['WA Chat', 'WA Setting AI', 'WA Perangkat', 'WhatsApp'].includes(activeView) ? (
                       <WhatsAppView 
+                        currentUser={currentUser ? { id: currentUser.id, nama: currentUser.nama, username: currentUser.username, role: currentUser.role } : undefined}
                         initialSubTab={
                           activeView === 'WA Setting AI' ? 'setting-ai' : 
                           activeView === 'WA Perangkat' ? 'perangkat' : 'chat'

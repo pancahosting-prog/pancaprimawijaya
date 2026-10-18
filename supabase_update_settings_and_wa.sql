@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS public.wa_chats (
   last_message TEXT,
   last_message_time BIGINT,
   messages JSONB DEFAULT '[]'::jsonb,        -- Array JSON riwayat pesan masuk & keluar
+  assigned_user TEXT,                        -- Nama/Username pengguna pemilik koneksi WA
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -122,6 +123,7 @@ ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS unread_count INT DEFAULT 0;
 ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS last_message TEXT;
 ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS last_message_time BIGINT;
 ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS messages JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS assigned_user TEXT;
 ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ALTER TABLE public.wa_chats ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
