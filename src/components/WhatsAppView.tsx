@@ -35,6 +35,7 @@ import {
   loadWAChatsFromSupabase, 
   saveWAChatToSupabase, 
   loadKnownConnectedNumbersFromSupabase,
+  deleteWAChatFromSupabase,
   checkSupabaseTableStatus 
 } from '../lib/supabaseSync';
 import { SUPABASE_MIGRATION_SQL } from '../lib/supabaseMigrationSql';
@@ -618,6 +619,27 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
     }
   };
 
+  const handleDeleteChat = async (jid: string, name: string) => {
+    if (!confirm(`Apakah Anda yakin ingin menghapus percakapan dengan ${name}? (Semua pesan dalam percakapan ini akan dihapus)`)) return;
+    try {
+      const targetPhone = getActualConnectedPhone(selectedConnectedPhone);
+      setChats(prev => prev.filter(c => c.jid !== jid));
+      if (selectedChatJid === jid) {
+        setSelectedChatJid(null);
+      }
+      await fetch(getApiUrl('/api/wa/chats/delete'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jid, connectedPhone: targetPhone })
+      });
+      await deleteWAChatFromSupabase(jid, targetPhone);
+      setSyncToast(`Percakapan dengan ${name} berhasil dihapus.`);
+      setTimeout(() => setSyncToast(null), 3000);
+    } catch (err) {
+      console.error('Error deleting chat:', err);
+    }
+  };
+
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     try {
@@ -780,7 +802,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                       <div
                         key={c.jid}
                         onClick={() => setSelectedChatJid(c.jid)}
-                        className={`p-4 cursor-pointer transition-all flex items-start gap-3 select-none ${
+                        className={`p-4 cursor-pointer transition-all flex items-start gap-3 select-none group relative ${
                           isSelected && !isMobile
                             ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold'
                             : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40 active:bg-zinc-100 dark:active:bg-zinc-800'
@@ -799,7 +821,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                         )}
                         <div className="flex-1 min-w-0 py-0.5">
                           <div className="flex items-center justify-between gap-1 mb-1">
-                            <h3 className="text-sm font-black truncate text-zinc-900 dark:text-zinc-100">
+                            <h3 className="text-sm font-black truncate text-zinc-900 dark:text-zinc-100 pr-1">
                               {c.name}
                             </h3>
                             <span className="text-[10px] text-zinc-400 font-bold shrink-0">
@@ -815,11 +837,24 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                             </span>
                           )}
                         </div>
-                        {c.unreadCount > 0 && (
-                          <span className="mt-1 w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center shrink-0">
-                            {c.unreadCount}
-                          </span>
-                        )}
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {c.unreadCount > 0 && (
+                            <span className="w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center">
+                              {c.unreadCount}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteChat(c.jid, c.name);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition"
+                            title="Hapus Percakapan"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })
@@ -831,7 +866,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
             <div className={`flex-1 flex flex-col bg-[#efeae2] dark:bg-zinc-950 ${isMobile && !selectedChatJid ? 'hidden' : 'flex'}`}>
               {selectedChat ? (
                 <>
-                  {/* Chat Header with Profile Picture */}
+                  {/* Chat Header with Profile Picture & Delete Action */}
                   <div className="p-3 bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0 sticky top-0 z-50">
                     <div className="flex items-center gap-3">
                       {isMobile && (
@@ -862,6 +897,16 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                         </span>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteChat(selectedChat.jid, selectedChat.name)}
+                      className="p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                      title="Hapus Percakapan Ini"
+                    >
+                      <Trash2 size={16} />
+                      <span className="hidden sm:inline">Hapus Chat</span>
+                    </button>
                   </div>
 
                   {/* Messages Scroll Area */}

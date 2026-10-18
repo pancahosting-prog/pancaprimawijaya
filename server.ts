@@ -132,6 +132,15 @@ async function startServer() {
     res.json(result);
   });
 
+  app.post("/api/wa/chats/delete", async (req, res) => {
+    const { jid, connectedPhone } = req.body || {};
+    if (!jid) {
+      return res.status(400).json({ success: false, error: "JID percakapan diperlukan." });
+    }
+    await waService.deleteChat(jid, connectedPhone);
+    res.json({ success: true, message: "Percakapan berhasil dihapus." });
+  });
+
   app.get("/api/wa/settings", (_req, res) => {
     res.json({ success: true, settings: waService.aiSettings });
   });

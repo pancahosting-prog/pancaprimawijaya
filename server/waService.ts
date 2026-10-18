@@ -68,6 +68,60 @@ export interface WAISettings {
   }[];
 }
 
+function extractMessageContent(msg: any): { text: string; media?: WAChatMedia } {
+  let m = msg.message;
+  if (!m) return { text: "" };
+
+  // Unwrap message containers (ephemeral, viewOnce, etc.)
+  if (m.ephemeralMessage) m = m.ephemeralMessage.message;
+  if (m.viewOnceMessage) m = m.viewOnceMessage.message;
+  if (m.documentWithCaptionMessage) m = m.documentWithCaptionMessage.message;
+  if (!m) return { text: "" };
+
+  let text = m.conversation || m.extendedTextMessage?.text || "";
+  let media: WAChatMedia | undefined = undefined;
+
+  if (m.imageMessage) {
+    text = text || m.imageMessage.caption || "📷 [Foto]";
+    media = {
+      type: "image",
+      mimetype: m.imageMessage.mimetype || "image/jpeg"
+    };
+  } else if (m.videoMessage) {
+    text = text || m.videoMessage.caption || "🎥 [Video]";
+    media = {
+      type: "video",
+      mimetype: m.videoMessage.mimetype || "video/mp4"
+    };
+  } else if (m.audioMessage) {
+    text = "🎵 [Pesan Suara]";
+    media = {
+      type: "audio",
+      mimetype: m.audioMessage.mimetype || "audio/ogg"
+    };
+  } else if (m.documentMessage) {
+    const fileName = m.documentMessage.fileName || "Dokumen";
+    text = text || m.documentMessage.caption || `📄 [${fileName}]`;
+    media = {
+      type: "document",
+      fileName,
+      mimetype: m.documentMessage.mimetype || "application/octet-stream"
+    };
+  } else if (m.stickerMessage) {
+    text = "🎨 [Stiker]";
+  } else if (m.locationMessage || m.liveLocationMessage) {
+    text = "📍 [Lokasi]";
+  } else if (m.contactMessage || m.contactsArrayMessage) {
+    text = "👤 [Kontak]";
+  }
+
+  if (!text && !media) {
+    text = "[Pesan WhatsApp]";
+  }
+
+  return { text, media };
+}
+
 class WAService {
   private socket: any = null;
   public qrCodeBase64: string | null = null;
@@ -369,18 +423,20 @@ class WAService {
       const key = this.getConnectedPhoneKey(connectedPhone);
       let map = this.chatsByPhone.get(key);
 
-      if ((!map || map.size === 0) && key !== "default") {
-        // If requested phone has no chats yet, check default
-        const defaultMap = this.chatsByPhone.get("default");
-        if (defaultMap && defaultMap.size > 0) {
-          result = Array.from(defaultMap.values());
-        }
-      } else if (map) {
+      if (map) {
         result = Array.from(map.values());
+      } else if (key === "default") {
+        const defaultMap = this.chatsByPhone.get("default");
+        if (defaultMap) result = Array.from(defaultMap.values());
       }
     }
 
-    // Access control filtering for non-superadmin
+    // If a specific connected phone is selected, return all chats belonging to that phone
+    if (connectedPhone && connectedPhone !== "all" && connectedPhone !== "active") {
+      return result.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+    }
+
+    // Access control filtering for non-superadmin or all view
     if (!isSuperAdmin && ownerUser) {
       result = result.filter(c => 
         !c.ownerUser || 
@@ -389,17 +445,40 @@ class WAService {
         c.connectedPhone === this.userPhone
       );
     } else if (isSuperAdmin && ownerUser && ownerUser !== "all") {
-      result = result.filter(c => c.ownerUser === ownerUser);
+      result = result.filter(c => !c.ownerUser || c.ownerUser === ownerUser);
     }
 
     return result.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
   }
 
   /**
+   * Delete a chat conversation locally and from database
+   */
+  public async deleteChat(jid: string, connectedPhone?: string) {
+    const cleanPhone = this.getConnectedPhoneKey(connectedPhone);
+    const phoneMap = this.chatsByPhone.get(cleanPhone);
+    if (phoneMap) {
+      phoneMap.delete(jid);
+      this.saveChatsForPhone(cleanPhone);
+    }
+    const defaultMap = this.chatsByPhone.get("default");
+    if (defaultMap) {
+      defaultMap.delete(jid);
+      this.saveChatsForPhone("default");
+    }
+    if (supabaseServer) {
+      try {
+        const docId = `${cleanPhone}_${jid}`;
+        await supabaseServer.from("wa_chats").delete().eq("id", docId);
+      } catch (err) {}
+    }
+  }
+
+  /**
    * Returns metadata of all known connected numbers with chat counts and active status
    */
   public getKnownNumbers(): { phone: string; active: boolean; chatCount: number }[] {
-    const isConnected = this.connectionState === "connected";
+    const isConnected = this.connectionState === "connected" || this.connectionState === "connecting";
     const activeClean = isConnected && this.userPhone ? this.getConnectedPhoneKey(this.userPhone) : null;
     const allPhones = new Set<string>(this.knownConnectedPhones);
     if (activeClean) allPhones.add(activeClean);
@@ -456,9 +535,9 @@ class WAService {
         if (connection === "close") {
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-          this.connectionState = "disconnected";
+          this.connectionState = shouldReconnect ? "connecting" : "disconnected";
           if (shouldReconnect) {
-            setTimeout(() => this.initBaileys(), 3000);
+            setTimeout(() => this.initBaileys(), 2000);
           } else {
             try {
               fs.rmSync(SESSION_DIR, { recursive: true, force: true });
@@ -483,38 +562,11 @@ class WAService {
         }
       });
 
-      this.socket.ev.on("messages.upsert", async (m: any) => {
-        if (m.type !== "notify") return;
-
-        for (const msg of m.messages) {
-          if (!msg.message) continue;
-          const remoteJid = msg.key.remoteJid;
-          if (!remoteJid || remoteJid.endsWith("@g.us")) continue; // 1-on-1 chats only
-
-          let text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-          let incomingMedia: WAChatMedia | undefined = undefined;
-
-          if (msg.message.imageMessage) {
-            text = msg.message.imageMessage.caption || "📷 [Foto]";
-            incomingMedia = {
-              type: "image",
-              mimetype: msg.message.imageMessage.mimetype || "image/jpeg"
-            };
-          } else if (msg.message.documentMessage) {
-            const fileName = msg.message.documentMessage.fileName || "Dokumen";
-            text = msg.message.documentMessage.caption || `📄 [${fileName}]`;
-            incomingMedia = {
-              type: "document",
-              fileName,
-              mimetype: msg.message.documentMessage.mimetype || "application/octet-stream"
-            };
-          }
-
-          if (!text && !incomingMedia) continue;
-
-          const senderName = msg.pushName || remoteJid.split("@")[0];
-          const isFromMe = Boolean(msg.key.fromMe);
-
+      // 1. History Sync from WhatsApp Phone on connection
+      this.socket.ev.on("messaging-history.set", async (history: any) => {
+        try {
+          const { chats, messages } = history || {};
+          console.log(`[waService] Received history sync: ${chats?.length || 0} chats, ${messages?.length || 0} messages`);
           const connectedPhone = this.getConnectedPhoneKey();
           let phoneMap = this.chatsByPhone.get(connectedPhone);
           if (!phoneMap) {
@@ -522,53 +574,158 @@ class WAService {
             this.chatsByPhone.set(connectedPhone, phoneMap);
           }
 
-          let chat = phoneMap.get(remoteJid);
-          if (!chat) {
-            chat = {
-              id: remoteJid,
-              jid: remoteJid,
-              name: senderName,
-              phone: "+" + remoteJid.split("@")[0],
-              unreadCount: 0,
-              lastMessage: text,
-              lastMessageTime: Date.now(),
-              messages: [],
-              connectedPhone
-            };
-            phoneMap.set(remoteJid, chat);
-          }
-
-          const newMsg: WAChatMessage = {
-            id: msg.key.id || "msg-" + Date.now(),
-            fromMe: isFromMe,
-            sender: remoteJid,
-            senderName,
-            text,
-            timestamp: Date.now(),
-            status: "unread",
-            media: incomingMedia
-          };
-
-          chat.messages.push(newMsg);
-          chat.lastMessage = text;
-          chat.lastMessageTime = Date.now();
-          // Fetch user profile picture automatically on incoming message
-          if (this.socket && this.connectionState === "connected" && !chat.profilePicUrl) {
-            try {
-              const ppUrl = await this.socket.profilePictureUrl(remoteJid, "image").catch(() => null);
-              if (ppUrl) {
-                chat.profilePicUrl = ppUrl;
+          if (Array.isArray(chats)) {
+            for (const c of chats) {
+              if (!c.id || c.id.endsWith("@g.us") || c.id === "status@broadcast") continue;
+              let chat = phoneMap.get(c.id);
+              if (!chat) {
+                chat = {
+                  id: c.id,
+                  jid: c.id,
+                  name: c.name || c.id.split("@")[0],
+                  phone: "+" + c.id.split("@")[0],
+                  unreadCount: c.unreadCount || 0,
+                  lastMessage: "Sesi terhubung",
+                  lastMessageTime: Date.now(),
+                  messages: [],
+                  connectedPhone,
+                  ownerUser: "superadmin"
+                };
+                phoneMap.set(c.id, chat);
               }
-            } catch (ppErr) {}
+            }
           }
 
-          // Save to local file & Supabase for this connected phone
-          this.saveChatsForPhone(connectedPhone, chat);
+          if (Array.isArray(messages)) {
+            for (const msg of messages) {
+              if (!msg.message) continue;
+              const remoteJid = msg.key.remoteJid;
+              if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") continue;
 
-          // Auto reply AI logic
-          if (!isFromMe && this.aiSettings.autoReplyEnabled) {
-            this.handleAIAutoReply(remoteJid, senderName, text);
+              const { text, media } = extractMessageContent(msg);
+              if (!text && !media) continue;
+
+              const senderName = msg.pushName || remoteJid.split("@")[0];
+              const isFromMe = Boolean(msg.key.fromMe);
+
+              let chat = phoneMap.get(remoteJid);
+              if (!chat) {
+                chat = {
+                  id: remoteJid,
+                  jid: remoteJid,
+                  name: senderName,
+                  phone: "+" + remoteJid.split("@")[0],
+                  unreadCount: 0,
+                  lastMessage: text,
+                  lastMessageTime: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
+                  messages: [],
+                  connectedPhone,
+                  ownerUser: "superadmin"
+                };
+                phoneMap.set(remoteJid, chat);
+              }
+
+              const newMsg: WAChatMessage = {
+                id: msg.key.id || "msg-" + Date.now(),
+                fromMe: isFromMe,
+                sender: remoteJid,
+                senderName,
+                text,
+                timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
+                status: "read",
+                media
+              };
+
+              if (!chat.messages.some(m => m.id === newMsg.id)) {
+                chat.messages.push(newMsg);
+                chat.lastMessage = text;
+                chat.lastMessageTime = newMsg.timestamp;
+              }
+            }
           }
+
+          this.saveChatsForPhone(connectedPhone);
+        } catch (histErr) {
+          console.error("[waService] Error processing history sync:", histErr);
+        }
+      });
+
+      // 2. Incoming Messages Upsert Listener
+      this.socket.ev.on("messages.upsert", async (m: any) => {
+        try {
+          for (const msg of m.messages) {
+            if (!msg.message) continue;
+            const remoteJid = msg.key.remoteJid;
+            if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") continue;
+
+            const { text, media } = extractMessageContent(msg);
+            if (!text && !media) continue;
+
+            const senderName = msg.pushName || remoteJid.split("@")[0];
+            const isFromMe = Boolean(msg.key.fromMe);
+
+            const connectedPhone = this.getConnectedPhoneKey();
+            let phoneMap = this.chatsByPhone.get(connectedPhone);
+            if (!phoneMap) {
+              phoneMap = new Map();
+              this.chatsByPhone.set(connectedPhone, phoneMap);
+            }
+
+            let chat = phoneMap.get(remoteJid);
+            if (!chat) {
+              chat = {
+                id: remoteJid,
+                jid: remoteJid,
+                name: senderName,
+                phone: "+" + remoteJid.split("@")[0],
+                unreadCount: 0,
+                lastMessage: text,
+                lastMessageTime: Date.now(),
+                messages: [],
+                connectedPhone,
+                ownerUser: "superadmin"
+              };
+              phoneMap.set(remoteJid, chat);
+            }
+
+            const newMsg: WAChatMessage = {
+              id: msg.key.id || "msg-" + Date.now(),
+              fromMe: isFromMe,
+              sender: remoteJid,
+              senderName,
+              text,
+              timestamp: Date.now(),
+              status: "unread",
+              media
+            };
+
+            if (!chat.messages.some(existing => existing.id === newMsg.id)) {
+              chat.messages.push(newMsg);
+              chat.lastMessage = text;
+              chat.lastMessageTime = Date.now();
+              if (!isFromMe) chat.unreadCount += 1;
+            }
+
+            // Fetch user profile picture automatically on incoming message
+            if (this.socket && this.connectionState === "connected" && !chat.profilePicUrl) {
+              try {
+                const ppUrl = await this.socket.profilePictureUrl(remoteJid, "image").catch(() => null);
+                if (ppUrl) {
+                  chat.profilePicUrl = ppUrl;
+                }
+              } catch (ppErr) {}
+            }
+
+            // Save to local file & Supabase for this connected phone
+            this.saveChatsForPhone(connectedPhone, chat);
+
+            // Auto reply AI logic
+            if (!isFromMe && this.aiSettings.autoReplyEnabled) {
+              this.handleAIAutoReply(remoteJid, senderName, text);
+            }
+          }
+        } catch (msgErr) {
+          console.error("[waService] Error processing messages.upsert:", msgErr);
         }
       });
     } catch (err) {

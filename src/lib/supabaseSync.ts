@@ -553,3 +553,15 @@ export const loadKnownConnectedNumbersFromSupabase = async (): Promise<string[]>
         return [];
     }
 };
+
+export const deleteWAChatFromSupabase = async (jid: string, connectedPhone: string) => {
+    try {
+        const cleanPhone = (connectedPhone || 'default').replace(/[^a-zA-Z0-9]/g, '');
+        const cleanJid = jid;
+        const docId = `${cleanPhone}_${cleanJid}`;
+        return await withRetry(() => supabase.from('wa_chats').delete().eq('id', docId));
+    } catch (err: any) {
+        console.warn('[SupabaseSync] Error deleting chat from Supabase:', err.message);
+        return null;
+    }
+};
