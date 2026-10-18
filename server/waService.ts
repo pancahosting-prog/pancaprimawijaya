@@ -40,6 +40,7 @@ export interface WAChat {
   lastMessageTime: number;
   messages: WAChatMessage[];
   connectedPhone?: string; // Nomor terhubung pemilik sesi chat
+  ownerUser?: string; // Username akun terhubung (e.g. maria, yadi, superadmin)
 }
 
 export interface WAISettings {
@@ -347,35 +348,48 @@ class WAService {
   }
 
   /**
-   * Get chats for a specific connected number or current active session or all numbers
+   * Get chats for a specific connected number or ownerUser or all numbers
    */
-  public getChats(connectedPhone?: string): WAChat[] {
-    if (connectedPhone === "all") {
+  public getChats(connectedPhone?: string, ownerUser?: string, isSuperAdmin: boolean = false): WAChat[] {
+    let result: WAChat[] = [];
+
+    if (connectedPhone === "all" || (isSuperAdmin && (!connectedPhone || connectedPhone === "all") && (!ownerUser || ownerUser === "all"))) {
       const allChatsMap = new Map<string, WAChat>();
       this.chatsByPhone.forEach((phoneMap) => {
         phoneMap.forEach((chat) => {
-          const existing = allChatsMap.get(chat.jid);
-          if (!existing || chat.lastMessageTime > existing.lastMessageTime) {
-            allChatsMap.set(chat.jid, chat);
-          }
+          const key = chat.jid + "_" + (chat.connectedPhone || "def");
+          allChatsMap.set(key, chat);
         });
       });
-      return Array.from(allChatsMap.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
-    }
+      result = Array.from(allChatsMap.values());
+    } else {
+      const key = this.getConnectedPhoneKey(connectedPhone);
+      let map = this.chatsByPhone.get(key);
 
-    const key = this.getConnectedPhoneKey(connectedPhone);
-    let map = this.chatsByPhone.get(key);
-
-    if ((!map || map.size === 0) && key !== "default") {
-      // If requested phone has no chats yet, check default
-      const defaultMap = this.chatsByPhone.get("default");
-      if (defaultMap && defaultMap.size > 0) {
-        return Array.from(defaultMap.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+      if ((!map || map.size === 0) && key !== "default") {
+        // If requested phone has no chats yet, check default
+        const defaultMap = this.chatsByPhone.get("default");
+        if (defaultMap && defaultMap.size > 0) {
+          result = Array.from(defaultMap.values());
+        }
+      } else if (map) {
+        result = Array.from(map.values());
       }
     }
 
-    if (!map) return [];
-    return Array.from(map.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+    // Access control filtering for non-superadmin
+    if (!isSuperAdmin && ownerUser) {
+      result = result.filter(c => 
+        !c.ownerUser || 
+        c.ownerUser === ownerUser || 
+        c.connectedPhone === connectedPhone || 
+        c.connectedPhone === this.userPhone
+      );
+    } else if (isSuperAdmin && ownerUser && ownerUser !== "all") {
+      result = result.filter(c => c.ownerUser === ownerUser);
+    }
+
+    return result.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
   }
 
   /**

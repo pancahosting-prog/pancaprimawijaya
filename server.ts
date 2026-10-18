@@ -83,10 +83,14 @@ async function startServer() {
     });
   });
 
-  // Get Chats per Connected Phone Number
+  // Get Chats per Connected Phone Number or Owner User
   app.get("/api/wa/chats", (req, res) => {
     const requestedPhone = req.query.connectedPhone as string | undefined;
-    const list = waService.getChats(requestedPhone);
+    const username = req.query.username as string | undefined;
+    const role = req.query.role as string | undefined;
+    const isSuperAdmin = role === "superadmin";
+
+    const list = waService.getChats(requestedPhone, username, isSuperAdmin);
     const activeTargetPhone = requestedPhone || waService.userPhone || "default";
     res.json({ 
       success: true, 
@@ -107,11 +111,15 @@ async function startServer() {
   // Force sync chats from Supabase
   app.post("/api/wa/sync-supabase", async (req, res) => {
     const phone = req.body?.connectedPhone;
+    const username = req.body?.username;
+    const role = req.body?.role;
+    const isSuperAdmin = role === "superadmin";
+
     await waService.syncAllChatsFromSupabase(phone);
     res.json({
       success: true,
       message: "Sinkronisasi riwayat chat dengan Supabase selesai.",
-      chats: waService.getChats(phone)
+      chats: waService.getChats(phone, username, isSuperAdmin)
     });
   });
 

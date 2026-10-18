@@ -23,7 +23,13 @@ import {
   Image as ImageIcon,
   FileText,
   Download,
-  Maximize2
+  Maximize2,
+  Users,
+  UserCheck,
+  Lock,
+  ShieldAlert,
+  Eye,
+  User
 } from 'lucide-react';
 import { 
   loadWAChatsFromSupabase, 
@@ -33,6 +39,16 @@ import {
 } from '../lib/supabaseSync';
 import { SUPABASE_MIGRATION_SQL } from '../lib/supabaseMigrationSql';
 import { getApiUrl } from '../lib/apiUtils';
+
+export interface UserAccount {
+  id: string;
+  nama: string;
+  username: string;
+  password?: string;
+  whatsapp: string;
+  role: 'superadmin' | 'admin' | 'sales' | 'purchasing' | 'stocklist' | 'finance' | 'pajak' | string;
+  companyId?: string;
+}
 
 export interface WAChatMedia {
   type: 'image' | 'document' | 'video' | 'audio';
@@ -63,6 +79,8 @@ export interface WAChat {
   lastMessage: string;
   lastMessageTime: number;
   messages: WAChatMessage[];
+  connectedPhone?: string;
+  ownerUser?: string;
 }
 
 export interface WAISettings {
@@ -91,11 +109,23 @@ export interface WAISettings {
 
 interface WhatsAppViewProps {
   initialSubTab?: 'chat' | 'setting-ai' | 'perangkat';
+  currentUser?: UserAccount | null;
+  appUsers?: UserAccount[];
 }
 
-export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'chat' }) => {
+export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ 
+  initialSubTab = 'chat',
+  currentUser,
+  appUsers = []
+}) => {
   const [activeSubTab, setActiveSubTab] = useState<'chat' | 'setting-ai' | 'perangkat'>(initialSubTab);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  const isSuperAdmin = currentUser?.role === 'superadmin';
+  const activeUsername = currentUser?.username || 'user';
+
+  // Superadmin filter by specific user account
+  const [selectedUserFilter, setSelectedUserFilter] = useState<string>(isSuperAdmin ? 'all' : activeUsername);
 
   useEffect(() => {
     setActiveSubTab(initialSubTab);
@@ -214,26 +244,46 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     }
   };
 
-  // Fetch Chats filtered by Connected Phone Number
-  const fetchChats = async (targetPhone?: string) => {
+  // Fetch Chats filtered by User Account & Connected Phone Number
+  const fetchChats = async (targetPhone?: string, targetUserFilter?: string) => {
     try {
-      const activeFilter = targetPhone || selectedConnectedPhone;
-      let url = '/api/wa/chats';
-      if (activeFilter && activeFilter !== 'all' && activeFilter !== 'active') {
-        url += `?connectedPhone=${encodeURIComponent(activeFilter)}`;
+      const activePhoneFilter = targetPhone || selectedConnectedPhone;
+      const activeUserFilter = isSuperAdmin 
+        ? (targetUserFilter !== undefined ? targetUserFilter : selectedUserFilter) 
+        : activeUsername;
+
+      let url = `/api/wa/chats?username=${encodeURIComponent(activeUserFilter)}&role=${encodeURIComponent(currentUser?.role || '')}`;
+      if (activePhoneFilter && activePhoneFilter !== 'all' && activePhoneFilter !== 'active') {
+        url += `&connectedPhone=${encodeURIComponent(activePhoneFilter)}`;
       }
+
       const res = await fetch(getApiUrl(url));
+      let fetchedChats: WAChat[] = [];
+
       if (res.ok) {
         const data = await res.json();
         if (data.chats) {
-          setChats(data.chats);
-          
-          // Only auto-select on desktop if no chat is already selected
-          const isActuallyMobile = window.innerWidth < 768;
-          if (!isActuallyMobile && !selectedChatJid && data.chats.length > 0) {
-            setSelectedChatJid(data.chats[0].jid);
-          }
+          fetchedChats = data.chats;
         }
+      }
+
+      // Direct client fallback from Supabase with access control
+      const cloudChats = await loadWAChatsFromSupabase(
+        activePhoneFilter !== 'all' && activePhoneFilter !== 'active' ? activePhoneFilter : undefined,
+        activeUserFilter,
+        isSuperAdmin
+      );
+
+      if (cloudChats && cloudChats.length > 0) {
+        fetchedChats = cloudChats;
+      }
+
+      setChats(fetchedChats);
+      
+      // Auto select first chat if desktop
+      const isActuallyMobile = window.innerWidth < 768;
+      if (!isActuallyMobile && !selectedChatJid && fetchedChats.length > 0) {
+        setSelectedChatJid(fetchedChats[0].jid);
       }
     } catch (err) {
       console.error('Error fetching chats:', err);
@@ -244,15 +294,21 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const handleSyncWithSupabase = async () => {
     setIsSyncingSupabase(true);
     try {
-      const target = selectedConnectedPhone !== 'all' && selectedConnectedPhone !== 'active' 
+      const targetPhone = selectedConnectedPhone !== 'all' && selectedConnectedPhone !== 'active' 
         ? selectedConnectedPhone 
         : (connectionStatus.userPhone || undefined);
+
+      const targetUser = isSuperAdmin ? selectedUserFilter : activeUsername;
 
       // 1. Tell backend to sync from Supabase
       const srvRes = await fetch('/api/wa/sync-supabase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectedPhone: target })
+        body: JSON.stringify({ 
+          connectedPhone: targetPhone,
+          username: targetUser,
+          role: currentUser?.role 
+        })
       });
 
       if (srvRes.ok) {
@@ -263,7 +319,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       }
 
       // 2. Direct client fallback from Supabase
-      const cloudChats = await loadWAChatsFromSupabase(target);
+      const cloudChats = await loadWAChatsFromSupabase(targetPhone, targetUser, isSuperAdmin);
       if (cloudChats && cloudChats.length > 0) {
         setChats(cloudChats);
       }
@@ -303,7 +359,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [selectedConnectedPhone]);
+  }, [selectedConnectedPhone, selectedUserFilter, currentUser]);
 
   useEffect(() => {
     if (selectedChatJid) {
@@ -331,7 +387,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   };
 
   const handleLogoutWA = async () => {
-    if (!confirm('Logout WA?')) return;
+    if (!confirm('Logout WhatsApp?')) return;
     try {
       await fetch(getApiUrl('/api/wa/logout'), { method: 'POST' });
       fetchStatus();
@@ -399,10 +455,15 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
             ...c,
             lastMessage: textToSend || (mediaToSend?.type === 'image' ? '📷 [Foto]' : `📄 [${mediaToSend?.fileName || 'Dokumen'}]`),
             lastMessageTime: Date.now(),
-            messages: updatedMessages
+            messages: updatedMessages,
+            ownerUser: currentUser?.username || c.ownerUser || 'user'
           };
           // Sync to Supabase in background
-          saveWAChatToSupabase(updatedChat, selectedConnectedPhone !== 'all' ? selectedConnectedPhone : (connectionStatus.userPhone || 'default')).catch(console.warn);
+          saveWAChatToSupabase(
+            updatedChat, 
+            selectedConnectedPhone !== 'all' ? selectedConnectedPhone : (connectionStatus.userPhone || 'default'),
+            currentUser?.username || 'user'
+          ).catch(console.warn);
           return updatedChat;
         }
         return c;
@@ -416,7 +477,8 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
         body: JSON.stringify({ 
           jid: selectedChatJid, 
           text: textToSend,
-          media: mediaToSend || undefined
+          media: mediaToSend || undefined,
+          username: currentUser?.username
         })
       });
 
@@ -495,7 +557,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
             {/* Sidebar Chat List */}
             <div className={`w-full md:w-80 lg:w-96 border-r border-zinc-200 dark:border-zinc-800 flex flex-col shrink-0 bg-white dark:bg-zinc-900 ${isMobile && selectedChatJid ? 'hidden' : 'flex'}`}>
               
-              {/* List Header & Nomor Terhubung Indicator */}
+              {/* List Header & User Access Controls */}
               <div className="p-3 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -531,22 +593,70 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                   </div>
                 </div>
 
-                {/* Status Nomor Terhubung */}
+                {/* Multi-User Login & Account Session Isolation Banner */}
+                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl space-y-1 text-xs">
+                  {isSuperAdmin ? (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-black text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
+                          <ShieldAlert size={12} className="text-emerald-600" /> Superadmin View
+                        </span>
+                        <span className="text-[10px] bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 px-1.5 py-0.5 rounded font-bold">
+                          Akses Semua User
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">User Filter:</span>
+                        <select
+                          value={selectedUserFilter}
+                          onChange={(e) => {
+                            setSelectedUserFilter(e.target.value);
+                            fetchChats(undefined, e.target.value);
+                          }}
+                          className="flex-1 bg-white dark:bg-zinc-900 border border-emerald-300 dark:border-emerald-700 rounded-lg px-2 py-1 text-xs font-bold text-zinc-800 dark:text-zinc-100 outline-none"
+                        >
+                          <option value="all">🌐 Semua User / Sesi WA</option>
+                          {appUsers.map(u => (
+                            <option key={u.id || u.username} value={u.username}>
+                              👤 {u.nama} ({u.username} - {u.role})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+                          {currentUser?.nama?.charAt(0).toUpperCase() || 'U'}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-zinc-800 dark:text-zinc-100 truncate">{currentUser?.nama || 'Pengguna'}</p>
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-medium truncate">@{currentUser?.username || 'user'} • Sesi Pribadi</p>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 text-[10px] font-bold shrink-0">
+                        <Lock size={10} /> Terisolasi
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Status Nomor Terhubung & Filter Nomor */}
                 <div className="p-2 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 flex flex-col gap-1 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] uppercase font-bold text-zinc-400 flex items-center gap-1">
                       <Smartphone size={11} className="text-emerald-500" />
-                      Nomor Terhubung (Sesi):
+                      Nomor Terhubung:
                     </span>
                     <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs">
                       {connectionStatus.userPhone ? `+${connectionStatus.userPhone}` : 'Belum Tersambung'}
                     </span>
                   </div>
 
-                  {/* Selector Riwayat Nomor Terhubung (Multi-SIM / Multi-Perangkat) */}
                   {knownNumbers.length > 0 && (
                     <div className="pt-1 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center justify-between text-[11px]">
-                      <span className="text-zinc-500">Filter Riwayat:</span>
+                      <span className="text-zinc-500">Nomor SIM:</span>
                       <select
                         value={selectedConnectedPhone}
                         onChange={(e) => {
@@ -577,8 +687,9 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
               {/* Chat Item List */}
               <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60">
                 {chats.length === 0 ? (
-                  <div className="p-12 text-center text-zinc-400 text-xs italic">
-                    Belum ada percakapan.
+                  <div className="p-12 text-center text-zinc-400 text-xs italic space-y-2">
+                    <p>Belum ada percakapan untuk akun {isSuperAdmin && selectedUserFilter !== 'all' ? selectedUserFilter : currentUser?.nama}.</p>
+                    <p className="text-[10px] text-zinc-400">Pesan WhatsApp terhubung akun Anda akan tersimpan secara otomatis.</p>
                   </div>
                 ) : (
                   chats.map((c) => {
@@ -605,9 +716,14 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                               {new Date(c.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate pr-6">
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate pr-2">
                             {c.lastMessage}
                           </p>
+                          {isSuperAdmin && (
+                            <span className="inline-block mt-1 px-1.5 py-0.2 rounded bg-zinc-100 dark:bg-zinc-800 text-[9px] font-bold text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                              User: @{c.ownerUser || 'default'}
+                            </span>
+                          )}
                         </div>
                         {c.unreadCount > 0 && (
                           <span className="mt-1 w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center shrink-0">
@@ -644,7 +760,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                           {selectedChat.name}
                         </h2>
                         <span className="text-[10px] font-mono text-zinc-400 block leading-none">
-                          {selectedChat.phone}
+                          {selectedChat.phone} {selectedChat.ownerUser ? `• User: @${selectedChat.ownerUser}` : ''}
                         </span>
                       </div>
                     </div>
@@ -698,7 +814,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                                   href={m.media.data}
                                   download={m.media.fileName || 'dokumen'}
                                   className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition shrink-0 shadow-sm"
-                                  title="Unduh File"
+                                  title="Download File"
                                 >
                                   <Download size={14} />
                                 </a>
@@ -707,13 +823,10 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                           )}
 
                           {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
-                          <div className="flex items-center justify-end gap-1 mt-1">
-                            <span className={`text-[9px] font-bold ${
-                              m.fromMe ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400'
-                            }`}>
-                              {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                            {m.fromMe && <Check size={10} className="text-emerald-600 dark:text-emerald-400" />}
+
+                          <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-zinc-400 font-mono">
+                            <span>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            {m.fromMe && <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓✓</span>}
                           </div>
                         </div>
                       </div>
@@ -721,84 +834,77 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     <div ref={messagesEndRef} />
                   </div>
 
-                  {/* Attachment Preview Strip */}
+                  {/* Attachment Preview Banner */}
                   {attachedMedia && (
-                    <div className="px-4 py-2 bg-emerald-50 dark:bg-zinc-800/90 border-t border-emerald-200 dark:border-zinc-700 flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                    <div className="p-3 bg-zinc-100 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {attachedMedia.type === 'image' ? (
-                          <img src={attachedMedia.data} alt="Pratinjau" className="w-11 h-11 object-cover rounded-xl border border-emerald-300 dark:border-zinc-600 shadow-sm" />
+                          <img src={attachedMedia.data} alt="Preview" className="w-12 h-12 object-cover rounded-xl border border-zinc-300 dark:border-zinc-700 shadow-sm" />
                         ) : (
-                          <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                          <div className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm">
                             <FileText size={20} />
                           </div>
                         )}
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-zinc-800 dark:text-zinc-100 truncate">
-                            {attachedMedia.type === 'image' ? (attachedMedia.fileName || 'Foto WhatsApp') : (attachedMedia.fileName || 'Dokumen')}
-                          </p>
-                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                            {formatFileSize(attachedMedia.fileSize)} • Siap dikirim
-                          </p>
+                          <p className="text-xs font-bold truncate text-zinc-900 dark:text-zinc-100">{attachedMedia.fileName || 'Lampiran'}</p>
+                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">{formatFileSize(attachedMedia.fileSize)}</p>
                         </div>
                       </div>
                       <button
-                        type="button"
                         onClick={() => setAttachedMedia(null)}
-                        className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-600 dark:text-zinc-300 flex items-center justify-center transition"
-                        title="Hapus Lampiran"
+                        className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition cursor-pointer"
+                        title="Batal Lampiran"
                       >
-                        <X size={14} />
+                        <X size={18} />
                       </button>
                     </div>
                   )}
 
-                  {/* Chat Input Bar with File & Image Attachments */}
-                  <form onSubmit={handleSendMessage} className="p-2.5 md:p-3 bg-zinc-100 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-1.5 md:gap-2 shrink-0">
-                    {/* Hidden Native File Inputs */}
-                    <input
-                      type="file"
-                      ref={imageInputRef}
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => handleFileSelect(e, 'image')}
-                    />
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      accept="*/*"
-                      className="hidden"
-                      onChange={(e) => handleFileSelect(e, 'document')}
-                    />
+                  {/* Hidden File Inputs */}
+                  <input
+                    type="file"
+                    ref={imageInputRef}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileSelect(e, 'image')}
+                  />
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                    className="hidden"
+                    onChange={(e) => handleFileSelect(e, 'document')}
+                  />
 
-                    {/* Attachment Action Buttons */}
+                  {/* Input Form */}
+                  <form onSubmit={handleSendMessage} className="p-3 bg-zinc-100 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => imageInputRef.current?.click()}
-                      className="p-2.5 text-zinc-500 hover:text-emerald-600 dark:text-zinc-400 dark:hover:text-emerald-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl transition-colors shrink-0"
-                      title="Kirim Foto / Gambar"
+                      className="p-2.5 text-zinc-500 hover:text-emerald-600 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl transition cursor-pointer"
+                      title="Kirim Foto"
                     >
                       <ImageIcon size={20} />
                     </button>
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="p-2.5 text-zinc-500 hover:text-emerald-600 dark:text-zinc-400 dark:hover:text-emerald-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl transition-colors shrink-0"
-                      title="Kirim File Dokumen (PDF, Excel, Word, dll.)"
+                      className="p-2.5 text-zinc-500 hover:text-emerald-600 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl transition cursor-pointer"
+                      title="Kirim Dokumen / File"
                     >
                       <Paperclip size={20} />
                     </button>
-
                     <input
                       type="text"
-                      placeholder={attachedMedia ? "Tambahkan keterangan (opsional)..." : "Ketik pesan..."}
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
-                      className="flex-1 px-4 py-2.5 md:py-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-medium outline-none focus:border-emerald-600 dark:focus:border-emerald-500 transition-colors"
+                      placeholder="Ketik pesan..."
+                      className="flex-1 px-4 py-2.5 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm focus:outline-none focus:border-emerald-500 transition-colors"
                     />
                     <button
                       type="submit"
                       disabled={(!replyText.trim() && !attachedMedia) || isSending}
-                      className="p-2.5 md:p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl disabled:opacity-40 transition-all active:scale-95 shadow-sm shrink-0"
+                      className="p-2.5 md:p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl disabled:opacity-40 transition-all active:scale-95 shadow-sm shrink-0 cursor-pointer"
                       title="Kirim"
                     >
                       <Send size={18} />
@@ -806,9 +912,15 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                   </form>
                 </>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-400 bg-white dark:bg-zinc-900">
-                   <MessageSquare size={64} className="opacity-10 mb-4" />
-                   <p className="text-sm font-black text-zinc-500">Pilih obrolan untuk mulai.</p>
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-400 bg-white dark:bg-zinc-900 space-y-3">
+                   <MessageSquare size={64} className="opacity-10" />
+                   <p className="text-sm font-black text-zinc-500">Pilih obrolan untuk mulai membaca riwayat pesan.</p>
+                   <p className="text-xs text-zinc-400 max-w-sm">
+                     {isSuperAdmin 
+                       ? 'Superadmin dapat memilih user spesifik di panel kiri untuk melihat riwayat pesan per akun.'
+                       : 'Sesi percakapan WhatsApp Anda terisolasi secara aman dan tersimpan di database.'
+                     }
+                   </p>
                 </div>
               )}
             </div>
@@ -828,7 +940,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                   <input type="checkbox" checked={settings.autoReplyEnabled} onChange={(e) => setSettings({ ...settings, autoReplyEnabled: e.target.checked })} className="sr-only peer" />
                   <div className="w-11 h-6 bg-zinc-200 rounded-full peer dark:bg-zinc-800 peer-checked:bg-zinc-900 dark:peer-checked:bg-zinc-100 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
                 </label>
-                <button onClick={handleSaveSettings} disabled={isSavingSettings} className="px-6 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-xs font-bold shadow-xs">Simpan</button>
+                <button onClick={handleSaveSettings} disabled={isSavingSettings} className="px-6 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-xs font-bold shadow-xs cursor-pointer">Simpan</button>
               </div>
             </div>
             
@@ -852,15 +964,15 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                <div className="flex justify-between items-center mb-6">
                  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-400">Knowledge Base</h3>
-                 <button onClick={() => { setEditingKbItem({ id: '', productName: '', description: '', price: '', keywordsStr: '', faqList: [{ q: '', a: '' }] }); setIsKbModalOpen(true); }} className="px-4 py-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-[10px] font-black tracking-wider">+ TAMBAH PRODUK</button>
+                 <button onClick={() => { setEditingKbItem({ id: '', productName: '', description: '', price: '', keywordsStr: '', faqList: [{ q: '', a: '' }] }); setIsKbModalOpen(true); }} className="px-4 py-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-[10px] font-black tracking-wider cursor-pointer">+ TAMBAH PRODUK</button>
                </div>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  {settings.knowledgeBase.map(kb => (
                    <div key={kb.id} className="p-4 border border-zinc-100 dark:border-zinc-800 rounded-xl flex justify-between items-start group">
                       <div><h4 className="text-sm font-black">{kb.productName}</h4><p className="text-[10px] text-zinc-400 mt-1">{kb.price}</p></div>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setEditingKbItem({ id: kb.id, productName: kb.productName, description: kb.description, price: kb.price, keywordsStr: kb.keywords.join(', '), faqList: kb.faq }); setIsKbModalOpen(true); }} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"><Sliders size={14}/></button>
-                        <button onClick={() => handleDeleteKbItem(kb.id)} className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-500 rounded-md transition-colors"><Trash2 size={14}/></button>
+                        <button onClick={() => { setEditingKbItem({ id: kb.id, productName: kb.productName, description: kb.description, price: kb.price, keywordsStr: kb.keywords.join(', '), faqList: kb.faq }); setIsKbModalOpen(true); }} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors cursor-pointer"><Sliders size={14}/></button>
+                        <button onClick={() => handleDeleteKbItem(kb.id)} className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-500 rounded-md transition-colors cursor-pointer"><Trash2 size={14}/></button>
                       </div>
                    </div>
                  ))}
@@ -869,71 +981,196 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
           </div>
         )}
 
-        {/* SUB-TAB 3: PERANGKAT */}
+        {/* SUB-TAB 3: PERANGKAT & MANAJEMEN MULTI-USER */}
         {activeSubTab === 'perangkat' && (
-          <div className="h-full flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-2xl max-w-md w-full text-center space-y-6">
-              <div>
-                <h2 className="text-2xl font-black tracking-tight">WhatsApp QR</h2>
-                <p className="text-xs text-zinc-500 mt-1">Sambungkan perangkat WhatsApp Anda ke sistem.</p>
+          <div className="h-full overflow-y-auto p-4 space-y-6 max-w-5xl mx-auto">
+            
+            {/* User Session Info Header */}
+            <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-xl shadow-md">
+                  {currentUser?.nama?.charAt(0).toUpperCase() || 'U'}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-black">{currentUser?.nama || 'Pengguna'}</h2>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] uppercase border border-emerald-300 dark:border-emerald-800">
+                      {currentUser?.role || 'User'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 font-mono mt-0.5">
+                    Username: @{currentUser?.username || 'user'} • WA Kontak: +{currentUser?.whatsapp || '-'}
+                  </p>
+                </div>
               </div>
 
-              <div className="p-6 bg-zinc-50 dark:bg-zinc-950 rounded-3xl border border-zinc-100 dark:border-zinc-800">
-                {connectionStatus.connectionState === 'connected' ? (
-                  <div className="space-y-5">
-                    <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
-                      <CheckCircle2 size={36}/>
+              <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 text-xs max-w-md">
+                <p className="font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5 mb-1">
+                  <Lock size={13} className="text-emerald-600" /> Keamanan Sesi Terisolasi
+                </p>
+                <p className="text-[11px] text-zinc-500 leading-relaxed">
+                  Sesi login Anda terhubung dengan akun <strong>{currentUser?.username}</strong>. Sesuai hak akses, riwayat pesan dan koneksi perangkat disimpan di database khusus untuk akun Anda dan Superadmin.
+                </p>
+              </div>
+            </div>
+
+            {/* QR Connection Card for Active User */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-xl text-center space-y-6">
+                <div>
+                  <h3 className="text-xl font-black tracking-tight">Koneksi Perangkat @{currentUser?.username}</h3>
+                  <p className="text-xs text-zinc-500 mt-1">Sambungkan WhatsApp HP Anda khusus untuk akun {currentUser?.nama}.</p>
+                </div>
+
+                <div className="p-6 bg-zinc-50 dark:bg-zinc-950 rounded-3xl border border-zinc-100 dark:border-zinc-800">
+                  {connectionStatus.connectionState === 'connected' ? (
+                    <div className="space-y-5">
+                      <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+                        <CheckCircle2 size={36}/>
+                      </div>
+                      <div>
+                        <h4 className="font-black text-emerald-600 text-sm">PERANGKAT ANDA TERHUBUNG</h4>
+                        <p className="text-xl font-mono font-bold mt-1 text-zinc-900 dark:text-zinc-100">+{connectionStatus.userPhone}</p>
+                      </div>
+                      <button 
+                        onClick={handleLogoutWA} 
+                        className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black shadow-lg shadow-rose-600/20 transition cursor-pointer"
+                      >
+                        PUTUSKAN PERANGKAT
+                      </button>
                     </div>
-                    <div>
-                      <h3 className="font-black text-emerald-600 text-sm">PERANGKAT TERHUBUNG</h3>
-                      <p className="text-xl font-mono font-bold mt-1 text-zinc-900 dark:text-zinc-100">+{connectionStatus.userPhone}</p>
+                  ) : connectionStatus.qrCodeBase64 ? (
+                    <div className="space-y-5">
+                      <div className="p-4 bg-white rounded-2xl shadow-xl inline-block border border-zinc-100 dark:border-zinc-800">
+                        <img src={connectionStatus.qrCodeBase64} alt="QR Code Login" className="w-56 h-56" />
+                      </div>
+                      <p className="text-[10px] font-black text-zinc-400 animate-pulse tracking-widest uppercase">
+                        Scan via Perangkat Tertaut di WhatsApp HP
+                      </p>
                     </div>
+                  ) : (
                     <button 
-                      onClick={handleLogoutWA} 
-                      className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black shadow-lg shadow-rose-600/20 transition cursor-pointer"
+                      onClick={handleInitConnection} 
+                      disabled={isLoadingStatus} 
+                      className="w-full py-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-xl transition cursor-pointer"
                     >
-                      LOGOUT PERANGKAT
+                      <RefreshCw size={16} className={isLoadingStatus ? 'animate-spin' : ''}/>
+                      BUAT BARCODE LOGIN WA
                     </button>
+                  )}
+                </div>
+
+                <div className="p-3.5 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/50 rounded-2xl text-left space-y-2 text-xs">
+                  <div className="flex items-center gap-2 text-violet-800 dark:text-violet-300 font-bold">
+                    <Database size={15} />
+                    <span>Sinkronkan Riwayat Chat Supabase</span>
                   </div>
-                ) : connectionStatus.qrCodeBase64 ? (
-                  <div className="space-y-5">
-                    <div className="p-4 bg-white rounded-2xl shadow-xl inline-block border border-zinc-100 dark:border-zinc-800">
-                      <img src={connectionStatus.qrCodeBase64} alt="QR" className="w-56 h-56" />
-                    </div>
-                    <p className="text-[10px] font-black text-zinc-400 animate-pulse tracking-widest uppercase">
-                      Scan via Perangkat Tertaut di WhatsApp HP
-                    </p>
+                  <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Setiap pesan WhatsApp yang terhubung akan tersimpan otomatis ke Cloud Database Supabase pada tabel <code>wa_chats</code> dengan penanda <code>owner_user: {currentUser?.username}</code>.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsSqlModalOpen(true)}
+                    className="w-full mt-1 py-2 px-3 bg-white dark:bg-zinc-900 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-xl text-xs font-bold hover:bg-violet-100/50 dark:hover:bg-zinc-800 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Code size={13} />
+                    <span>Lihat & Salin Script SQL Supabase</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Multi-User Connected Devices Dashboard (Superadmin or User Summary) */}
+              <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col justify-between space-y-6">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-black flex items-center gap-2">
+                      <Users size={18} className="text-emerald-600" />
+                      Status Perangkat Multi-User
+                    </h3>
+                    {isSuperAdmin && (
+                      <span className="px-2.5 py-1 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-bold text-[10px] rounded-full border border-amber-300 dark:border-amber-800">
+                        Akses Superadmin
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    {isSuperAdmin 
+                      ? 'Daftar seluruh akun user terdaftar dan status sesi perangkat WhatsApp terhubung.' 
+                      : 'Hanya akun Superadmin yang dapat mengelola dan memantau status perangkat user lain.'
+                    }
+                  </p>
+                </div>
+
+                {isSuperAdmin ? (
+                  <div className="space-y-3 flex-1 overflow-y-auto max-h-[380px] pr-1">
+                    {appUsers.length === 0 ? (
+                      <div className="p-8 text-center text-zinc-400 text-xs italic">Belum ada user tambahan di sistem.</div>
+                    ) : (
+                      appUsers.map(usr => {
+                        const isThisUserActive = usr.username === currentUser?.username;
+                        const userChatCount = chats.filter(c => c.ownerUser === usr.username).length;
+
+                        return (
+                          <div 
+                            key={usr.id || usr.username}
+                            className="p-3.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex items-center justify-between gap-3 hover:border-emerald-400/50 transition"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+                                {usr.nama.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-xs font-black text-zinc-900 dark:text-zinc-100 truncate">{usr.nama}</p>
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-bold uppercase">
+                                    {usr.role}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-zinc-500 font-mono truncate">
+                                  @{usr.username} • WA: +{usr.whatsapp || '-'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedUserFilter(usr.username);
+                                  setActiveSubTab('chat');
+                                  fetchChats(undefined, usr.username);
+                                }}
+                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-bold flex items-center gap-1 transition shadow-xs cursor-pointer"
+                                title={`Lihat Riwayat Chat @${usr.username}`}
+                              >
+                                <Eye size={12} /> Chat
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 ) : (
-                  <button 
-                    onClick={handleInitConnection} 
-                    disabled={isLoadingStatus} 
-                    className="w-full py-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-xl transition cursor-pointer"
-                  >
-                    <RefreshCw size={16} className={isLoadingStatus ? 'animate-spin' : ''}/>
-                    BUAT BARCODE LOGIN
-                  </button>
+                  <div className="p-6 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 text-center space-y-3">
+                    <Lock size={32} className="mx-auto text-zinc-400" />
+                    <div>
+                      <h4 className="text-sm font-black text-zinc-800 dark:text-zinc-200">Hak Akses Terbatas</h4>
+                      <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto leading-relaxed">
+                        Anda saat ini login sebagai <strong>{currentUser?.nama} ({currentUser?.role})</strong>. Menu pemantauan perangkat user lain hanya terbuka untuk role <strong>Superadmin</strong>.
+                      </p>
+                    </div>
+                  </div>
                 )}
+
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 rounded-2xl text-[11px] text-emerald-800 dark:text-emerald-300">
+                  <p className="font-bold flex items-center gap-1">
+                    <CheckCircle2 size={13} /> Sesi WhatsApp Siap Digunakan Per User
+                  </p>
+                </div>
               </div>
 
-              {/* Info Cloud Sync per Nomor Terhubung */}
-              <div className="p-3.5 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/50 rounded-2xl text-left space-y-2 text-xs">
-                <div className="flex items-center gap-2 text-violet-800 dark:text-violet-300 font-bold">
-                  <Database size={15} />
-                  <span>Riwayat Chat Per Nomor Terhubung</span>
-                </div>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  Setiap nomor yang Anda sambungkan disimpan riwayat percakapannya secara terpisah (berdasarkan <strong>no terhubung</strong>) dan otomatis disinkronkan ke Cloud Database Supabase (tabel <code>wa_chats</code>).
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsSqlModalOpen(true)}
-                  className="w-full mt-1 py-2 px-3 bg-white dark:bg-zinc-900 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-xl text-xs font-bold hover:bg-violet-100/50 dark:hover:bg-zinc-800 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Code size={13} />
-                  <span>Lihat & Salin Script SQL Supabase</span>
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -953,8 +1190,8 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                </div>
             </div>
             <div className="flex gap-3 pt-2">
-               <button onClick={() => setIsKbModalOpen(false)} className="flex-1 py-3 text-xs font-black text-zinc-400">BATAL</button>
-               <button onClick={handleSaveKbItem} className="flex-[2] py-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-xs font-black shadow-lg shadow-zinc-900/20">SIMPAN PERUBAHAN</button>
+               <button onClick={() => setIsKbModalOpen(false)} className="flex-1 py-3 text-xs font-black text-zinc-400 cursor-pointer">BATAL</button>
+               <button onClick={handleSaveKbItem} className="flex-[2] py-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-xs font-black shadow-lg shadow-zinc-900/20 cursor-pointer">SIMPAN PERUBAHAN</button>
             </div>
           </div>
         </div>
@@ -980,7 +1217,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
             <div className="p-4 space-y-3 overflow-y-auto flex-1 text-xs">
               <p className="text-zinc-600 dark:text-zinc-300">
-                Jalankan script SQL ini di <strong>Supabase Dashboard &gt; SQL Editor &gt; New Query &gt; Run</strong> agar database Anda memiliki tabel <code>wa_chats</code> (riwayat per nomor terhubung) dan <code>app_settings</code> (pengaturan & API key lintas perangkat):
+                Jalankan script SQL ini di <strong>Supabase Dashboard &gt; SQL Editor &gt; New Query &gt; Run</strong> agar database Anda memiliki tabel <code>wa_chats</code> (dengan dukungan multi-user <code>owner_user</code>) dan <code>app_settings</code>:
               </p>
 
               <div className="relative">
@@ -1007,7 +1244,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                   <li>Buka project Supabase Anda di browser.</li>
                   <li>Buka tab <strong>SQL Editor</strong>.</li>
                   <li>Tempel (Paste) script SQL di atas dan klik <strong>Run</strong>.</li>
-                  <li>Tabel <code>wa_chats</code> dan <code>app_settings</code> akan dibuat secara otomatis dengan index dan izin akses yang sesuai.</li>
+                  <li>Tabel <code>wa_chats</code> dan <code>app_settings</code> akan diperbarui secara otomatis.</li>
                 </ol>
               </div>
             </div>
@@ -1048,33 +1285,31 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-3 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
-              <span className="text-xs font-bold text-zinc-300">Pratinjau Foto WhatsApp</span>
+              <span className="text-xs font-bold text-zinc-200">Pratinjau Foto WhatsApp</span>
               <div className="flex items-center gap-2">
                 <a
                   href={previewImageModal}
                   download="whatsapp-foto.jpg"
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow"
+                  className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                  title="Unduh Gambar"
                 >
                   <Download size={14} /> Unduh
                 </a>
                 <button
                   onClick={() => setPreviewImageModal(null)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+                  className="p-1.5 text-zinc-400 hover:text-white rounded-lg transition"
                 >
                   <X size={18} />
                 </button>
               </div>
             </div>
-            <div className="p-2 flex items-center justify-center overflow-auto max-h-[80vh]">
-              <img
-                src={previewImageModal}
-                alt="Pratinjau Besar"
-                className="max-h-[75vh] w-auto object-contain rounded-lg"
-              />
+            <div className="p-2 flex-1 flex items-center justify-center overflow-auto bg-black">
+              <img src={previewImageModal} alt="Preview Enlarge" className="max-w-full max-h-[80vh] object-contain rounded-lg" />
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 };

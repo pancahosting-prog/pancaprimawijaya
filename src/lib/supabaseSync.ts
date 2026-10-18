@@ -472,8 +472,8 @@ export const loadAppSettingFromSupabase = async (key: string) => {
     return data?.value || null;
 };
 
-// --- WhatsApp Chats Cloud Persistence (By Connected Phone Number) ---
-export const saveWAChatToSupabase = async (chat: any, connectedPhone: string) => {
+// --- WhatsApp Chats Cloud Persistence (By Connected Phone Number & Owner User) ---
+export const saveWAChatToSupabase = async (chat: any, connectedPhone: string, ownerUser?: string) => {
     const cleanPhone = (connectedPhone || 'default').replace(/[^a-zA-Z0-9]/g, '');
     const cleanJid = chat.jid || chat.id;
     const docId = `${cleanPhone}_${cleanJid}`;
@@ -481,6 +481,7 @@ export const saveWAChatToSupabase = async (chat: any, connectedPhone: string) =>
     return await withRetry(() => supabase.from('wa_chats').upsert({
         id: docId,
         connected_phone: cleanPhone,
+        owner_user: ownerUser || chat.ownerUser || '',
         jid: cleanJid,
         name: chat.name || '',
         phone: chat.phone || '',
@@ -492,13 +493,31 @@ export const saveWAChatToSupabase = async (chat: any, connectedPhone: string) =>
     }));
 };
 
-export const loadWAChatsFromSupabase = async (connectedPhone?: string) => {
+export const loadWAChatsFromSupabase = async (connectedPhone?: string, ownerUser?: string, isSuperAdmin?: boolean) => {
     try {
         let query = supabase.from('wa_chats').select('*').order('last_message_time', { ascending: false });
-        if (connectedPhone && connectedPhone !== 'all' && connectedPhone !== 'active') {
-            const cleanPhone = connectedPhone.replace(/[^a-zA-Z0-9]/g, '');
-            query = query.eq('connected_phone', cleanPhone);
+        
+        // Non-superadmin users can ONLY load chats connected to their own phone or username
+        if (!isSuperAdmin) {
+            if (ownerUser && connectedPhone && connectedPhone !== 'all' && connectedPhone !== 'active') {
+                const cleanPhone = connectedPhone.replace(/[^a-zA-Z0-9]/g, '');
+                query = query.or(`owner_user.eq.${ownerUser},connected_phone.eq.${cleanPhone}`);
+            } else if (ownerUser) {
+                query = query.eq('owner_user', ownerUser);
+            } else if (connectedPhone && connectedPhone !== 'all' && connectedPhone !== 'active') {
+                const cleanPhone = connectedPhone.replace(/[^a-zA-Z0-9]/g, '');
+                query = query.eq('connected_phone', cleanPhone);
+            }
+        } else {
+            // Superadmin can filter by specific phone or ownerUser, or view all
+            if (ownerUser && ownerUser !== 'all') {
+                query = query.eq('owner_user', ownerUser);
+            } else if (connectedPhone && connectedPhone !== 'all' && connectedPhone !== 'active') {
+                const cleanPhone = connectedPhone.replace(/[^a-zA-Z0-9]/g, '');
+                query = query.eq('connected_phone', cleanPhone);
+            }
         }
+
         const { data, error } = await withRetry(() => query);
         if (error) {
             console.warn('[SupabaseSync] Could not load wa_chats from Supabase:', error.message);
@@ -513,7 +532,8 @@ export const loadWAChatsFromSupabase = async (connectedPhone?: string) => {
             lastMessage: row.last_message || '',
             lastMessageTime: Number(row.last_message_time) || Date.now(),
             messages: Array.isArray(row.messages) ? row.messages : [],
-            connectedPhone: row.connected_phone
+            connectedPhone: row.connected_phone,
+            ownerUser: row.owner_user || ''
         }));
     } catch (err: any) {
         console.warn('[SupabaseSync] Error in loadWAChatsFromSupabase:', err.message);

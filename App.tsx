@@ -6915,6 +6915,8 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                           activeView === 'WA Setting AI' ? 'setting-ai' : 
                           activeView === 'WA Perangkat' ? 'perangkat' : 'chat'
                         } 
+                        currentUser={currentUser}
+                        appUsers={appUsers}
                       />
                   ) : activeView === 'Settings' ? (
                       <div className="max-w-4xl mx-auto space-y-6">
