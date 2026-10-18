@@ -81,6 +81,7 @@ export interface WAChat {
   messages: WAChatMessage[];
   connectedPhone?: string;
   ownerUser?: string;
+  profilePicUrl?: string;
 }
 
 export interface WAISettings {
@@ -208,61 +209,37 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Filter list of ONLY ACTUALLY CONNECTED user devices for Superadmin Dropdown
+  // Filter list of ONLY ACTUALLY CONNECTED user devices
   const connectedDevicesList = useMemo(() => {
-    const list: { key: string; label: string; phone: string; username: string; nama: string }[] = [];
-    const connectedPhonesSet = new Set<string>();
-
-    const activePhone = connectionStatus.userPhone ? connectionStatus.userPhone.replace(/[^a-zA-Z0-9]/g, '') : null;
-    if (activePhone) connectedPhonesSet.add(activePhone);
-
-    knownNumbers.forEach(kn => {
-      if (kn.phone) {
-        const clean = kn.phone.replace(/[^a-zA-Z0-9]/g, '');
-        if (clean) connectedPhonesSet.add(clean);
-      }
-    });
-
-    chats.forEach(c => {
-      if (c.connectedPhone) {
-        const clean = c.connectedPhone.replace(/[^a-zA-Z0-9]/g, '');
-        if (clean) connectedPhonesSet.add(clean);
-      }
-    });
-
-    connectedPhonesSet.forEach(phoneClean => {
-      // Match phone to registered user account
-      const matchedUser = appUsers.find(u => {
-        const uPhone = (u.whatsapp || '').replace(/[^a-zA-Z0-9]/g, '');
-        return uPhone && (uPhone === phoneClean || uPhone.endsWith(phoneClean) || phoneClean.endsWith(uPhone));
-      });
-
-      const username = matchedUser ? matchedUser.username : (phoneClean === activePhone ? (currentUser?.username || 'superadmin') : 'perangkat');
-      const nama = matchedUser ? matchedUser.nama : (username === currentUser?.username ? (currentUser?.nama || 'Superadmin') : 'Perangkat Terhubung');
-
-      list.push({
-        key: phoneClean,
-        phone: phoneClean,
-        username: username,
-        nama: nama,
-        label: `${username}: (+${phoneClean} - ${nama})`
-      });
-    });
-
-    // Fallback if no device connected yet
-    if (list.length === 0 && currentUser) {
-      const activeP = connectionStatus.userPhone || currentUser.whatsapp || '-';
-      list.push({
-        key: 'active',
-        phone: activeP,
-        username: currentUser.username,
-        nama: currentUser.nama,
-        label: `${currentUser.username}: (${connectionStatus.userPhone ? '+' + connectionStatus.userPhone : 'Belum Terhubung'})`
-      });
+    // If device is NOT connected, do NOT list any connected device
+    if (connectionStatus.connectionState !== 'connected' || !connectionStatus.userPhone) {
+      return [];
     }
 
+    const list: { key: string; label: string; phone: string; username: string; nama: string }[] = [];
+    const activePhoneClean = connectionStatus.userPhone.replace(/[^a-zA-Z0-9]/g, '');
+
+    if (!activePhoneClean) return [];
+
+    // Match active connected phone to registered user account
+    const matchedUser = appUsers.find(u => {
+      const uPhone = (u.whatsapp || '').replace(/[^a-zA-Z0-9]/g, '');
+      return uPhone && (uPhone === activePhoneClean || uPhone.endsWith(activePhoneClean) || activePhoneClean.endsWith(uPhone));
+    });
+
+    const username = matchedUser ? matchedUser.username : (currentUser?.username || 'superadmin');
+    const nama = matchedUser ? matchedUser.nama : (currentUser?.nama || 'Superadmin');
+
+    list.push({
+      key: activePhoneClean,
+      phone: activePhoneClean,
+      username: username,
+      nama: nama,
+      label: `${username}: (+${activePhoneClean} - ${nama})`
+    });
+
     return list;
-  }, [knownNumbers, chats, appUsers, connectionStatus.userPhone, currentUser]);
+  }, [connectionStatus.connectionState, connectionStatus.userPhone, appUsers, currentUser]);
 
   // Fetch WA Connection Status & Known Connected Numbers
   const fetchStatus = async () => {
@@ -297,7 +274,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
     }
   };
 
-  // Fetch Chats filtered by Connected Device or User Account
+  // Fetch Chats filtered by Connected Device Phone Number
   const fetchChats = async (targetPhone?: string) => {
     try {
       const activePhoneFilter = targetPhone || selectedConnectedPhone;
@@ -435,17 +412,27 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
   };
 
   const handleLogoutWA = async () => {
-    if (!confirm('Logout WhatsApp?')) return;
+    if (!confirm('Putuskan koneksi WhatsApp? (Riwayat chat akan tetap tersimpan aman di database)')) return;
     try {
       await fetch(getApiUrl('/api/wa/logout'), { method: 'POST' });
+      setConnectionStatus({
+        connectionState: 'disconnected',
+        qrCodeBase64: null,
+        userPhone: null,
+        userName: null,
+      });
+      setSelectedConnectedPhone('active');
+      setSyncToast('Sesi WhatsApp berhasil diputuskan.');
+      setTimeout(() => setSyncToast(null), 3000);
       fetchStatus();
+      fetchChats();
     } catch (err) {
       console.error('Error logging out WA:', err);
     }
   };
 
   const handleDisconnectDevice = async (phone: string, nama: string) => {
-    if (!confirm(`Putuskan koneksi perangkat WhatsApp milik ${nama} (+${phone})?`)) return;
+    if (!confirm(`Putuskan koneksi perangkat WhatsApp milik ${nama} (+${phone})? (Riwayat chat tetap tersimpan di database)`)) return;
     try {
       const res = await fetch(getApiUrl('/api/wa/logout'), {
         method: 'POST',
@@ -453,6 +440,13 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
         body: JSON.stringify({ phone })
       });
       if (res.ok) {
+        setConnectionStatus({
+          connectionState: 'disconnected',
+          qrCodeBase64: null,
+          userPhone: null,
+          userName: null,
+        });
+        setSelectedConnectedPhone('active');
         setSyncToast(`Koneksi perangkat +${phone} berhasil diputuskan.`);
         setTimeout(() => setSyncToast(null), 3500);
         fetchStatus();
@@ -464,7 +458,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
   };
 
   const handleDisconnectAllDevices = async () => {
-    if (!confirm('Apakah Anda yakin ingin MEMUTUSKAN SELURUH KONEKSI perangkat WhatsApp terhubung di sistem?')) return;
+    if (!confirm('Apakah Anda yakin ingin MEMUTUSKAN SELURUH KONEKSI perangkat WhatsApp terhubung di sistem? (Riwayat chat di database tetap aman)')) return;
     try {
       const res = await fetch(getApiUrl('/api/wa/logout'), {
         method: 'POST',
@@ -472,6 +466,13 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
         body: JSON.stringify({ all: true })
       });
       if (res.ok) {
+        setConnectionStatus({
+          connectionState: 'disconnected',
+          qrCodeBase64: null,
+          userPhone: null,
+          userName: null,
+        });
+        setSelectedConnectedPhone('active');
         setSyncToast('Seluruh sesi perangkat WhatsApp berhasil diputuskan.');
         setTimeout(() => setSyncToast(null), 3500);
         fetchStatus();
@@ -696,24 +697,25 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                   {/* Superadmin Dropdown for ONLY ACTUALLY CONNECTED Devices / Users */}
                   {isSuperAdmin && (
                     <div className="flex items-center gap-1.5">
-                      <select
-                        value={selectedConnectedPhone}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSelectedConnectedPhone(val);
-                          fetchChats(val);
-                        }}
-                        className="w-full bg-zinc-50 dark:bg-zinc-900 border border-emerald-300 dark:border-emerald-700/80 rounded-lg px-2.5 py-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-100 outline-none cursor-pointer focus:ring-1 focus:ring-emerald-500"
-                      >
-                        {connectedDevicesList.map(dev => (
-                          <option key={dev.key} value={dev.key}>
-                            {dev.label}
-                          </option>
-                        ))}
-                        {connectedDevicesList.length > 1 && (
-                          <option value="all">🌐 Semua Perangkat Terhubung ({connectedDevicesList.length})</option>
-                        )}
-                      </select>
+                      {connectedDevicesList.length > 0 ? (
+                        <select
+                          value={selectedConnectedPhone}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSelectedConnectedPhone(val);
+                            fetchChats(val);
+                          }}
+                          className="w-full bg-zinc-50 dark:bg-zinc-900 border border-emerald-300 dark:border-emerald-700/80 rounded-lg px-2.5 py-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-100 outline-none cursor-pointer focus:ring-1 focus:ring-emerald-500"
+                        >
+                          {connectedDevicesList.map(dev => (
+                            <option key={dev.key} value={dev.key}>
+                              {dev.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-zinc-400 italic">Belum Ada Perangkat Terhubung</span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -725,7 +727,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                 )}
               </div>
 
-              {/* Chat Item List */}
+              {/* Chat Item List with Contact Profile Pictures */}
               <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60">
                 {chats.length === 0 ? (
                   <div className="p-12 text-center text-zinc-400 text-xs italic space-y-2">
@@ -745,9 +747,17 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                             : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40 active:bg-zinc-100 dark:active:bg-zinc-800'
                         }`}
                       >
-                        <div className="w-12 h-12 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-black text-sm shrink-0 shadow-sm border border-zinc-200 dark:border-zinc-800">
-                          {c.name.charAt(0).toUpperCase()}
-                        </div>
+                        {c.profilePicUrl ? (
+                          <img 
+                            src={c.profilePicUrl} 
+                            alt={c.name} 
+                            className="w-12 h-12 rounded-full object-cover shadow-sm border border-zinc-200 dark:border-zinc-800 shrink-0" 
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-black text-sm shrink-0 shadow-sm border border-zinc-200 dark:border-zinc-800">
+                            {c.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0 py-0.5">
                           <div className="flex items-center justify-between gap-1 mb-1">
                             <h3 className="text-sm font-black truncate text-zinc-900 dark:text-zinc-100">
@@ -782,7 +792,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
             <div className={`flex-1 flex flex-col bg-[#efeae2] dark:bg-zinc-950 ${isMobile && !selectedChatJid ? 'hidden' : 'flex'}`}>
               {selectedChat ? (
                 <>
-                  {/* Chat Header */}
+                  {/* Chat Header with Profile Picture */}
                   <div className="p-3 bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0 sticky top-0 z-50">
                     <div className="flex items-center gap-3">
                       {isMobile && (
@@ -793,9 +803,17 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                           <ChevronLeft size={24} />
                         </button>
                       )}
-                      <div className="w-10 h-10 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-black text-xs shadow-sm">
-                        {selectedChat.name.charAt(0).toUpperCase()}
-                      </div>
+                      {selectedChat.profilePicUrl ? (
+                        <img 
+                          src={selectedChat.profilePicUrl} 
+                          alt={selectedChat.name} 
+                          className="w-10 h-10 rounded-full object-cover shadow-sm border border-zinc-200 dark:border-zinc-800 shrink-0" 
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-black text-xs shadow-sm shrink-0">
+                          {selectedChat.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <div className="min-w-0">
                         <h2 className="text-sm font-black text-zinc-900 dark:text-zinc-100 truncate">
                           {selectedChat.name}
@@ -1101,24 +1119,6 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                     </button>
                   )}
                 </div>
-
-                <div className="p-3.5 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/50 rounded-2xl text-left space-y-2 text-xs">
-                  <div className="flex items-center gap-2 text-violet-800 dark:text-violet-300 font-bold">
-                    <Database size={15} />
-                    <span>Sinkronkan Riwayat Chat Supabase</span>
-                  </div>
-                  <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Setiap pesan WhatsApp yang terhubung akan tersimpan otomatis ke Cloud Database Supabase pada tabel <code>wa_chats</code> dengan penanda <code>owner_user: {currentUser?.username}</code>.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setIsSqlModalOpen(true)}
-                    className="w-full mt-1 py-2 px-3 bg-white dark:bg-zinc-900 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-xl text-xs font-bold hover:bg-violet-100/50 dark:hover:bg-zinc-800 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Code size={13} />
-                    <span>Lihat & Salin Script SQL Supabase</span>
-                  </button>
-                </div>
               </div>
 
               {/* Multi-User Connected Devices Dashboard (Superadmin or User Summary) */}
@@ -1150,7 +1150,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                   </div>
                   <p className="text-xs text-zinc-500">
                     {isSuperAdmin 
-                      ? 'Daftar seluruh perangkat WhatsApp terhubung. Superadmin dapat memutus koneksi perangkat secara individual atau sekaligus.' 
+                      ? 'Daftar perangkat terhubung dari user yang sedang aktif online.' 
                       : 'Hanya akun Superadmin yang dapat memantau dan mengelola sesi perangkat user lain.'
                     }
                   </p>
@@ -1159,7 +1159,10 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                 {isSuperAdmin ? (
                   <div className="space-y-3 flex-1 overflow-y-auto max-h-[380px] pr-1">
                     {connectedDevicesList.length === 0 ? (
-                      <div className="p-8 text-center text-zinc-400 text-xs italic">Belum ada perangkat terhubung.</div>
+                      <div className="p-8 text-center text-zinc-400 text-xs italic space-y-1">
+                        <p>Belum ada perangkat yang terhubung (Online).</p>
+                        <p className="text-[10px] text-zinc-500">Perangkat yang sudah terputus tidak ditampilkan di sini.</p>
+                      </div>
                     ) : (
                       connectedDevicesList.map(dev => {
                         return (
@@ -1175,7 +1178,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                                 <div className="flex items-center gap-1.5">
                                   <p className="text-xs font-black text-zinc-900 dark:text-zinc-100 truncate">{dev.nama}</p>
                                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold uppercase border border-emerald-300 dark:border-emerald-800">
-                                    Terhubung
+                                    Online / Terhubung
                                   </span>
                                 </div>
                                 <p className="text-[10px] text-zinc-500 font-mono truncate">
@@ -1276,7 +1279,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
 
             <div className="p-4 space-y-3 overflow-y-auto flex-1 text-xs">
               <p className="text-zinc-600 dark:text-zinc-300">
-                Jalankan script SQL ini di <strong>Supabase Dashboard &gt; SQL Editor &gt; New Query &gt; Run</strong> agar database Anda memiliki tabel <code>wa_chats</code> (dengan dukungan multi-user <code>owner_user</code>) dan <code>app_settings</code>:
+                Jalankan script SQL ini di <strong>Supabase Dashboard &gt; SQL Editor &gt; New Query &gt; Run</strong> agar database Anda memiliki tabel <code>wa_chats</code> (dengan dukungan multi-user <code>owner_user</code> & <code>profile_pic_url</code>) dan <code>app_settings</code>:
               </p>
 
               <div className="relative">

@@ -41,6 +41,7 @@ export interface WAChat {
   messages: WAChatMessage[];
   connectedPhone?: string; // Nomor terhubung pemilik sesi chat
   ownerUser?: string; // Username akun terhubung (e.g. maria, yadi, superadmin)
+  profilePicUrl?: string; // URL Foto profil pengguna WhatsApp
 }
 
 export interface WAISettings {
@@ -263,6 +264,7 @@ class WAService {
           await supabaseServer.from("wa_chats").upsert({
             id: `${cleanPhone}_${cleanJid}`,
             connected_phone: cleanPhone,
+            owner_user: c.ownerUser || "",
             jid: cleanJid,
             name: c.name || "",
             phone: c.phone || "",
@@ -270,6 +272,7 @@ class WAService {
             last_message: c.lastMessage || "",
             last_message_time: c.lastMessageTime || Date.now(),
             messages: c.messages || [],
+            profile_pic_url: c.profilePicUrl || "",
             updated_at: new Date().toISOString()
           });
         }
@@ -393,23 +396,24 @@ class WAService {
   }
 
   /**
-   * Returns metadata of all known connected numbers with chat counts
+   * Returns metadata of all known connected numbers with chat counts and active status
    */
   public getKnownNumbers(): { phone: string; active: boolean; chatCount: number }[] {
-    const activeClean = this.userPhone ? this.getConnectedPhoneKey(this.userPhone) : null;
+    const isConnected = this.connectionState === "connected";
+    const activeClean = isConnected && this.userPhone ? this.getConnectedPhoneKey(this.userPhone) : null;
     const allPhones = new Set<string>(this.knownConnectedPhones);
     if (activeClean) allPhones.add(activeClean);
-    allPhones.add("default");
 
-    return Array.from(allPhones).map(phone => {
-      const map = this.chatsByPhone.get(phone);
-      const chatCount = map ? map.size : 0;
-      return {
-        phone,
-        active: Boolean(activeClean && phone === activeClean),
-        chatCount
-      };
-    });
+    return Array.from(allPhones)
+      .map(phone => {
+        const map = this.chatsByPhone.get(phone);
+        const chatCount = map ? map.size : 0;
+        return {
+          phone,
+          active: Boolean(activeClean && phone === activeClean),
+          chatCount
+        };
+      });
   }
 
   public async initBaileys() {
@@ -548,7 +552,15 @@ class WAService {
           chat.messages.push(newMsg);
           chat.lastMessage = text;
           chat.lastMessageTime = Date.now();
-          if (!isFromMe) chat.unreadCount += 1;
+          // Fetch user profile picture automatically on incoming message
+          if (this.socket && this.connectionState === "connected" && !chat.profilePicUrl) {
+            try {
+              const ppUrl = await this.socket.profilePictureUrl(remoteJid, "image").catch(() => null);
+              if (ppUrl) {
+                chat.profilePicUrl = ppUrl;
+              }
+            } catch (ppErr) {}
+          }
 
           // Save to local file & Supabase for this connected phone
           this.saveChatsForPhone(connectedPhone, chat);
@@ -736,25 +748,25 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
   }
 
   public async disconnectSession(phone?: string) {
-    if (!phone || phone === this.userPhone || phone === "active") {
-      if (this.socket) {
-        try {
-          await this.socket.logout();
-        } catch (e) {}
-        this.socket = null;
-      }
-      this.connectionState = "disconnected";
-      this.userJid = null;
-      this.userPhone = null;
-      this.userName = null;
-      this.qrCodeBase64 = null;
-
+    if (this.socket) {
       try {
-        if (fs.existsSync(SESSION_DIR)) {
-          fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-        }
+        await this.socket.logout().catch(() => {});
+        this.socket.end(undefined);
       } catch (e) {}
+      this.socket = null;
     }
+
+    this.connectionState = "disconnected";
+    this.userJid = null;
+    this.userPhone = null;
+    this.userName = null;
+    this.qrCodeBase64 = null;
+
+    try {
+      if (fs.existsSync(SESSION_DIR)) {
+        fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+      }
+    } catch (e) {}
 
     if (phone && phone !== "active") {
       const clean = this.getConnectedPhoneKey(phone);
@@ -766,10 +778,12 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
   public async disconnectAllSessions() {
     if (this.socket) {
       try {
-        await this.socket.logout();
+        await this.socket.logout().catch(() => {});
+        this.socket.end(undefined);
       } catch (e) {}
       this.socket = null;
     }
+
     this.connectionState = "disconnected";
     this.userJid = null;
     this.userPhone = null;

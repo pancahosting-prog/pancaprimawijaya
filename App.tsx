@@ -2794,7 +2794,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
     safeSetLocalStorage('mypanca_db_supp', JSON.stringify(suppliers));
     safeSetLocalStorage('mypanca_db_po', JSON.stringify(purchaseOrders));
     safeSetLocalStorage('mypanca_db_deleted', JSON.stringify(deletedItems));
-    safeSetLocalStorage('mypanca_db_user_logs', JSON.stringify(userLogs.slice(0, 100)));
+    safeSetLocalStorage('mypanca_db_user_logs', JSON.stringify(userLogs.slice(0, 30)));
     safeSetLocalStorage('mypanca_db_app_users', JSON.stringify(appUsers));
     safeSetLocalStorage('mypanca_db_employees', JSON.stringify(employees));
     safeSetLocalStorage('mypanca_db_companies', JSON.stringify(companies));

@@ -489,6 +489,7 @@ export const saveWAChatToSupabase = async (chat: any, connectedPhone: string, ow
         last_message: chat.lastMessage || '',
         last_message_time: chat.lastMessageTime || Date.now(),
         messages: chat.messages || [],
+        profile_pic_url: chat.profilePicUrl || chat.avatarUrl || '',
         updated_at: new Date().toISOString()
     }));
 };
@@ -533,7 +534,8 @@ export const loadWAChatsFromSupabase = async (connectedPhone?: string, ownerUser
             lastMessageTime: Number(row.last_message_time) || Date.now(),
             messages: Array.isArray(row.messages) ? row.messages : [],
             connectedPhone: row.connected_phone,
-            ownerUser: row.owner_user || ''
+            ownerUser: row.owner_user || '',
+            profilePicUrl: row.profile_pic_url || ''
         }));
     } catch (err: any) {
         console.warn('[SupabaseSync] Error in loadWAChatsFromSupabase:', err.message);
