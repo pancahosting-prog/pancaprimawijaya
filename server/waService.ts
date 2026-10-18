@@ -217,6 +217,11 @@ class WAService {
         const list: WAChat[] = JSON.parse(raw);
         list.forEach(c => {
           c.connectedPhone = cleanPhone;
+          const cleanInfo = this.sanitizePhoneAndName(c.phone || c.jid || c.id, c.name);
+          c.phone = cleanInfo.phone;
+          if (cleanInfo.name && cleanInfo.name !== cleanInfo.phone) {
+            c.name = cleanInfo.name;
+          }
           phoneMap!.set(c.jid || c.id, c);
         });
         if (cleanPhone !== "default") {
@@ -308,11 +313,13 @@ class WAService {
             this.chatsByPhone.set(phone, phoneMap);
           }
 
+          const cleanInfo = this.sanitizePhoneAndName(row.phone || row.jid, row.name);
+
           const chatObj: WAChat & { assignedUser?: string } = {
             id: row.jid,
             jid: row.jid,
-            name: row.name || "",
-            phone: row.phone || "",
+            name: cleanInfo.name,
+            phone: cleanInfo.phone,
             unreadCount: row.unread_count || 0,
             lastMessage: row.last_message || "",
             lastMessageTime: Number(row.last_message_time) || Date.now(),
@@ -347,6 +354,50 @@ class WAService {
 
   public saveChats() {
     this.saveChatsForPhone(this.getConnectedPhoneKey());
+  }
+
+  /**
+   * Delete a chat by JID for a specific connected number or across all phone maps
+   */
+  public async deleteChat(jid: string, connectedPhone?: string) {
+    const cleanPhone = this.getConnectedPhoneKey(connectedPhone);
+    
+    // Remove from in-memory maps
+    if (connectedPhone && connectedPhone !== "all") {
+      const phoneMap = this.chatsByPhone.get(cleanPhone);
+      if (phoneMap) {
+        phoneMap.delete(jid);
+      }
+      this.saveChatsForPhone(cleanPhone);
+    } else {
+      // Remove across all phone maps
+      this.chatsByPhone.forEach((phoneMap, phoneKey) => {
+        if (phoneMap.has(jid)) {
+          phoneMap.delete(jid);
+          this.saveChatsForPhone(phoneKey);
+        }
+      });
+    }
+
+    // Delete from Supabase Cloud Database
+    if (supabaseServer) {
+      try {
+        if (connectedPhone && connectedPhone !== "all") {
+          await supabaseServer
+            .from("wa_chats")
+            .delete()
+            .eq("connected_phone", cleanPhone)
+            .eq("jid", jid);
+        } else {
+          await supabaseServer
+            .from("wa_chats")
+            .delete()
+            .eq("jid", jid);
+        }
+      } catch (err: any) {
+        console.warn("[waService] Supabase delete error:", err.message);
+      }
+    }
   }
 
   /**
@@ -411,6 +462,70 @@ class WAService {
     });
   }
 
+  /**
+   * Clears all stored WA chat data and connected numbers from memory, files, and Supabase
+   */
+  public async clearAllData() {
+    this.chatsByPhone.clear();
+    this.knownConnectedPhones.clear();
+
+    try {
+      const files = fs.readdirSync(path.resolve("."));
+      files.forEach(f => {
+        if ((f.startsWith("wa-chats") || f.startsWith("wa-connected-numbers")) && f.endsWith(".json")) {
+          try {
+            fs.unlinkSync(path.resolve(".", f));
+          } catch (e) {}
+        }
+      });
+    } catch (err) {
+      console.error("[waService] Error clearing local JSON files:", err);
+    }
+
+    if (supabaseServer) {
+      try {
+        await supabaseServer.from("wa_chats").delete().neq("id", "none");
+      } catch (dbErr: any) {
+        console.warn("[waService] Supabase clear error:", dbErr.message);
+      }
+    }
+
+    console.log("[waService] All WhatsApp chats and connected numbers cleared.");
+  }
+
+  /**
+   * Helper to format raw JID or LID strings into clean Indonesian phone numbers (08...)
+   */
+  public sanitizePhoneAndName(jidOrPhone?: string, name?: string, altJid?: string, pushName?: string): { phone: string; name: string } {
+    let target = jidOrPhone || "";
+    if (target.endsWith("@lid") && altJid && altJid.endsWith("@s.whatsapp.net")) {
+      target = altJid;
+    }
+
+    const rawDigits = target.split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
+
+    if (rawDigits && !target.endsWith("@lid") && rawDigits.length >= 8 && rawDigits.length <= 15) {
+      let formattedPhone = rawDigits;
+      if (formattedPhone.startsWith("62")) {
+        formattedPhone = "0" + formattedPhone.slice(2);
+      } else if (!formattedPhone.startsWith("0")) {
+        formattedPhone = "0" + formattedPhone;
+      }
+
+      const displayName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net")) 
+        ? name 
+        : (pushName && !pushName.includes("@lid") ? pushName : formattedPhone);
+
+      return { phone: formattedPhone, name: displayName };
+    }
+
+    const fallbackName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net"))
+      ? name
+      : (pushName && !pushName.includes("@lid") ? pushName : "Pengguna WhatsApp");
+
+    return { phone: fallbackName, name: fallbackName };
+  }
+
   public async initBaileys() {
     if (this.connectionState === "connecting" || this.connectionState === "connected") {
       return;
@@ -435,7 +550,13 @@ class WAService {
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: "silent" }) as any,
-        browser: ["MyPanca CRM WA", "Chrome", "1.0.0"]
+        browser: ["MyPanca CRM WA", "Chrome", "1.0.0"],
+        keepAliveIntervalMs: 25000,
+        markOnlineOnConnect: true,
+        syncFullHistory: false,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        retryRequestDelayMs: 2000
       });
 
       this.socket.ev.on("creds.update", saveCreds);
@@ -451,10 +572,11 @@ class WAService {
         if (connection === "close") {
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-          this.connectionState = "disconnected";
           if (shouldReconnect) {
+            this.connectionState = "connecting";
             setTimeout(() => this.initBaileys(), 3000);
           } else {
+            this.connectionState = "disconnected";
             try {
               fs.rmSync(SESSION_DIR, { recursive: true, force: true });
             } catch (err) {}
@@ -475,7 +597,11 @@ class WAService {
           if (!rawConnectedPhone && (user as any)?.phone) {
             rawConnectedPhone = String((user as any).phone).replace(/[^0-9]/g, "");
           }
-          this.userPhone = rawConnectedPhone || (user?.id ? user.id.split(":")[0].replace(/[^0-9]/g, "") : null);
+          let cleanPhoneNum = rawConnectedPhone || (user?.id ? user.id.split(":")[0].replace(/[^0-9]/g, "") : null);
+          if (cleanPhoneNum && cleanPhoneNum.startsWith("62")) {
+            cleanPhoneNum = "0" + cleanPhoneNum.slice(2);
+          }
+          this.userPhone = cleanPhoneNum;
           this.userName = user?.name || "WhatsApp Business Bot";
 
           console.log(`[waService] WhatsApp Connected! Nomor Terhubung: ${this.userPhone}`);
@@ -495,7 +621,7 @@ class WAService {
         for (const msg of m.messages) {
           if (!msg.message) continue;
           const remoteJid = msg.key.remoteJid;
-          if (!remoteJid || remoteJid.endsWith("@g.us")) continue; // 1-on-1 chats only
+          if (!remoteJid || remoteJid.endsWith("@g.us")) continue;
 
           let text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
           let incomingMedia: WAChatMedia | undefined = undefined;
@@ -519,28 +645,8 @@ class WAService {
           if (!text && !incomingMedia) continue;
 
           // Extract real phone number when WhatsApp sends LID JID
-          const altJid = msg.key?.participant || msg.participant || msg.key?.remoteJidAlt;
-          let realPhoneJid = remoteJid;
-          if (remoteJid.endsWith("@lid") && altJid && typeof altJid === "string" && altJid.endsWith("@s.whatsapp.net")) {
-            realPhoneJid = altJid;
-          }
-
-          let rawPhoneDigits = "";
-          if (realPhoneJid.endsWith("@s.whatsapp.net")) {
-            rawPhoneDigits = realPhoneJid.split("@")[0].replace(/[^0-9]/g, "");
-          }
-
-          let formattedPhone = "";
-          if (rawPhoneDigits) {
-            formattedPhone = "+" + rawPhoneDigits;
-          } else if (!remoteJid.endsWith("@lid")) {
-            formattedPhone = "+" + remoteJid.split("@")[0].replace(/[^0-9]/g, "");
-          } else {
-            formattedPhone = msg.pushName ? `+${msg.pushName}` : `+${remoteJid.split("@")[0]}`;
-          }
-
-          const senderName = msg.pushName || (rawPhoneDigits ? "+" + rawPhoneDigits : remoteJid.split("@")[0]);
-          const isFromMe = Boolean(msg.key.fromMe);
+          const altJid = msg.key?.remoteJidAlt || msg.key?.participant || msg.participant;
+          const cleanInfo = this.sanitizePhoneAndName(remoteJid, undefined, altJid, msg.pushName);
 
           const connectedPhone = this.getConnectedPhoneKey();
           let phoneMap = this.chatsByPhone.get(connectedPhone);
@@ -550,16 +656,16 @@ class WAService {
           }
 
           let chat = phoneMap.get(remoteJid);
-          if (!chat && realPhoneJid !== remoteJid) {
-            chat = phoneMap.get(realPhoneJid);
+          if (!chat && altJid) {
+            chat = phoneMap.get(altJid);
           }
 
           if (!chat) {
             chat = {
               id: remoteJid,
               jid: remoteJid,
-              name: senderName,
-              phone: formattedPhone,
+              name: cleanInfo.name,
+              phone: cleanInfo.phone,
               unreadCount: 0,
               lastMessage: text,
               lastMessageTime: Date.now(),
@@ -568,11 +674,9 @@ class WAService {
             };
             phoneMap.set(remoteJid, chat);
           } else {
-            if (rawPhoneDigits && (chat.phone.includes("@lid") || chat.phone.length > 15)) {
-              chat.phone = "+" + rawPhoneDigits;
-            }
-            if (msg.pushName && (!chat.name || chat.name === chat.phone || chat.name.includes("@lid"))) {
-              chat.name = msg.pushName;
+            chat.phone = cleanInfo.phone;
+            if (cleanInfo.name && cleanInfo.name !== cleanInfo.phone) {
+              chat.name = cleanInfo.name;
             }
           }
 
