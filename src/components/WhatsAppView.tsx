@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   MessageSquare,
   Bot,
@@ -124,9 +124,6 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const activeUsername = currentUser?.username || 'user';
 
-  // Superadmin filter by specific user account
-  const [selectedUserFilter, setSelectedUserFilter] = useState<string>(isSuperAdmin ? 'all' : activeUsername);
-
   useEffect(() => {
     setActiveSubTab(initialSubTab);
   }, [initialSubTab]);
@@ -152,7 +149,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
 
   const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(false);
 
-  // Connected Phone Partitioning & Multi-SIM History
+  // Connected Phone Partitioning & Multi-Device Selector
   const [selectedConnectedPhone, setSelectedConnectedPhone] = useState<string>('active');
   const [knownNumbers, setKnownNumbers] = useState<{ phone: string; active: boolean; chatCount: number }[]>([]);
   const [isSyncingSupabase, setIsSyncingSupabase] = useState<boolean>(false);
@@ -211,6 +208,62 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Filter list of ONLY ACTUALLY CONNECTED user devices for Superadmin Dropdown
+  const connectedDevicesList = useMemo(() => {
+    const list: { key: string; label: string; phone: string; username: string; nama: string }[] = [];
+    const connectedPhonesSet = new Set<string>();
+
+    const activePhone = connectionStatus.userPhone ? connectionStatus.userPhone.replace(/[^a-zA-Z0-9]/g, '') : null;
+    if (activePhone) connectedPhonesSet.add(activePhone);
+
+    knownNumbers.forEach(kn => {
+      if (kn.phone) {
+        const clean = kn.phone.replace(/[^a-zA-Z0-9]/g, '');
+        if (clean) connectedPhonesSet.add(clean);
+      }
+    });
+
+    chats.forEach(c => {
+      if (c.connectedPhone) {
+        const clean = c.connectedPhone.replace(/[^a-zA-Z0-9]/g, '');
+        if (clean) connectedPhonesSet.add(clean);
+      }
+    });
+
+    connectedPhonesSet.forEach(phoneClean => {
+      // Match phone to registered user account
+      const matchedUser = appUsers.find(u => {
+        const uPhone = (u.whatsapp || '').replace(/[^a-zA-Z0-9]/g, '');
+        return uPhone && (uPhone === phoneClean || uPhone.endsWith(phoneClean) || phoneClean.endsWith(uPhone));
+      });
+
+      const username = matchedUser ? matchedUser.username : (phoneClean === activePhone ? (currentUser?.username || 'superadmin') : 'perangkat');
+      const nama = matchedUser ? matchedUser.nama : (username === currentUser?.username ? (currentUser?.nama || 'Superadmin') : 'Perangkat Terhubung');
+
+      list.push({
+        key: phoneClean,
+        phone: phoneClean,
+        username: username,
+        nama: nama,
+        label: `${username}: (+${phoneClean} - ${nama})`
+      });
+    });
+
+    // Fallback if no device connected yet
+    if (list.length === 0 && currentUser) {
+      const activeP = connectionStatus.userPhone || currentUser.whatsapp || '-';
+      list.push({
+        key: 'active',
+        phone: activeP,
+        username: currentUser.username,
+        nama: currentUser.nama,
+        label: `${currentUser.username}: (${connectionStatus.userPhone ? '+' + connectionStatus.userPhone : 'Belum Terhubung'})`
+      });
+    }
+
+    return list;
+  }, [knownNumbers, chats, appUsers, connectionStatus.userPhone, currentUser]);
+
   // Fetch WA Connection Status & Known Connected Numbers
   const fetchStatus = async () => {
     setIsLoadingStatus(true);
@@ -244,15 +297,12 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
     }
   };
 
-  // Fetch Chats filtered by User Account & Connected Phone Number
-  const fetchChats = async (targetPhone?: string, targetUserFilter?: string) => {
+  // Fetch Chats filtered by Connected Device or User Account
+  const fetchChats = async (targetPhone?: string) => {
     try {
       const activePhoneFilter = targetPhone || selectedConnectedPhone;
-      const activeUserFilter = isSuperAdmin 
-        ? (targetUserFilter !== undefined ? targetUserFilter : selectedUserFilter) 
-        : activeUsername;
 
-      let url = `/api/wa/chats?username=${encodeURIComponent(activeUserFilter)}&role=${encodeURIComponent(currentUser?.role || '')}`;
+      let url = `/api/wa/chats?username=${encodeURIComponent(activeUsername)}&role=${encodeURIComponent(currentUser?.role || '')}`;
       if (activePhoneFilter && activePhoneFilter !== 'all' && activePhoneFilter !== 'active') {
         url += `&connectedPhone=${encodeURIComponent(activePhoneFilter)}`;
       }
@@ -270,7 +320,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
       // Direct client fallback from Supabase with access control
       const cloudChats = await loadWAChatsFromSupabase(
         activePhoneFilter !== 'all' && activePhoneFilter !== 'active' ? activePhoneFilter : undefined,
-        activeUserFilter,
+        activeUsername,
         isSuperAdmin
       );
 
@@ -298,15 +348,13 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
         ? selectedConnectedPhone 
         : (connectionStatus.userPhone || undefined);
 
-      const targetUser = isSuperAdmin ? selectedUserFilter : activeUsername;
-
       // 1. Tell backend to sync from Supabase
       const srvRes = await fetch('/api/wa/sync-supabase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           connectedPhone: targetPhone,
-          username: targetUser,
+          username: activeUsername,
           role: currentUser?.role 
         })
       });
@@ -319,7 +367,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
       }
 
       // 2. Direct client fallback from Supabase
-      const cloudChats = await loadWAChatsFromSupabase(targetPhone, targetUser, isSuperAdmin);
+      const cloudChats = await loadWAChatsFromSupabase(targetPhone, activeUsername, isSuperAdmin);
       if (cloudChats && cloudChats.length > 0) {
         setChats(cloudChats);
       }
@@ -359,7 +407,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [selectedConnectedPhone, selectedUserFilter, currentUser]);
+  }, [selectedConnectedPhone, currentUser]);
 
   useEffect(() => {
     if (selectedChatJid) {
@@ -593,85 +641,40 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                   </div>
                 </div>
 
-                {/* Multi-User Login & Account Session Isolation Banner */}
-                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl space-y-1 text-xs">
-                  {isSuperAdmin ? (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase font-black text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
-                          <ShieldAlert size={12} className="text-emerald-600" /> Superadmin View
-                        </span>
-                        <span className="text-[10px] bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 px-1.5 py-0.5 rounded font-bold">
-                          Akses Semua User
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">User Filter:</span>
-                        <select
-                          value={selectedUserFilter}
-                          onChange={(e) => {
-                            setSelectedUserFilter(e.target.value);
-                            fetchChats(undefined, e.target.value);
-                          }}
-                          className="flex-1 bg-white dark:bg-zinc-900 border border-emerald-300 dark:border-emerald-700 rounded-lg px-2 py-1 text-xs font-bold text-zinc-800 dark:text-zinc-100 outline-none"
-                        >
-                          <option value="all">🌐 Semua User / Sesi WA</option>
-                          {appUsers.map(u => (
-                            <option key={u.id || u.username} value={u.username}>
-                              👤 {u.nama} ({u.username} - {u.role})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-                          {currentUser?.nama?.charAt(0).toUpperCase() || 'U'}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-black text-zinc-800 dark:text-zinc-100 truncate">{currentUser?.nama || 'Pengguna'}</p>
-                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-medium truncate">@{currentUser?.username || 'user'} • Sesi Pribadi</p>
-                        </div>
-                      </div>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 text-[10px] font-bold shrink-0">
-                        <Lock size={10} /> Terisolasi
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Status Nomor Terhubung & Filter Nomor */}
-                <div className="p-2 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 flex flex-col gap-1 text-xs">
+                {/* Container Nomor Terhubung (Dengan Dropdown Superadmin Khusus Perangkat Terhubung) */}
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-800 flex flex-col gap-1.5 text-xs shadow-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] uppercase font-bold text-zinc-400 flex items-center gap-1">
-                      <Smartphone size={11} className="text-emerald-500" />
+                      <Smartphone size={12} className="text-emerald-500" />
                       Nomor Terhubung:
                     </span>
-                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs">
-                      {connectionStatus.userPhone ? `+${connectionStatus.userPhone}` : 'Belum Tersambung'}
-                    </span>
+                    {!isSuperAdmin && (
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs">
+                        {connectionStatus.userPhone ? `+${connectionStatus.userPhone}` : 'Belum Tersambung'}
+                      </span>
+                    )}
                   </div>
 
-                  {knownNumbers.length > 0 && (
-                    <div className="pt-1 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center justify-between text-[11px]">
-                      <span className="text-zinc-500">Nomor SIM:</span>
+                  {/* Superadmin Dropdown for ONLY ACTUALLY CONNECTED Devices / Users */}
+                  {isSuperAdmin && (
+                    <div className="flex items-center gap-1.5">
                       <select
                         value={selectedConnectedPhone}
                         onChange={(e) => {
-                          setSelectedConnectedPhone(e.target.value);
-                          fetchChats(e.target.value);
+                          const val = e.target.value;
+                          setSelectedConnectedPhone(val);
+                          fetchChats(val);
                         }}
-                        className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded px-1.5 py-0.5 text-[11px] font-medium text-zinc-800 dark:text-zinc-200 outline-none max-w-[170px]"
+                        className="w-full bg-zinc-50 dark:bg-zinc-900 border border-emerald-300 dark:border-emerald-700/80 rounded-lg px-2.5 py-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-100 outline-none cursor-pointer focus:ring-1 focus:ring-emerald-500"
                       >
-                        <option value="active">Nomor Aktif Saat Ini</option>
-                        <option value="all">Semua Riwayat Nomor</option>
-                        {knownNumbers.map(n => (
-                          <option key={n.phone} value={n.phone}>
-                            +{n.phone} ({n.chatCount} chat) {n.active ? '★' : ''}
+                        {connectedDevicesList.map(dev => (
+                          <option key={dev.key} value={dev.key}>
+                            {dev.label}
                           </option>
                         ))}
+                        {connectedDevicesList.length > 1 && (
+                          <option value="all">🌐 Semua Perangkat Terhubung ({connectedDevicesList.length})</option>
+                        )}
                       </select>
                     </div>
                   )}
@@ -688,8 +691,8 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
               <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60">
                 {chats.length === 0 ? (
                   <div className="p-12 text-center text-zinc-400 text-xs italic space-y-2">
-                    <p>Belum ada percakapan untuk akun {isSuperAdmin && selectedUserFilter !== 'all' ? selectedUserFilter : currentUser?.nama}.</p>
-                    <p className="text-[10px] text-zinc-400">Pesan WhatsApp terhubung akun Anda akan tersimpan secara otomatis.</p>
+                    <p>Belum ada percakapan untuk perangkat terhubung ini.</p>
+                    <p className="text-[10px] text-zinc-400">Pesan WhatsApp terhubung akan tersimpan secara otomatis.</p>
                   </div>
                 ) : (
                   chats.map((c) => {
@@ -721,7 +724,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                           </p>
                           {isSuperAdmin && (
                             <span className="inline-block mt-1 px-1.5 py-0.2 rounded bg-zinc-100 dark:bg-zinc-800 text-[9px] font-bold text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
-                              User: @{c.ownerUser || 'default'}
+                              Akun: @{c.ownerUser || 'default'}
                             </span>
                           )}
                         </div>
@@ -917,7 +920,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                    <p className="text-sm font-black text-zinc-500">Pilih obrolan untuk mulai membaca riwayat pesan.</p>
                    <p className="text-xs text-zinc-400 max-w-sm">
                      {isSuperAdmin 
-                       ? 'Superadmin dapat memilih user spesifik di panel kiri untuk melihat riwayat pesan per akun.'
+                       ? 'Superadmin dapat memilih perangkat terhubung di dropdown atas untuk melihat percakapan.'
                        : 'Sesi percakapan WhatsApp Anda terisolasi secara aman dan tersimpan di database.'
                      }
                    </p>
@@ -1086,7 +1089,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-lg font-black flex items-center gap-2">
                       <Users size={18} className="text-emerald-600" />
-                      Status Perangkat Multi-User
+                      Status Perangkat Terhubung
                     </h3>
                     {isSuperAdmin && (
                       <span className="px-2.5 py-1 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-bold text-[10px] rounded-full border border-amber-300 dark:border-amber-800">
@@ -1096,39 +1099,36 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                   </div>
                   <p className="text-xs text-zinc-500">
                     {isSuperAdmin 
-                      ? 'Daftar seluruh akun user terdaftar dan status sesi perangkat WhatsApp terhubung.' 
-                      : 'Hanya akun Superadmin yang dapat mengelola dan memantau status perangkat user lain.'
+                      ? 'Daftar perangkat terhubung dari user yang aktif.' 
+                      : 'Hanya akun Superadmin yang dapat memantau status perangkat user lain.'
                     }
                   </p>
                 </div>
 
                 {isSuperAdmin ? (
                   <div className="space-y-3 flex-1 overflow-y-auto max-h-[380px] pr-1">
-                    {appUsers.length === 0 ? (
-                      <div className="p-8 text-center text-zinc-400 text-xs italic">Belum ada user tambahan di sistem.</div>
+                    {connectedDevicesList.length === 0 ? (
+                      <div className="p-8 text-center text-zinc-400 text-xs italic">Belum ada perangkat terhubung.</div>
                     ) : (
-                      appUsers.map(usr => {
-                        const isThisUserActive = usr.username === currentUser?.username;
-                        const userChatCount = chats.filter(c => c.ownerUser === usr.username).length;
-
+                      connectedDevicesList.map(dev => {
                         return (
                           <div 
-                            key={usr.id || usr.username}
+                            key={dev.key}
                             className="p-3.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex items-center justify-between gap-3 hover:border-emerald-400/50 transition"
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
-                                {usr.nama.charAt(0).toUpperCase()}
+                                {dev.nama.charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <p className="text-xs font-black text-zinc-900 dark:text-zinc-100 truncate">{usr.nama}</p>
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-bold uppercase">
-                                    {usr.role}
+                                  <p className="text-xs font-black text-zinc-900 dark:text-zinc-100 truncate">{dev.nama}</p>
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold uppercase border border-emerald-300 dark:border-emerald-800">
+                                    Terhubung
                                   </span>
                                 </div>
                                 <p className="text-[10px] text-zinc-500 font-mono truncate">
-                                  @{usr.username} • WA: +{usr.whatsapp || '-'}
+                                  @{dev.username} • +{dev.phone}
                                 </p>
                               </div>
                             </div>
@@ -1137,12 +1137,12 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setSelectedUserFilter(usr.username);
+                                  setSelectedConnectedPhone(dev.key);
                                   setActiveSubTab('chat');
-                                  fetchChats(undefined, usr.username);
+                                  fetchChats(dev.key);
                                 }}
                                 className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-bold flex items-center gap-1 transition shadow-xs cursor-pointer"
-                                title={`Lihat Riwayat Chat @${usr.username}`}
+                                title={`Lihat Chat Perangkat +${dev.phone}`}
                               >
                                 <Eye size={12} /> Chat
                               </button>
@@ -1166,7 +1166,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
 
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 rounded-2xl text-[11px] text-emerald-800 dark:text-emerald-300">
                   <p className="font-bold flex items-center gap-1">
-                    <CheckCircle2 size={13} /> Sesi WhatsApp Siap Digunakan Per User
+                    <CheckCircle2 size={13} /> Sesi WhatsApp Siap Digunakan
                   </p>
                 </div>
               </div>
