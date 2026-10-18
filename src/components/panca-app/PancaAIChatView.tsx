@@ -8,10 +8,11 @@ import {
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabaseService } from '../../../task/services/supabaseService';
+import { supabase } from '../../lib/supabase';
 import { Task, Project, DrivePost } from '../../../task/types';
-import { queryPancaAI, PancaAIContext } from '../../services/pancaAIService';
+import { queryPancaAI, PancaAIContext, generateSmartDynamicFallback } from '../../services/pancaAIService';
 import { SUPPORTED_GEMINI_MODELS } from '../../services/geminiKeyService';
-import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl } from '../../services/pancaProductCatalog';
+import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl, extractProductPhoto, hasDatabaseProductImage } from '../../services/pancaProductCatalog';
 
 export interface DraftData {
   type: 'customer' | 'transaction' | 'penawaran';
@@ -52,6 +53,19 @@ const TypewriterText: React.FC<{
 
     const interval = setInterval(() => {
       currLength += chunkSize;
+      // If currLength is slicing inside an unclosed markdown image tag, advance past it
+      const partial = content.slice(0, currLength);
+      const lastExcl = partial.lastIndexOf('![');
+      if (lastExcl !== -1) {
+        const afterExcl = partial.slice(lastExcl);
+        if (!afterExcl.includes(')')) {
+          const closeParen = content.indexOf(')', lastExcl);
+          if (closeParen !== -1) {
+            currLength = closeParen + 1;
+          }
+        }
+      }
+
       if (currLength >= totalLength) {
         setDisplayedText(content);
         setIsTyping(false);
@@ -76,22 +90,26 @@ const TypewriterText: React.FC<{
           h4: ({ children }) => <h4 className="text-[12px] font-bold text-slate-900 dark:text-zinc-100 my-0.5">{children}</h4>,
           img: ({ src, alt }: { src?: string; alt?: string }) => {
             let imageSrc = src;
-            const effectiveCatalog = (products && products.length > 0) ? products : DEFAULT_PANCA_PRODUCTS;
+            const combinedCatalog = [...(products || []), ...DEFAULT_PANCA_PRODUCTS];
+            let matchedProduct: any = null;
             if (src && src.startsWith('product-image:')) {
-              const prodKey = src.replace('product-image:', '').trim().toLowerCase();
-              const foundProd = effectiveCatalog.find((p: any) => {
-                const pId = (p.id || '').toLowerCase();
-                const pCode = (p.kode || '').toLowerCase();
-                const pName = (p.nama || p.name || '').toLowerCase();
-                return pId === prodKey || pCode === prodKey || pName === prodKey || pName.includes(prodKey) || prodKey.includes(pName);
+              const rawKey = src.replace('product-image:', '').trim();
+              const key = rawKey.toLowerCase();
+              matchedProduct = (products || []).find((p: any) => {
+                if (!p) return false;
+                const pId = String(p.id || '').trim().toLowerCase();
+                const pCode = String(p.kode || '').trim().toLowerCase();
+                const pName = String(p.nama || p.name || '').trim().toLowerCase();
+                return pId === key || pCode === key || pName === key || (pName && key && (pName.includes(key) || key.includes(pName)));
               });
-              if (foundProd) {
-                imageSrc = getProductImageUrl(foundProd, effectiveCatalog) || undefined;
-              }
+              imageSrc = getProductImageUrl(src, combinedCatalog) || undefined;
             }
             if (!imageSrc || imageSrc.startsWith('product-image:') || imageSrc === 'undefined' || imageSrc === 'null') {
               return null;
             }
+
+            const isDbPhoto = Boolean(matchedProduct && extractProductPhoto(matchedProduct));
+
             return (
               <div className="my-3 max-w-[280px] sm:max-w-xs rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-md bg-white dark:bg-zinc-900 group">
                 <div className="relative overflow-hidden bg-slate-50 dark:bg-zinc-950 p-2 flex items-center justify-center min-h-[160px]">
@@ -105,7 +123,13 @@ const TypewriterText: React.FC<{
                 {alt && (
                   <div className="px-3 py-2 text-[11px] font-bold text-slate-800 dark:text-zinc-200 border-t border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between">
                     <span className="truncate">{alt}</span>
-                    <span className="text-[9px] uppercase tracking-wider font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded-md">MyPanca</span>
+                    <span className={`text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded-md ${
+                      isDbPhoto 
+                        ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800' 
+                        : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60'
+                    }`}>
+                      {isDbPhoto ? 'Foto Database' : 'Katalog MyPanca'}
+                    </span>
                   </div>
                 )}
               </div>
@@ -246,6 +270,48 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isSuperAdmin = currentUser?.role?.toLowerCase() === 'superadmin';
+
+  // Live Database Products: combines props, LocalStorage, and direct Supabase database fetch
+  const [effectiveProducts, setEffectiveProducts] = useState<any[]>(() => {
+    if (products && products.length > 0) return products;
+    try {
+      const saved = localStorage.getItem('mypanca_db_prod');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  // Keep synchronized if parent products update
+  useEffect(() => {
+    if (products && products.length > 0) {
+      setEffectiveProducts(products);
+    }
+  }, [products]);
+
+  // Read latest products and photos directly from Supabase database on mount
+  useEffect(() => {
+    let isMounted = true;
+    const loadDatabaseProducts = async () => {
+      try {
+        const { data: dbProds, error } = await supabase.from('products').select('*');
+        if (!error && dbProds && dbProds.length > 0 && isMounted) {
+          setEffectiveProducts(prev => {
+            const map = new Map<string, any>();
+            (prev || []).forEach(p => map.set(p.id, p));
+            dbProds.forEach((p: any) => map.set(p.id, { ...map.get(p.id), ...p }));
+            return Array.from(map.values());
+          });
+        }
+      } catch (err) {
+        console.warn('[PancaAIChatView] Direct database product load notice:', err);
+      }
+    };
+    loadDatabaseProducts();
+    return () => { isMounted = false; };
+  }, []);
 
   // Active Session for guided multi-step form wizard (Customer, Transaksi, Penawaran)
   const [activeSession, setActiveSession] = useState<{
@@ -788,22 +854,22 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
     setIsLoading(true);
 
-    try {
-      const historyPayload = messages.map(m => ({ role: m.role, content: m.content }));
-      const contextPayload: PancaAIContext = {
-        currentUser,
-        activeCompany,
-        transactions,
-        customers,
-        products,
-        suppliers,
-        purchaseOrders,
-        employees,
-        taskAppData,
-        rolePermissions,
-        taskAppDataExt: { qaQuestions }
-      };
+    const historyPayload = messages.map(m => ({ role: m.role, content: m.content }));
+    const contextPayload: PancaAIContext = {
+      currentUser,
+      activeCompany,
+      transactions,
+      customers,
+      products: effectiveProducts,
+      suppliers,
+      purchaseOrders,
+      employees,
+      taskAppData,
+      rolePermissions,
+      taskAppDataExt: { qaQuestions }
+    };
 
+    try {
       let responseText = await queryPancaAI({
         userPrompt: query.trim(), 
         messages: historyPayload, 
@@ -812,16 +878,35 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       });
 
       // Auto-detect if user asks about a product, product photo, or if AI recommends/discusses products with images
-      const effectiveProds = (products && products.length > 0) ? products : DEFAULT_PANCA_PRODUCTS;
       const lowerQ = query.toLowerCase();
       const asksForPhoto = /foto|gambar|photo|image|lihat|tampilkan|pic|picture/i.test(lowerQ);
-      const isGeneralPhotoReq = asksForPhoto && /produk|semua|katalog|ada apa|apa saja/i.test(lowerQ);
+      const isGeneralPhotoReq = asksForPhoto && /produk|semua|katalog|ada apa|apa saja|database|sistem|stok|daftar/i.test(lowerQ);
 
+      // If user specifically requested a photo, clean up any LLM refusal disclaimer about sending photos
+      if (asksForPhoto) {
+        responseText = responseText
+          .replace(/Mohon maaf [^,\n]+, kapasitas saya sebagai asisten Panca AI dibatasi hanya untuk informasi operasional PT Panca Prima Wijaya[^.\n]*\./gi, '')
+          .replace(/Saya tidak diperkenankan[^.\n]*foto produk[^.\n]*\./gi, '')
+          .replace(/Saya tidak dapat (mengirimkan|menampilkan) foto[^.\n]*\./gi, '')
+          .replace(/tidak dapat (mengirimkan|menampilkan) foto[^.\n]*\./gi, '')
+          .replace(/tidak memiliki kemampuan (mengirimkan|menampilkan) (gambar|foto)[^.\n]*\./gi, '')
+          .replace(/tidak bisa (mengirimkan|menampilkan) (gambar|foto)[^.\n]*\./gi, '')
+          .trim();
+
+        if (responseText.startsWith('Sebagai informasi')) {
+          responseText = 'Berikut adalah foto produk dan informasi resmi yang tersedia di database MyPanca:\n\n' + responseText;
+        } else if (!responseText) {
+          responseText = 'Berikut adalah foto produk yang tersedia di database MyPanca:';
+        }
+      }
+
+      const allDbAndCatalog = [...(effectiveProducts || []), ...DEFAULT_PANCA_PRODUCTS];
       const matchedProducts: any[] = [];
-      effectiveProds.forEach(p => {
-        const pName = (p.nama || p.name || '').toLowerCase();
-        const pCode = (p.kode || p.id || '').toLowerCase();
-        const nameTokens = pName.split(/[\s-]+/).filter((t: string) => t.length >= 4);
+
+      allDbAndCatalog.forEach(p => {
+        const pName = String(p.nama || p.name || '').toLowerCase();
+        const pCode = String(p.kode || p.id || '').toLowerCase();
+        const nameTokens = pName.split(/[\s-]+/).filter((t: string) => t.length >= 3);
 
         // Does user prompt mention this product or its code/tokens?
         const queryMention = (pName && lowerQ.includes(pName)) ||
@@ -831,9 +916,9 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         // Does the AI response mention this product?
         const responseMention = (pName && responseText.toLowerCase().includes(pName)) ||
           (pCode && responseText.toLowerCase().includes(pCode)) ||
-          (nameTokens.length > 0 && nameTokens.every((token: string) => responseText.toLowerCase().includes(token)));
+          (nameTokens.length > 0 && nameTokens.some((token: string) => responseText.toLowerCase().includes(token)));
 
-        const hasImg = Boolean(getProductImageUrl(p, effectiveProds));
+        const hasImg = Boolean(getProductImageUrl(p, allDbAndCatalog));
 
         if (hasImg) {
           if (queryMention || responseMention || isGeneralPhotoReq) {
@@ -842,16 +927,61 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         }
       });
 
+      // If user specifically asked for photos, prioritize products with real photos from the database
+      if (asksForPhoto) {
+        (effectiveProducts || []).forEach(p => {
+          if (hasDatabaseProductImage(p)) {
+            const pName = String(p.nama || p.name || '').toLowerCase();
+            const pCode = String(p.kode || p.id || '').toLowerCase();
+            const tokens = pName.split(/[\s-]+/).filter((t: string) => t.length >= 3);
+            if (isGeneralPhotoReq || tokens.some(t => lowerQ.includes(t)) || (pCode && lowerQ.includes(pCode))) {
+              matchedProducts.unshift(p);
+            } else if (matchedProducts.length === 0) {
+              matchedProducts.push(p);
+            }
+          }
+        });
+
+        // Fallback to default catalog if still no products
+        if (matchedProducts.length === 0) {
+          DEFAULT_PANCA_PRODUCTS.forEach(dp => matchedProducts.push(dp));
+        }
+      }
+
       if (matchedProducts.length > 0) {
-        // Unique products, up to 3 to keep chat clean and fast
-        const uniqueProds = Array.from(new Set(matchedProducts)).slice(0, 3);
-        uniqueProds.forEach(p => {
-          const alreadyHasImg = responseText.includes(p.id) || responseText.includes(p.kode) || (p.nama && responseText.includes(`![Foto ${p.nama}]`));
-          if (!alreadyHasImg) {
-            responseText += `\n\n![Foto ${p.nama || p.name}](product-image:${p.id || p.kode})`;
+        // Sort: products with real database photos come FIRST!
+        matchedProducts.sort((a, b) => {
+          const aHasDb = hasDatabaseProductImage(a) ? 1 : 0;
+          const bHasDb = hasDatabaseProductImage(b) ? 1 : 0;
+          return bHasDb - aHasDb;
+        });
+
+        // Deduplicate by ID or code or name
+        const seen = new Set<string>();
+        const uniqueProds: any[] = [];
+        for (const p of matchedProducts) {
+          const key = p.id || p.kode || p.nama || p.name;
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueProds.push(p);
+          }
+        }
+
+        const maxPhotos = isGeneralPhotoReq ? 4 : 2;
+        uniqueProds.slice(0, maxPhotos).forEach(p => {
+          const pId = p.id || '';
+          const pKode = p.kode || '';
+          const hasImageTag = (pId && responseText.includes(`(product-image:${pId})`)) || 
+                             (pKode && responseText.includes(`(product-image:${pKode})`)) ||
+                             (p.nama && responseText.includes(`![Foto ${p.nama}]`)) ||
+                             (p.name && responseText.includes(`![Foto ${p.name}]`));
+
+          if (!hasImageTag) {
+            responseText += `\n\n![Foto ${p.nama || p.name}](product-image:${pId || pKode})`;
           }
         });
       }
+
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -865,11 +995,18 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       if (autoSpeak) speakText(responseText, assistantMessage.id);
     } catch (e) {
       console.error("Panca AI Chat Error:", e);
+      let fallbackContent = '';
+      try {
+        fallbackContent = generateSmartDynamicFallback(query.trim(), contextPayload);
+      } catch (fbErr) {
+        console.error("Fallback generator error:", fbErr);
+      }
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'Maaf, terjadi kendala saat memproses pertanyaan Anda.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        content: fallbackContent || 'Maaf, terjadi kendala saat memproses pertanyaan Anda. Silakan coba kembali.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isNew: true
       }]);
     } finally {
       setIsLoading(false);
@@ -943,7 +1080,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                     <TypewriterText 
                       content={m.content} 
                       isNew={m.isNew} 
-                      products={products}
+                      products={effectiveProducts}
                       onComplete={() => { 
                         if (m.isNew) setMessages(prev => prev.map(msg => msg.id === m.id ? { ...msg, isNew: false } : msg));
                       }} 

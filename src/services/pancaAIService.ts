@@ -132,8 +132,11 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
       : [];
 
   const allowedCustomers = canView('Contacts') ? allCustomers : [];
-  const baseProducts = (allProducts && allProducts.length > 0) ? allProducts : DEFAULT_PANCA_PRODUCTS;
-  const allowedProducts = canView('Produk') || canView('purchasing_produk') || canView('stocklist_produk') || canView('asset_produk') ? baseProducts : [];
+  // Ensure real database products are always accessible for product queries & photos
+  const compProductsFiltered = allProducts.filter(p => !p.companyId || p.companyId === currentCompId);
+  const compProducts = compProductsFiltered.length > 0 
+    ? compProductsFiltered 
+    : (allProducts.length > 0 ? allProducts : DEFAULT_PANCA_PRODUCTS);
   const allowedSuppliers = canView('Suppliers') || canView('purchasing_suppliers') || canView('stocklist_suppliers') ? allSuppliers : [];
   const allowedPOs = canView('Purchase Orders') || canView('purchasing_po') || canView('stocklist_po') ? allPOs : [];
   const allowedEmployees = canView('Employees') ? allEmployees : [];
@@ -141,8 +144,6 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
   // Filter by company where applicable
   const compTransactions = allowedTransactions.filter(t => !t.companyId || t.companyId === currentCompId);
   const compCustomers = allowedCustomers.filter(c => !c.companyId || c.companyId === currentCompId);
-  const compProductsFiltered = allowedProducts.filter(p => !p.companyId || p.companyId === currentCompId);
-  const compProducts = compProductsFiltered.length > 0 ? compProductsFiltered : DEFAULT_PANCA_PRODUCTS;
 
   // Sales & Trade Analysis
   let totalOmzetReal = 0;
@@ -706,11 +707,15 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
 
 1. PEMBATASAN RUANG LINGKUP (MUTLAK & KRITIKAL):
    - Anda adalah asisten BISNIS EKSKLUSIF hanya untuk PT. Panca Prima Wijaya.
-   - ANDA DILARANG KERAS MEMBERIKAN INFORMASI ATAU MENJAWAB PERTANYAAN APAPUN YANG TIDAK BERSUMBER DARI DATA SISTEM, KNOWLEDGE BASE, ATAU WEBSITE PERUSAHAAN YANG DILAMPIRKAN.
-   - Jika pengguna bertanya tentang: Pengetahuan umum, tips hidup, resep masakan, berita dunia, hiburan, fakta sejarah umum, bantuan koding umum, atau APA PUN yang tidak ada di lampiran data bisnis di bawah, Anda WAJIB MENOLAK secara halus namun tegas.
-   - Jawaban Penolakan Standar:
+   - PENGECUALIAN RESMI (FOTO & KATALOG PRODUK):
+     PERMINTAAN FOTO PRODUK DAN INFORMASI PRODUK ADALAH FITUR UTAMA SISTEM MYPANCA DAN WAJIB DILAYANI PENUH!
+     DILARANG KERAS MENOLAK PERMINTAAN FOTO PRODUK!
+     DILARANG KERAS MENYEBUTKAN "tidak diperkenankan menampilkan atau mengirimkan foto produk"!
+     Sistem MyPanca memiliki penampil foto produk otomatis. Saat pengguna meminta foto produk (misal: "minta foto produk fumiphos", "foto silogard", "tampilkan gambar"), Anda WAJIB memberikan fotonya menggunakan tag Markdown:
+     ![Foto Nama Produk](product-image:KODE_ATAU_ID_PRODUK)
+   - ANDA DILARANG KERAS MEMBERIKAN INFORMASI ATAU MENJAWAB PERTANYAAN NON-BISNIS yang tidak bersumber dari data sistem (misal: resep masakan, berita dunia, politik, hiburan, kode pemrograman umum).
+   - Jawaban Penolakan Standar HANYA UNTUK TOPIK NON-BISNIS:
      "Mohon maaf **${userName}**, kapasitas saya sebagai asisten Panca AI dibatasi hanya untuk informasi operasional PT Panca Prima Wijaya (CRM, Transaksi, Stok) dan Knowledge Base teknis perusahaan. Saya tidak diperkenankan menjawab pertanyaan di luar lingkup data bisnis tersebut. Silakan tanyakan hal yang berkaitan dengan MyPanca."
-   - JANGAN PERNAH berasumsi atau menggunakan "Internal Knowledge" model dasar Anda untuk hal-hal umum. Jika tidak ada di teks lampiran, maka Anda tidak tahu.
 
 2. NADA BICARA & FORMAT RESPON:
    - Bersikaplah sopan, profesional, membantu, dan lugas.

@@ -401,6 +401,97 @@ export const DEFAULT_PANCA_PRODUCTS: PancaProduct[] = [
   }
 ];
 
+// Robust helper to extract real image from database product object
+export const extractProductPhoto = (obj: any): string | null => {
+  if (!obj || typeof obj !== 'object') return null;
+
+  // 1. Array of images (standard CRM schema)
+  if (Array.isArray(obj.images) && obj.images.length > 0) {
+    for (const img of obj.images) {
+      if (typeof img === 'string' && img.trim().length > 5) {
+        return img.trim();
+      }
+      if (img && typeof img === 'object') {
+        const url = img.url || img.src || img.data || img.image;
+        if (typeof url === 'string' && url.length > 5) return url.trim();
+      }
+    }
+  }
+
+  // 2. Images stored as string in Postgres TEXT[] or JSON string or single URL
+  if (typeof obj.images === 'string' && obj.images.trim().length > 5) {
+    const raw = obj.images.trim();
+    // JSON array string: ["https://..."] or ["data:image..."]
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+          return parsed[0].trim();
+        }
+      } catch {}
+    }
+    // Postgres array format: {"https://...", "https://..."}
+    if (raw.startsWith('{') && raw.endsWith('}')) {
+      const match = raw.match(/"([^"]+)"/);
+      if (match && match[1]) return match[1].trim();
+      // Or unquoted items
+      const items = raw.slice(1, -1).split(',');
+      if (items[0] && items[0].trim().length > 5) return items[0].trim();
+    }
+    // Direct URL or Data URI stored in images field
+    if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:image/') || raw.startsWith('/')) {
+      return raw;
+    }
+  }
+
+  // 3. Common alternative single photo column names
+  const directFields = [
+    obj.image,
+    obj.foto,
+    obj.gambar,
+    obj.imageUrl,
+    obj.image_url,
+    obj.photo,
+    obj.picture,
+    obj.foto_produk,
+    obj.foto_url,
+    obj.gambar_url,
+    obj.url_foto,
+    obj.thumbnail
+  ];
+
+  for (const field of directFields) {
+    if (typeof field === 'string' && field.trim().length > 5) {
+      const trimmed = field.trim();
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed) && parsed[0]) return String(parsed[0]).trim();
+        } catch {}
+      }
+      return trimmed;
+    }
+    if (Array.isArray(field) && field.length > 0 && typeof field[0] === 'string' && field[0].length > 5) {
+      return field[0].trim();
+    }
+  }
+
+  // 4. Check in product lots
+  if (Array.isArray(obj.lots) && obj.lots.length > 0) {
+    for (const lot of obj.lots) {
+      const lotPhoto = extractProductPhoto(lot);
+      if (lotPhoto) return lotPhoto;
+    }
+  }
+
+  return null;
+};
+
+// Check if a product has a real custom photo from database
+export const hasDatabaseProductImage = (prod: any): boolean => {
+  return Boolean(extractProductPhoto(prod));
+};
+
 // Helper to find a product image or fallback to default catalog image if matching
 export const getProductImageUrl = (
   prod: any,
@@ -408,34 +499,91 @@ export const getProductImageUrl = (
 ): string | null => {
   if (!prod) return null;
 
-  // 1. Check direct image properties on the object
-  if (Array.isArray(prod.images) && prod.images.length > 0 && typeof prod.images[0] === 'string' && prod.images[0].length > 5) {
-    return prod.images[0];
-  }
-  const direct = prod.image || prod.foto || prod.gambar || prod.imageUrl;
-  if (typeof direct === 'string' && direct.length > 5) {
-    return direct;
+  // 1. If prod is a string (ID, SKU code, or product name)
+  if (typeof prod === 'string') {
+    const rawKey = prod.replace('product-image:', '').trim();
+    const key = rawKey.toLowerCase();
+    
+    // First priority: search in real database products (allProducts)
+    const foundInDb = allProducts.find((p: any) => {
+      if (!p) return false;
+      const pId = String(p.id || '').trim().toLowerCase();
+      const pCode = String(p.kode || '').trim().toLowerCase();
+      const pName = String(p.nama || p.name || '').trim().toLowerCase();
+      
+      if (pId === key || pCode === key || pName === key) return true;
+      if (rawKey === p.id || rawKey === p.kode) return true;
+      if (pName && key && (pName.includes(key) || key.includes(pName))) return true;
+      
+      // Token matching for multi-word search
+      const tokens = key.split(/[\s-]+/).filter(t => t.length >= 3);
+      if (tokens.length > 0 && tokens.every(tok => pName.includes(tok) || pCode.includes(tok))) {
+        return true;
+      }
+      return false;
+    });
+
+    if (foundInDb) {
+      const direct = extractProductPhoto(foundInDb);
+      if (direct) return direct;
+    }
+
+    // Second priority: check default catalog if matching
+    const defMatch = DEFAULT_PANCA_PRODUCTS.find(dp => {
+      const dpName = dp.nama.toLowerCase();
+      const dpCode = dp.kode.toLowerCase();
+      return dpName === key || dpCode === key || dpName.includes(key) || key.includes(dpName) ||
+        (key.includes('fumi') && dpName.includes('fumi')) || 
+        (key.includes('silo') && dpName.includes('silo')) || 
+        (key.includes('sani') && dpName.includes('sani')) || 
+        (key.includes('k-obiol') && dpName.includes('k-obiol')) ||
+        (key.includes('moisture') && dpName.includes('moisture')) ||
+        (key.includes('seismic') && dpName.includes('seismic'));
+    });
+
+    if (defMatch && defMatch.images && defMatch.images.length > 0) {
+      return defMatch.images[0];
+    }
+
+    // If database product found but has no image and no default catalog match,
+    // check if any lot has image
+    if (foundInDb) {
+      const lotPhoto = extractProductPhoto(foundInDb);
+      if (lotPhoto) return lotPhoto;
+    }
+
+    return null;
   }
 
-  // 2. Check in allProducts if by ID or code
-  const found = allProducts.find(p => p.id === prod.id || p.kode === prod.kode);
-  if (found) {
-    if (Array.isArray(found.images) && found.images.length > 0) return found.images[0];
-    const fDirect = found.image || found.foto || found.gambar || found.imageUrl;
-    if (fDirect) return fDirect;
+  // 2. If prod is an object, directly extract real image first
+  const realImg = extractProductPhoto(prod);
+  if (realImg) return realImg;
+
+  // 3. Check in allProducts if exists by ID or code
+  const found = allProducts.find(p => (p.id && p.id === prod.id) || (p.kode && p.kode === prod.kode));
+  if (found && found !== prod) {
+    const fImg = extractProductPhoto(found);
+    if (fImg) return fImg;
   }
 
-  // 3. Fallback to default catalog matching by name or code
-  const name = (prod.nama || prod.name || '').toLowerCase();
-  const code = (prod.kode || prod.id || '').toLowerCase();
+  // 4. Fallback to default catalog matching by name or code
+  const name = String(prod.nama || prod.name || '').toLowerCase();
+  const code = String(prod.kode || prod.id || '').toLowerCase();
 
   const defMatch = DEFAULT_PANCA_PRODUCTS.find(dp => {
     const dpName = dp.nama.toLowerCase();
     const dpCode = dp.kode.toLowerCase();
-    return dpName.includes(name) || name.includes(dpName) || dpCode === code || name.includes('fumi') && dpName.includes('fumi') || name.includes('silo') && dpName.includes('silo') || name.includes('sani') && dpName.includes('sani') || name.includes('k-obiol') && dpName.includes('k-obiol') || name.includes('moisture') && dpName.includes('moisture') || name.includes('gempa') && dpName.includes('seismic') || name.includes('seismic') && dpName.includes('seismic');
+    return dpName === name || dpCode === code || dpName.includes(name) || name.includes(dpName) || 
+      (name.includes('fumi') && dpName.includes('fumi')) || 
+      (name.includes('silo') && dpName.includes('silo')) || 
+      (name.includes('sani') && dpName.includes('sani')) || 
+      (name.includes('k-obiol') && dpName.includes('k-obiol')) || 
+      (name.includes('moisture') && dpName.includes('moisture')) || 
+      (name.includes('gempa') && dpName.includes('seismic')) || 
+      (name.includes('seismic') && dpName.includes('seismic'));
   });
 
-  if (defMatch && defMatch.images.length > 0) {
+  if (defMatch && defMatch.images && defMatch.images.length > 0) {
     return defMatch.images[0];
   }
 
