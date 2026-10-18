@@ -11,6 +11,7 @@ import { supabaseService } from '../../../task/services/supabaseService';
 import { Task, Project, DrivePost } from '../../../task/types';
 import { queryPancaAI, PancaAIContext } from '../../services/pancaAIService';
 import { SUPPORTED_GEMINI_MODELS } from '../../services/geminiKeyService';
+import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl } from '../../services/pancaProductCatalog';
 
 export interface DraftData {
   type: 'customer' | 'transaction' | 'penawaran';
@@ -30,8 +31,9 @@ interface Message {
 const TypewriterText: React.FC<{
   content: string;
   isNew?: boolean;
+  products?: any[];
   onComplete?: () => void;
-}> = ({ content, isNew = false, onComplete }) => {
+}> = ({ content, isNew = false, products = [], onComplete }) => {
   const [displayedText, setDisplayedText] = useState(isNew ? '' : content);
   const [isTyping, setIsTyping] = useState(isNew);
 
@@ -64,19 +66,60 @@ const TypewriterText: React.FC<{
   }, [content, isNew]);
 
   return (
-    <div className="relative overflow-x-auto text-[14px] leading-relaxed">
+    <div className="relative overflow-x-auto text-[12px] leading-relaxed">
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{
+          h1: ({ children }) => <h1 className="text-[13px] font-black text-slate-900 dark:text-zinc-100 my-1">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-[13px] font-bold text-slate-900 dark:text-zinc-100 my-1">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-[12px] font-bold text-slate-900 dark:text-zinc-100 my-1">{children}</h3>,
+          h4: ({ children }) => <h4 className="text-[12px] font-bold text-slate-900 dark:text-zinc-100 my-0.5">{children}</h4>,
+          img: ({ src, alt }: { src?: string; alt?: string }) => {
+            let imageSrc = src;
+            const effectiveCatalog = (products && products.length > 0) ? products : DEFAULT_PANCA_PRODUCTS;
+            if (src && src.startsWith('product-image:')) {
+              const prodKey = src.replace('product-image:', '').trim().toLowerCase();
+              const foundProd = effectiveCatalog.find((p: any) => {
+                const pId = (p.id || '').toLowerCase();
+                const pCode = (p.kode || '').toLowerCase();
+                const pName = (p.nama || p.name || '').toLowerCase();
+                return pId === prodKey || pCode === prodKey || pName === prodKey || pName.includes(prodKey) || prodKey.includes(pName);
+              });
+              if (foundProd) {
+                imageSrc = getProductImageUrl(foundProd, effectiveCatalog) || undefined;
+              }
+            }
+            if (!imageSrc || imageSrc.startsWith('product-image:') || imageSrc === 'undefined' || imageSrc === 'null') {
+              return null;
+            }
+            return (
+              <div className="my-3 max-w-[280px] sm:max-w-xs rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-md bg-white dark:bg-zinc-900 group">
+                <div className="relative overflow-hidden bg-slate-50 dark:bg-zinc-950 p-2 flex items-center justify-center min-h-[160px]">
+                  <img 
+                    src={imageSrc} 
+                    alt={alt || 'Foto Produk'} 
+                    className="w-full max-h-56 object-contain rounded-xl transition-transform duration-300 group-hover:scale-105"
+                    loading="lazy" 
+                  />
+                </div>
+                {alt && (
+                  <div className="px-3 py-2 text-[11px] font-bold text-slate-800 dark:text-zinc-200 border-t border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between">
+                    <span className="truncate">{alt}</span>
+                    <span className="text-[9px] uppercase tracking-wider font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded-md">MyPanca</span>
+                  </div>
+                )}
+              </div>
+            );
+          },
           table: ({ children }) => (
             <div className="my-2.5 overflow-x-auto rounded-xl bg-slate-100/70 dark:bg-zinc-800/50 p-1 border border-slate-200/80 dark:border-zinc-700/60 shadow-2xs">
-              <table className="min-w-full text-[12px] text-left border-collapse">
+              <table className="min-w-full text-[11px] text-left border-collapse">
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-slate-200/60 dark:bg-zinc-800/80 text-slate-900 dark:text-zinc-100 font-extrabold text-[12px] border-b border-slate-200/80 dark:border-zinc-700/60">
+            <thead className="bg-slate-200/60 dark:bg-zinc-800/80 text-slate-900 dark:text-zinc-100 font-extrabold text-[11px] border-b border-slate-200/80 dark:border-zinc-700/60">
               {children}
             </thead>
           ),
@@ -91,31 +134,32 @@ const TypewriterText: React.FC<{
             </tr>
           ),
           th: ({ children }) => (
-            <th className="px-3 py-2 font-bold text-slate-800 dark:text-zinc-200 whitespace-nowrap">
+            <th className="px-2.5 py-1.5 font-bold text-slate-800 dark:text-zinc-200 whitespace-nowrap">
               {children}
             </th>
           ),
           td: ({ children }) => (
-            <td className="px-2.5 py-1.5 text-slate-700 dark:text-zinc-300 align-top whitespace-nowrap">
+            <td className="px-2 py-1 text-slate-700 dark:text-zinc-300 align-top whitespace-nowrap">
               {children}
             </td>
           ),
-          ul: ({ children }) => <ul className="list-disc list-inside my-2 space-y-1 text-[14px]">{children}</ul>,
-          ol: ({ children }) => <ol className="list-decimal list-inside my-2 space-y-1 text-[14px]">{children}</ol>,
-          li: ({ children }) => <li className="leading-relaxed text-[14px]">{children}</li>,
-          p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed text-[14px]">{children}</p>,
+          ul: ({ children }) => <ul className="list-disc list-inside my-1.5 space-y-1 text-[12px]">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal list-inside my-1.5 space-y-1 text-[12px]">{children}</ol>,
+          li: ({ children }) => <li className="leading-relaxed text-[12px]">{children}</li>,
+          p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed text-[12px]">{children}</p>,
           strong: ({ children }) => <strong className="font-extrabold text-slate-900 dark:text-zinc-100">{children}</strong>,
           code: ({ children }) => (
-            <code className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-slate-400 font-mono text-[12px]">
+            <code className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-slate-400 font-mono text-[11px]">
               {children}
             </code>
           )
+
         }}
       >
         {displayedText}
       </Markdown>
       {isTyping && (
-        <span className="inline-block w-2 h-4 ml-1 bg-slate-900 animate-pulse rounded-xs align-middle" />
+        <span className="inline-block w-2 h-3.5 ml-1 bg-slate-900 animate-pulse rounded-xs align-middle" />
       )}
     </div>
   );
@@ -491,6 +535,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const cleanMarkdownForSpeech = (text: string): string => {
     return text
       .replace(/###?\s+/g, '')
+      .replace(/!\[(.*?)\]\(.*?\)/g, '') // remove markdown images
       .replace(/\*\*(.*?)\*\*/g, '$1')
       .replace(/\*(.*?)\*/g, '$1')
       .replace(/\|.*\|/g, '') // remove markdown table lines
@@ -759,12 +804,54 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         taskAppDataExt: { qaQuestions }
       };
 
-      const responseText = await queryPancaAI({
+      let responseText = await queryPancaAI({
         userPrompt: query.trim(), 
         messages: historyPayload, 
         ctx: contextPayload,
         preferredModel: selectedModel
       });
+
+      // Auto-detect if user asks about a product, product photo, or if AI recommends/discusses products with images
+      const effectiveProds = (products && products.length > 0) ? products : DEFAULT_PANCA_PRODUCTS;
+      const lowerQ = query.toLowerCase();
+      const asksForPhoto = /foto|gambar|photo|image|lihat|tampilkan|pic|picture/i.test(lowerQ);
+      const isGeneralPhotoReq = asksForPhoto && /produk|semua|katalog|ada apa|apa saja/i.test(lowerQ);
+
+      const matchedProducts: any[] = [];
+      effectiveProds.forEach(p => {
+        const pName = (p.nama || p.name || '').toLowerCase();
+        const pCode = (p.kode || p.id || '').toLowerCase();
+        const nameTokens = pName.split(/[\s-]+/).filter((t: string) => t.length >= 4);
+
+        // Does user prompt mention this product or its code/tokens?
+        const queryMention = (pName && lowerQ.includes(pName)) ||
+          (pCode && lowerQ.includes(pCode)) ||
+          nameTokens.some((token: string) => lowerQ.includes(token));
+
+        // Does the AI response mention this product?
+        const responseMention = (pName && responseText.toLowerCase().includes(pName)) ||
+          (pCode && responseText.toLowerCase().includes(pCode)) ||
+          (nameTokens.length > 0 && nameTokens.every((token: string) => responseText.toLowerCase().includes(token)));
+
+        const hasImg = Boolean(getProductImageUrl(p, effectiveProds));
+
+        if (hasImg) {
+          if (queryMention || responseMention || isGeneralPhotoReq) {
+            matchedProducts.push(p);
+          }
+        }
+      });
+
+      if (matchedProducts.length > 0) {
+        // Unique products, up to 3 to keep chat clean and fast
+        const uniqueProds = Array.from(new Set(matchedProducts)).slice(0, 3);
+        uniqueProds.forEach(p => {
+          const alreadyHasImg = responseText.includes(p.id) || responseText.includes(p.kode) || (p.nama && responseText.includes(`![Foto ${p.nama}]`));
+          if (!alreadyHasImg) {
+            responseText += `\n\n![Foto ${p.nama || p.name}](product-image:${p.id || p.kode})`;
+          }
+        });
+      }
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -848,14 +935,15 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
             return (
               <div key={m.id} className={isUser ? "max-w-[85%] ml-auto text-right" : "w-full text-left py-1"}>
                 {isUser ? (
-                  <div className="inline-block p-3 rounded-2xl rounded-tr-none bg-slate-900 text-white font-medium text-left shadow-2xs text-[14px] leading-relaxed">
+                  <div className="inline-block p-3 rounded-2xl rounded-tr-none bg-slate-900 text-white font-medium text-left shadow-2xs text-[12px] leading-relaxed">
                     <p className="whitespace-pre-wrap">{m.content}</p>
                   </div>
                 ) : (
-                  <div className="w-full text-left text-slate-800 dark:text-zinc-100 leading-relaxed text-[14px]">
+                  <div className="w-full text-left text-slate-800 dark:text-zinc-100 leading-relaxed text-[12px]">
                     <TypewriterText 
                       content={m.content} 
                       isNew={m.isNew} 
+                      products={products}
                       onComplete={() => { 
                         if (m.isNew) setMessages(prev => prev.map(msg => msg.id === m.id ? { ...msg, isNew: false } : msg));
                       }} 

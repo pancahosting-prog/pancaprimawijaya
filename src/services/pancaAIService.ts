@@ -2,6 +2,7 @@
 // Powered by Google Gemini with Multi-Key Auto-Rolling
 import { callGeminiWithKeyRotation } from './geminiKeyService';
 import { generateWebKnowledgeDigest } from './webKnowledgeService';
+import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl } from './pancaProductCatalog';
 
 export interface PancaAIContext {
   currentUser: {
@@ -131,7 +132,8 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
       : [];
 
   const allowedCustomers = canView('Contacts') ? allCustomers : [];
-  const allowedProducts = canView('Produk') || canView('purchasing_produk') || canView('stocklist_produk') || canView('asset_produk') ? allProducts : [];
+  const baseProducts = (allProducts && allProducts.length > 0) ? allProducts : DEFAULT_PANCA_PRODUCTS;
+  const allowedProducts = canView('Produk') || canView('purchasing_produk') || canView('stocklist_produk') || canView('asset_produk') ? baseProducts : [];
   const allowedSuppliers = canView('Suppliers') || canView('purchasing_suppliers') || canView('stocklist_suppliers') ? allSuppliers : [];
   const allowedPOs = canView('Purchase Orders') || canView('purchasing_po') || canView('stocklist_po') ? allPOs : [];
   const allowedEmployees = canView('Employees') ? allEmployees : [];
@@ -139,7 +141,8 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
   // Filter by company where applicable
   const compTransactions = allowedTransactions.filter(t => !t.companyId || t.companyId === currentCompId);
   const compCustomers = allowedCustomers.filter(c => !c.companyId || c.companyId === currentCompId);
-  const compProducts = allowedProducts.filter(p => !p.companyId || p.companyId === currentCompId);
+  const compProductsFiltered = allowedProducts.filter(p => !p.companyId || p.companyId === currentCompId);
+  const compProducts = compProductsFiltered.length > 0 ? compProductsFiltered : DEFAULT_PANCA_PRODUCTS;
 
   // Sales & Trade Analysis
   let totalOmzetReal = 0;
@@ -375,7 +378,9 @@ ${agg.compProducts.length > 0 ? agg.compProducts.map(p => {
   const dim = (p.panjang || p.lebar || p.tinggi) ? `${p.panjang || 0} x ${p.lebar || 0} x ${p.tinggi || 0} cm` : (p.dimensi || 'Belum diisi');
   const weight = p.berat ? `${p.berat} kg` : 'Belum diisi';
   const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
-  return `  - SKU [${p.kode || p.id}] ${p.nama || p.name} (SISA STOK AKURAT: ${stockVal} ${p.satuan || p.unit || 'unit'}) | Harga Jual: Rp ${price.toLocaleString('id-ID')}
+  const hasImgUrl = Boolean(getProductImageUrl(p, agg.compProducts));
+  const imgTag = hasImgUrl ? `![Foto ${p.nama || p.name}](product-image:${p.id || p.kode})` : 'Foto belum ada di sistem';
+  return `  - SKU [${p.kode || p.id}] ${p.nama || p.name} (SISA STOK AKURAT: ${stockVal} ${p.satuan || p.unit || 'unit'}) | Harga Jual: Rp ${price.toLocaleString('id-ID')} | Foto/Gambar: ${imgTag}
     * Fungsi: ${mainFunc} | Aplikasi: ${mainApp} | Dimensi: ${dim} | Berat: ${weight} | Spesifikasi: ${specStr}`;
 }).join('\n') : '  (Akses menu Produk dibatasi)'}
 
@@ -468,7 +473,9 @@ ${projects.map(p => `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.
       matchedProductsExact.forEach(p => {
         const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
         const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
-        digest += `* PRODUK KUNCI COCOK [SKU: ${p.kode || p.id}]: Nama: "${p.nama || p.name}" | SISA STOK AKURAT DATABASE REAL-TIME: ${stockVal} ${p.satuan || p.unit || 'unit'} | Harga Jual: Rp ${price.toLocaleString('id-ID')} | Deskripsi: ${p.deskripsi || p.specifications || 'N/A'}\n`;
+        const hasImages = (Array.isArray(p.images) && p.images.length > 0) || Boolean(p.image || p.foto || p.gambar || p.imageUrl);
+        const imgTag = hasImages ? `![Foto ${p.nama || p.name}](product-image:${p.id})` : 'Foto belum ada di sistem';
+        digest += `* PRODUK KUNCI COCOK [SKU: ${p.kode || p.id}]: Nama: "${p.nama || p.name}" | SISA STOK AKURAT DATABASE REAL-TIME: ${stockVal} ${p.satuan || p.unit || 'unit'} | Harga Jual: Rp ${price.toLocaleString('id-ID')} | Foto/Gambar: ${imgTag} | Deskripsi: ${p.deskripsi || p.specifications || 'N/A'}\n`;
       });
     }
   }
@@ -745,6 +752,14 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
     - Jika tersedia di digest [=== KNOWLEDGE BASE WEBSITE EKSTERNAL ===], gunakan informasi tersebut untuk menjawab pertanyaan seputar profil perusahaan, rincian produk (Fumiphos, Silogard, dll), layanan fumigasi, atau spesifikasi sensor gempa.
     - Informasi ini hanya muncul untuk user dengan role Superadmin atau Sales.
 
+12. TAMPILKAN GAMBAR / FOTO PRODUK (WAJIB & MUTLAK):
+    - Saat pengguna bertanya tentang produk (misalnya menanyakan nama produk, stok, harga, fungsi, spesifikasi, aplikasi, atau ketersediaan produk), JIKA produk tersebut memiliki foto/gambar di sistem (terdapat tag ![Foto ...](product-image:...) pada [MENU 4]), Anda WAJIB MENYERTAKAN TAG GAMBAR TERSEBUT dalam respon Anda!
+    - Saat pengguna meminta foto produk (misalnya "minta foto produk...", "ada foto produk fumiphos?", "tampilkan foto silogard", "mana gambarnya?"):
+      JIKA ada fotonya di sistem, berikan tag gambar ![Foto Nama Produk](product-image:ID_PRODUK) disertai ringkasan produk.
+    - Saat pengguna meminta foto produk secara umum ("minta foto produk", "foto produk apa saja?"), tampilkan foto seluruh produk yang ada di sistem.
+    - FORMAT TAG GAMBAR: Jangan diubah! Tuliskan persis seperti yang tertulis di [MENU 4] (contoh: ![Foto Fumiphos 56 TB](product-image:PROD-FUMIPHOS-56TB)).
+    - JIKA suatu produk memang belum memiliki foto di sistem, sampaikan dengan ramah bahwa fotonya belum tersedia di database sistem.
+
 --- DATA SUMBER BISNIS (HANYA GUNAKAN DATA DI BAWAH INI) ---
 ${dataDigest}
 
@@ -876,6 +891,17 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
         const isLow = stockVal < (Number(p.minStok) || 10);
         res += `| ${i + 1} | **${p.kode || p.id}** | **${p.nama || p.name}** | **${stockVal} ${p.satuan || p.unit || 'unit'}**${isLow ? ' (Menipis)' : ''} | Rp ${(Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0).toLocaleString('id-ID')} |\n`;
       });
+
+      // Display product photos if matched or requested
+      if (isSpecificSearch || lower.includes('foto') || lower.includes('gambar') || lower.includes('lihat')) {
+        const prodsWithPhotos = displayProducts.filter(p => Boolean(getProductImageUrl(p, agg.compProducts))).slice(0, 3);
+        if (prodsWithPhotos.length > 0) {
+          res += `\n**Foto Produk:**\n`;
+          prodsWithPhotos.forEach(p => {
+            res += `![Foto ${p.nama || p.name}](product-image:${p.id || p.kode})\n\n`;
+          });
+        }
+      }
     } else {
       res += `Belum ada data produk tercatat di database MyPanca yang sesuai.\n`;
     }
