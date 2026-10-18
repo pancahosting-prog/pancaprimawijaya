@@ -141,9 +141,14 @@ async function startServer() {
     res.json({ success: true, settings: waService.aiSettings });
   });
 
-  app.post("/api/wa/logout", async (_req, res) => {
-    await waService.disconnectSession();
-    res.json({ success: true, message: "Sesi WhatsApp berhasil diputuskan." });
+  app.post("/api/wa/logout", async (req, res) => {
+    const { phone, all } = req.body || {};
+    if (all) {
+      await waService.disconnectAllSessions();
+      return res.json({ success: true, message: "Seluruh koneksi sesi perangkat WhatsApp berhasil diputuskan." });
+    }
+    await waService.disconnectSession(phone);
+    res.json({ success: true, message: `Sesi WhatsApp ${phone ? '+' + phone : ''} berhasil diputuskan.` });
   });
 
   // Gemini Settings & Multi-Key Storage File

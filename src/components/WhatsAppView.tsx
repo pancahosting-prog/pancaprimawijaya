@@ -444,6 +444,44 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
     }
   };
 
+  const handleDisconnectDevice = async (phone: string, nama: string) => {
+    if (!confirm(`Putuskan koneksi perangkat WhatsApp milik ${nama} (+${phone})?`)) return;
+    try {
+      const res = await fetch(getApiUrl('/api/wa/logout'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone })
+      });
+      if (res.ok) {
+        setSyncToast(`Koneksi perangkat +${phone} berhasil diputuskan.`);
+        setTimeout(() => setSyncToast(null), 3500);
+        fetchStatus();
+        fetchChats();
+      }
+    } catch (err) {
+      console.error('Error disconnecting device:', err);
+    }
+  };
+
+  const handleDisconnectAllDevices = async () => {
+    if (!confirm('Apakah Anda yakin ingin MEMUTUSKAN SELURUH KONEKSI perangkat WhatsApp terhubung di sistem?')) return;
+    try {
+      const res = await fetch(getApiUrl('/api/wa/logout'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true })
+      });
+      if (res.ok) {
+        setSyncToast('Seluruh sesi perangkat WhatsApp berhasil diputuskan.');
+        setTimeout(() => setSyncToast(null), 3500);
+        fetchStatus();
+        fetchChats();
+      }
+    } catch (err) {
+      console.error('Error disconnecting all devices:', err);
+    }
+  };
+
   const formatFileSize = (bytes?: number) => {
     if (!bytes) return '';
     if (bytes < 1024) return `${bytes} B`;
@@ -1086,21 +1124,34 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
               {/* Multi-User Connected Devices Dashboard (Superadmin or User Summary) */}
               <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col justify-between space-y-6">
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
                     <h3 className="text-lg font-black flex items-center gap-2">
                       <Users size={18} className="text-emerald-600" />
                       Status Perangkat Terhubung
                     </h3>
                     {isSuperAdmin && (
-                      <span className="px-2.5 py-1 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-bold text-[10px] rounded-full border border-amber-300 dark:border-amber-800">
-                        Akses Superadmin
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {connectedDevicesList.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleDisconnectAllDevices}
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                            title="Putuskan seluruh koneksi perangkat WhatsApp"
+                          >
+                            <Trash2 size={13} />
+                            <span>Putuskan Semua Perangkat</span>
+                          </button>
+                        )}
+                        <span className="px-2.5 py-1 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-bold text-[10px] rounded-full border border-amber-300 dark:border-amber-800">
+                          Akses Superadmin
+                        </span>
+                      </div>
                     )}
                   </div>
                   <p className="text-xs text-zinc-500">
                     {isSuperAdmin 
-                      ? 'Daftar perangkat terhubung dari user yang aktif.' 
-                      : 'Hanya akun Superadmin yang dapat memantau status perangkat user lain.'
+                      ? 'Daftar seluruh perangkat WhatsApp terhubung. Superadmin dapat memutus koneksi perangkat secara individual atau sekaligus.' 
+                      : 'Hanya akun Superadmin yang dapat memantau dan mengelola sesi perangkat user lain.'
                     }
                   </p>
                 </div>
@@ -1145,6 +1196,14 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({
                                 title={`Lihat Chat Perangkat +${dev.phone}`}
                               >
                                 <Eye size={12} /> Chat
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDisconnectDevice(dev.phone, dev.nama)}
+                                className="px-2.5 py-1.5 bg-rose-100 dark:bg-rose-950/80 hover:bg-rose-200 dark:hover:bg-rose-900 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 rounded-xl text-[10px] font-bold flex items-center gap-1 transition cursor-pointer"
+                                title={`Putuskan koneksi perangkat +${dev.phone}`}
+                              >
+                                <X size={12} /> Putuskan Sesi
                               </button>
                             </div>
                           </div>

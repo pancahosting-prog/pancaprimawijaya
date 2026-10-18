@@ -735,7 +735,35 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
     return { success: true, message: msg };
   }
 
-  public async disconnectSession() {
+  public async disconnectSession(phone?: string) {
+    if (!phone || phone === this.userPhone || phone === "active") {
+      if (this.socket) {
+        try {
+          await this.socket.logout();
+        } catch (e) {}
+        this.socket = null;
+      }
+      this.connectionState = "disconnected";
+      this.userJid = null;
+      this.userPhone = null;
+      this.userName = null;
+      this.qrCodeBase64 = null;
+
+      try {
+        if (fs.existsSync(SESSION_DIR)) {
+          fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+        }
+      } catch (e) {}
+    }
+
+    if (phone && phone !== "active") {
+      const clean = this.getConnectedPhoneKey(phone);
+      this.knownConnectedPhones.delete(clean);
+      this.saveKnownNumbers();
+    }
+  }
+
+  public async disconnectAllSessions() {
     if (this.socket) {
       try {
         await this.socket.logout();
@@ -747,6 +775,8 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
     this.userPhone = null;
     this.userName = null;
     this.qrCodeBase64 = null;
+    this.knownConnectedPhones.clear();
+    this.saveKnownNumbers();
 
     try {
       if (fs.existsSync(SESSION_DIR)) {
