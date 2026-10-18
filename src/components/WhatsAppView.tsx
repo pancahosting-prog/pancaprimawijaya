@@ -233,13 +233,24 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       const res = await fetch(getApiUrl(url));
       if (res.ok) {
         const data = await res.json();
-        if (data.chats) {
-          setChats(data.chats);
+        if (data.chats && Array.isArray(data.chats)) {
+          // Deduplicate chats by JID/ID to prevent duplicate React key warnings
+          const seenJids = new Set<string>();
+          const uniqueChats: WAChat[] = [];
+          data.chats.forEach((chat: WAChat) => {
+            const cleanJid = chat.jid || chat.id;
+            if (cleanJid && !seenJids.has(cleanJid)) {
+              seenJids.add(cleanJid);
+              uniqueChats.push(chat);
+            }
+          });
+
+          setChats(uniqueChats);
           
           // Only auto-select on desktop if no chat is already selected
           const isActuallyMobile = window.innerWidth < 768;
-          if (!isActuallyMobile && !selectedChatJid && data.chats.length > 0) {
-            setSelectedChatJid(data.chats[0].jid);
+          if (!isActuallyMobile && !selectedChatJid && uniqueChats.length > 0) {
+            setSelectedChatJid(uniqueChats[0].jid || uniqueChats[0].id);
           }
         }
       }
@@ -589,12 +600,12 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     Belum ada percakapan.
                   </div>
                 ) : (
-                  chats.map((c) => {
-                    const isSelected = selectedChatJid === c.jid;
+                  chats.map((c, idx) => {
+                    const isSelected = selectedChatJid === c.jid || selectedChatJid === c.id;
                     return (
                       <div
-                        key={c.jid}
-                        onClick={() => setSelectedChatJid(c.jid)}
+                        key={`${c.jid || c.id}_${idx}`}
+                        onClick={() => setSelectedChatJid(c.jid || c.id)}
                         className={`p-4 cursor-pointer transition-all flex items-start gap-3 select-none ${
                           isSelected && !isMobile
                             ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold'
@@ -660,9 +671,9 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
                   {/* Messages Scroll Area */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {selectedChat.messages.map((m) => (
+                    {selectedChat.messages.map((m, idx) => (
                       <div
-                        key={m.id}
+                        key={`${m.id || 'm'}_${idx}`}
                         className={`flex flex-col ${m.fromMe ? 'items-end' : 'items-start'}`}
                       >
                         <div

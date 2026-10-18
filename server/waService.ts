@@ -464,7 +464,18 @@ class WAService {
           this.qrCodeBase64 = null;
           const user = this.socket?.user;
           this.userJid = user?.id || null;
-          this.userPhone = user?.id ? user.id.split(":")[0].replace(/[^0-9]/g, "") : null;
+          
+          let rawConnectedPhone = "";
+          if (user?.id) {
+            const cleanId = user.id.split(":")[0].split("@")[0];
+            if (!user.id.includes("@lid") || cleanId.length <= 13) {
+              rawConnectedPhone = cleanId.replace(/[^0-9]/g, "");
+            }
+          }
+          if (!rawConnectedPhone && (user as any)?.phone) {
+            rawConnectedPhone = String((user as any).phone).replace(/[^0-9]/g, "");
+          }
+          this.userPhone = rawConnectedPhone || (user?.id ? user.id.split(":")[0].replace(/[^0-9]/g, "") : null);
           this.userName = user?.name || "WhatsApp Business Bot";
 
           console.log(`[waService] WhatsApp Connected! Nomor Terhubung: ${this.userPhone}`);
@@ -507,7 +518,28 @@ class WAService {
 
           if (!text && !incomingMedia) continue;
 
-          const senderName = msg.pushName || remoteJid.split("@")[0];
+          // Extract real phone number when WhatsApp sends LID JID
+          const altJid = msg.key?.participant || msg.participant || msg.key?.remoteJidAlt;
+          let realPhoneJid = remoteJid;
+          if (remoteJid.endsWith("@lid") && altJid && typeof altJid === "string" && altJid.endsWith("@s.whatsapp.net")) {
+            realPhoneJid = altJid;
+          }
+
+          let rawPhoneDigits = "";
+          if (realPhoneJid.endsWith("@s.whatsapp.net")) {
+            rawPhoneDigits = realPhoneJid.split("@")[0].replace(/[^0-9]/g, "");
+          }
+
+          let formattedPhone = "";
+          if (rawPhoneDigits) {
+            formattedPhone = "+" + rawPhoneDigits;
+          } else if (!remoteJid.endsWith("@lid")) {
+            formattedPhone = "+" + remoteJid.split("@")[0].replace(/[^0-9]/g, "");
+          } else {
+            formattedPhone = msg.pushName ? `+${msg.pushName}` : `+${remoteJid.split("@")[0]}`;
+          }
+
+          const senderName = msg.pushName || (rawPhoneDigits ? "+" + rawPhoneDigits : remoteJid.split("@")[0]);
           const isFromMe = Boolean(msg.key.fromMe);
 
           const connectedPhone = this.getConnectedPhoneKey();
@@ -518,12 +550,16 @@ class WAService {
           }
 
           let chat = phoneMap.get(remoteJid);
+          if (!chat && realPhoneJid !== remoteJid) {
+            chat = phoneMap.get(realPhoneJid);
+          }
+
           if (!chat) {
             chat = {
               id: remoteJid,
               jid: remoteJid,
               name: senderName,
-              phone: "+" + remoteJid.split("@")[0],
+              phone: formattedPhone,
               unreadCount: 0,
               lastMessage: text,
               lastMessageTime: Date.now(),
@@ -531,6 +567,13 @@ class WAService {
               connectedPhone
             };
             phoneMap.set(remoteJid, chat);
+          } else {
+            if (rawPhoneDigits && (chat.phone.includes("@lid") || chat.phone.length > 15)) {
+              chat.phone = "+" + rawPhoneDigits;
+            }
+            if (msg.pushName && (!chat.name || chat.name === chat.phone || chat.name.includes("@lid"))) {
+              chat.name = msg.pushName;
+            }
           }
 
           const newMsg: WAChatMessage = {
