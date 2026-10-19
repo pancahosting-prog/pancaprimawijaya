@@ -682,37 +682,72 @@ class WAService {
       });
 
       this.socket.ev.on("messages.upsert", async (m: any) => {
-        if (m.type !== "notify") return;
+        if (!m.messages || !m.messages.length) return;
+        if (m.type !== "notify" && m.type !== "append") return;
 
         for (const msg of m.messages) {
           if (!msg.message) continue;
           const remoteJid = msg.key.remoteJid;
-          if (!remoteJid || remoteJid.endsWith("@g.us")) continue;
+          if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") continue;
 
-          let text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+          // Unwrap modern WhatsApp messages (ephemeral, viewOnce, documentWithCaption)
+          let messageContent = msg.message;
+          if (messageContent.ephemeralMessage?.message) {
+            messageContent = messageContent.ephemeralMessage.message;
+          }
+          if (messageContent.viewOnceMessage?.message) {
+            messageContent = messageContent.viewOnceMessage.message;
+          }
+          if (messageContent.viewOnceMessageV2?.message) {
+            messageContent = messageContent.viewOnceMessageV2.message;
+          }
+          if (messageContent.documentWithCaptionMessage?.message) {
+            messageContent = messageContent.documentWithCaptionMessage.message;
+          }
+
+          let text = messageContent.conversation || 
+                     messageContent.extendedTextMessage?.text || 
+                     "";
           let incomingMedia: WAChatMedia | undefined = undefined;
 
-          if (msg.message.imageMessage) {
-            text = msg.message.imageMessage.caption || "📷 [Foto]";
+          if (messageContent.imageMessage) {
+            text = messageContent.imageMessage.caption || "📷 [Foto]";
             incomingMedia = {
               type: "image",
-              mimetype: msg.message.imageMessage.mimetype || "image/jpeg"
+              mimetype: messageContent.imageMessage.mimetype || "image/jpeg"
             };
-          } else if (msg.message.documentMessage) {
-            const fileName = msg.message.documentMessage.fileName || "Dokumen";
-            text = msg.message.documentMessage.caption || `📄 [${fileName}]`;
+          } else if (messageContent.documentMessage) {
+            const fileName = messageContent.documentMessage.fileName || "Dokumen";
+            text = messageContent.documentMessage.caption || `📄 [${fileName}]`;
             incomingMedia = {
               type: "document",
               fileName,
-              mimetype: msg.message.documentMessage.mimetype || "application/octet-stream"
+              mimetype: messageContent.documentMessage.mimetype || "application/octet-stream"
+            };
+          } else if (messageContent.videoMessage) {
+            text = messageContent.videoMessage.caption || "🎥 [Video]";
+            incomingMedia = {
+              type: "video",
+              mimetype: messageContent.videoMessage.mimetype || "video/mp4"
+            };
+          } else if (messageContent.audioMessage) {
+            text = "🎵 [Pesan Suara]";
+            incomingMedia = {
+              type: "audio",
+              mimetype: messageContent.audioMessage.mimetype || "audio/ogg"
             };
           }
 
           if (!text && !incomingMedia) continue;
 
+          const isFromMe = Boolean(msg.key.fromMe);
+
           // Extract real phone number when WhatsApp sends LID JID
           const altJid = msg.key?.remoteJidAlt || msg.key?.participant || msg.participant;
           const cleanInfo = this.sanitizePhoneAndName(remoteJid, undefined, altJid, msg.pushName);
+          const senderName = isFromMe 
+            ? (this.userName || "Anda") 
+            : (cleanInfo.name || msg.pushName || cleanInfo.phone || "Pengguna WhatsApp");
 
           const connectedPhone = this.getConnectedPhoneKey();
           let phoneMap = this.chatsByPhone.get(connectedPhone);
@@ -730,7 +765,7 @@ class WAService {
             chat = {
               id: remoteJid,
               jid: remoteJid,
-              name: cleanInfo.name,
+              name: isFromMe ? cleanInfo.name : senderName,
               phone: cleanInfo.phone,
               unreadCount: 0,
               lastMessage: text,
@@ -741,19 +776,19 @@ class WAService {
             phoneMap.set(remoteJid, chat);
           } else {
             chat.phone = cleanInfo.phone;
-            if (cleanInfo.name && cleanInfo.name !== cleanInfo.phone) {
-              chat.name = cleanInfo.name;
+            if (!isFromMe && senderName && senderName !== cleanInfo.phone) {
+              chat.name = senderName;
             }
           }
 
           const newMsg: WAChatMessage = {
             id: msg.key.id || "msg-" + Date.now(),
             fromMe: isFromMe,
-            sender: remoteJid,
+            sender: isFromMe ? "me" : remoteJid,
             senderName,
             text,
             timestamp: Date.now(),
-            status: "unread",
+            status: isFromMe ? "read" : "unread",
             media: incomingMedia
           };
 
@@ -762,10 +797,12 @@ class WAService {
           chat.lastMessageTime = Date.now();
           if (!isFromMe) chat.unreadCount += 1;
 
+          console.log(`[waService] Pesan baru (${isFromMe ? 'Keluar' : 'Masuk'}) dari ${remoteJid}: "${text}"`);
+
           // Save to local file & Supabase for this connected phone
           this.saveChatsForPhone(connectedPhone, chat);
 
-          // Auto reply AI logic
+          // Auto reply AI logic: hanya balas jika pesan masuk bukan dari diri sendiri dan bot aktif
           if (!isFromMe && this.aiSettings.autoReplyEnabled) {
             this.handleAIAutoReply(remoteJid, senderName, text);
           }
@@ -799,12 +836,12 @@ Jawablah pertanyaan pelanggan (${senderName}) dengan sopan, ringkas, profesional
 Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permintaan maaf dan catat bahwa tim customer service akan segera menghubungi mereka.`;
 
       const apiKey = process.env.GEMINI_API_KEY;
-      let replyText = this.aiSettings.fallbackMessage;
-      let modelUsed = "gemini-1.5-flash";
+      let replyText = "";
+      let modelUsed = "Basis Pengetahuan & Aturan Cerdas";
 
       if (apiKey) {
         try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelUsed}:generateContent?key=${apiKey}`, {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -816,34 +853,58 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
 
           if (res.ok) {
             const data = await res.json();
-            replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || replyText;
+            const genText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (genText) {
+              replyText = genText;
+              modelUsed = "Gemini AI (gemini-2.5-flash)";
+            }
+          } else {
+            console.warn(`[waService] Gemini API returned status ${res.status}, using Knowledge Base fallback.`);
           }
         } catch (genErr) {
-          console.error("Gemini API call failed for WA Auto-Reply:", genErr);
+          console.warn("[waService] Gemini API call error, using Knowledge Base fallback:", genErr);
         }
-      } else {
-        const msgLower = userMessage.toLowerCase();
+      }
+
+      // Fallback cerdas berbasis Knowledge Base & Kata Kunci jika Gemini quota habis (429) atau error
+      if (!replyText) {
+        const msgLower = userMessage.toLowerCase().trim();
         let matched = false;
         for (const kb of this.aiSettings.knowledgeBase) {
-          if (kb.keywords.some(kw => msgLower.includes(kw))) {
-            replyText = `Halo ${senderName}! Mengenai ${kb.productName}: ${kb.description} Informasi harga: ${kb.price}.`;
+          if (kb.keywords.some(kw => msgLower.includes(kw.toLowerCase()))) {
+            replyText = `Halo ${senderName}! Terkait ${kb.productName}: ${kb.description}. Informasi harga: ${kb.price}.`;
+            if (kb.faq && kb.faq.length > 0) {
+              replyText += `\n\nFAQ:\n` + kb.faq.map(f => `• ${f.q}\n  ${f.a}`).join("\n");
+            }
             matched = true;
             break;
           }
         }
         if (!matched) {
-          replyText = `Halo ${senderName}! ` + this.aiSettings.greetingMessage;
+          if (/halo|hai|hi|pagi|siang|sore|malam|assalam|permisi/i.test(msgLower)) {
+            replyText = `Halo ${senderName}! ` + this.aiSettings.greetingMessage;
+          } else {
+            replyText = this.aiSettings.fallbackMessage || `Halo ${senderName}! Pesan Anda telah kami terima. Tim customer service kami akan segera menghubungi Anda kembali.`;
+          }
         }
       }
 
+      console.log(`[waService] Menyiapkan auto-reply untuk ${jid} via model [${modelUsed}]: "${replyText}"`);
+
       if (this.socket && this.connectionState === "connected") {
         await this.socket.sendMessage(jid, { text: replyText });
+        console.log(`[waService] Berhasil mengirim auto-reply ke WhatsApp ${jid}`);
+      } else {
+        console.warn(`[waService] Soket WhatsApp tidak dalam status connected, tidak dapat mengirim auto-reply`);
       }
 
       const connectedPhone = this.getConnectedPhoneKey();
       let phoneMap = this.chatsByPhone.get(connectedPhone);
       if (phoneMap) {
-        const chat = phoneMap.get(jid);
+        let chat = phoneMap.get(jid);
+        if (!chat) {
+          chat = Array.from(phoneMap.values()).find(c => c.jid === jid || c.id === jid);
+        }
         if (chat) {
           chat.messages.push({
             id: "bot-" + Date.now(),

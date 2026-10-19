@@ -454,8 +454,8 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     fetchChats();
     fetchSettings();
 
-    // Poll status faster (every 2.5s) when on 'perangkat' tab waiting for QR scan, otherwise every 6s
-    const pollInterval = activeSubTab === 'perangkat' && connectionStatus.connectionState !== 'connected' ? 2500 : 6000;
+    // Poll faster (every 2.5s) when on 'chat' tab or waiting for QR scan on 'perangkat' tab
+    const pollInterval = activeSubTab === 'chat' ? 2500 : (activeSubTab === 'perangkat' && connectionStatus.connectionState !== 'connected' ? 2500 : 5000);
     const interval = setInterval(() => {
       fetchStatus();
       if (activeSubTab === 'chat') {
