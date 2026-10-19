@@ -287,12 +287,20 @@ class WAService {
           if (data && data.value && !error) {
             const dbVal = data.value;
             const products = dbVal.knowledgeProducts || dbVal.knowledgeBase || this.aiSettings.knowledgeProducts;
+            // Merge snippets by ID/title so local updates are not lost
+            const mergedSnippets = [...(dbVal.knowledgeSnippets || [])];
+            for (const localS of (this.aiSettings.knowledgeSnippets || [])) {
+              if (!mergedSnippets.some(s => s.id === localS.id || s.title.toLowerCase() === localS.title.toLowerCase())) {
+                mergedSnippets.push(localS);
+              }
+            }
+
             this.aiSettings = {
               ...this.aiSettings,
               ...dbVal,
               knowledgeProducts: products,
               knowledgeBase: products,
-              knowledgeSnippets: dbVal.knowledgeSnippets || this.aiSettings.knowledgeSnippets,
+              knowledgeSnippets: mergedSnippets,
               knowledgeWebSources: dbVal.knowledgeWebSources || this.aiSettings.knowledgeWebSources
             };
             console.log("[waService] Berhasil sinkronisasi AI settings dari Supabase app_settings.");
@@ -1058,7 +1066,71 @@ class WAService {
       }
     }
 
-    // 3. SUSUN KNOWLEDGE BASE SEBAGAI PARAGRAF & KONTEN RINGKAS
+    // 3. PENANGANAN PERCAKAPAN HUMANIS & NATURAL (SAPAAN, INGIN BERTANYA, TERIMA KASIH, CHITCHAT)
+    if (!replyText) {
+      const cleanMsg = msgLower.replace(/[?!.,;:"'()\[\]\/\\]/g, ' ').trim();
+      const cleanWords = cleanMsg.split(/\s+/).filter(Boolean);
+
+      // A. Intensi ingin bertanya / membuka obrolan tanpa topik spesifik ("saya mau tanya nih", "mau nanya dong", "boleh tanya?", dll)
+      const hasSpecificTopic = cleanMsg.includes("harga") || cleanMsg.includes("retur") || cleanMsg.includes("garansi") || 
+        cleanMsg.includes("rekening") || cleanMsg.includes("kirim") || cleanMsg.includes("ongkir") || cleanMsg.includes("produk") || 
+        cleanMsg.includes("mulsa") || cleanMsg.includes("sungkup") || cleanMsg.includes("net") || cleanMsg.includes("faktur") || 
+        cleanMsg.includes("kantor") || cleanMsg.includes("jam") || cleanMsg.includes("transfer") || cleanMsg.includes("pesan") || cleanMsg.includes("beli");
+
+      const isAskingToAsk = !hasSpecificTopic && (
+        /^(?:saya\s+)?(?:mau|ingin|bisa|boleh|pengen|mo|mw)\s+(?:tanya|nanya|bertanya|konsul|konsultasi|minta\s+info|bantu)/i.test(cleanMsg) ||
+        /\b(?:mau|bisa|boleh)\s+(?:tanya|nanya|bertanya)\b/i.test(cleanMsg) ||
+        cleanMsg === "mau tanya" || cleanMsg === "mau nanya" || cleanMsg === "tanya dong" || cleanMsg === "nanya dong" ||
+        cleanMsg.includes("mau tanya nih") || cleanMsg.includes("mau nanya nih") || cleanMsg.includes("mau tanya dong") || 
+        cleanMsg.includes("ada yang mau saya tanyakan") || cleanMsg.includes("ada yang mau ditanyakan") ||
+        cleanMsg === "saya mau tanya" || cleanMsg === "mau konsultasi" || cleanWords.length <= 5 && cleanMsg.includes("tanya")
+      );
+
+      // B. Sapaan murni tanpa pertanyaan spesifik ("halo", "hai", "selamat pagi", "assalam", "permisi", "p", "halo min", dll)
+      const isGreetingOnly = /^(?:halo|hai|hi|hei|helo|pagi|siang|sore|malam|assalam(?:ualaikum)?|permisi|sampurasun|punten|tes|test|p)\b/i.test(cleanMsg) &&
+        !cleanMsg.includes("harga") && !cleanMsg.includes("retur") && !cleanMsg.includes("rekening") && !cleanMsg.includes("kirim") && 
+        !cleanMsg.includes("produk") && !cleanMsg.includes("mulsa") && !cleanMsg.includes("sungkup") && !cleanMsg.includes("net") &&
+        !cleanMsg.includes("garansi") && !cleanMsg.includes("faktur") && !cleanMsg.includes("katalog") && !cleanMsg.includes("pesan") &&
+        !cleanMsg.includes("beli") && !cleanMsg.includes("transfer") && cleanWords.length <= 6;
+
+      // C. Ucapan terima kasih ("terima kasih", "makasih ya kak", "thanks", dll)
+      const isGratitude = /^(?:terima\s*kasih|makasih|tengkyu|thanks|matur\s*nuwun|syukron|arigato)\b/i.test(cleanMsg);
+
+      // D. Konfirmasi santai ("oke", "ok", "siap", "baik", "noted", dll)
+      const isAck = /^(?:oke|ok|siap|baik|noted|sip|mantap|paham|mengerti|yep|yup)\b/i.test(cleanMsg) && cleanWords.length <= 4;
+
+      // E. Cek admin / robot ("apakah ini bot?", "ini robot ya?", "ada orang?", "admin aktif?")
+      const isBotCheck = /\b(?:apakah\s+(?:ini\s+)?(?:bot|robot|ai)|ini\s+(?:bot|robot|ai)|ada\s+orang|admin(?:nya)?\s+aktif)\b/i.test(cleanMsg);
+
+      if (isAskingToAsk) {
+        replyText = `Halo Kak ${senderName}! Tentu boleh banget, silakan mau tanya tentang apa nih? Apakah seputar produk pertanian kami (seperti plastik sungkup, mulsa, insect net), penawaran harga, atau prosedur pemesanan? Siap kami bantu ya! 😊`;
+        containerMatched = 'greeting';
+        isFallback = false;
+        modelUsed = "Asisten CS Ramah (Percakapan Pembuka)";
+      } else if (isGreetingOnly) {
+        replyText = `Halo Kak ${senderName}! Selamat datang di layanan WhatsApp PT. Panca Prima Wijaya. Senang bisa terhubung dengan Kakak. Ada yang bisa kami bantu seputar produk atau layanan kami hari ini? 😊`;
+        containerMatched = 'greeting';
+        isFallback = false;
+        modelUsed = "Asisten CS Ramah (Sapaan)";
+      } else if (isGratitude) {
+        replyText = `Sama-sama Kak ${senderName}! Senang bisa membantu. Jika ada hal lain yang ingin ditanyakan lagi nanti, jangan sungkan untuk hubungi kami kembali ya. Semoga hari Kakak menyenangkan! 🙏😊`;
+        containerMatched = 'greeting';
+        isFallback = false;
+        modelUsed = "Asisten CS Ramah (Terima Kasih)";
+      } else if (isAck) {
+        replyText = `Siap Kak ${senderName}! Jika ada yang butuh dipastikan lagi atau ingin order, langsung kabari kami ya 😊`;
+        containerMatched = 'greeting';
+        isFallback = false;
+        modelUsed = "Asisten CS Ramah (Konfirmasi)";
+      } else if (isBotCheck) {
+        replyText = `Halo Kak ${senderName}! Saya asisten cerdas WhatsApp PT. Panca Prima Wijaya. Saya siap merespons pertanyaan seputar produk, harga, dan ketentuan layanan secara cepat. Jika Kakak membutuhkan bantuan langsung dari tim CS atau Sales manusia, cukup sampaikan saja ya 😊`;
+        containerMatched = 'greeting';
+        isFallback = false;
+        modelUsed = "Asisten CS Ramah (Info Layanan)";
+      }
+    }
+
+    // 4. SUSUN KNOWLEDGE BASE SEBAGAI PARAGRAF & KONTEN RINGKAS
     if (!replyText) {
       const snippets = this.aiSettings.knowledgeSnippets || [];
       const products = this.aiSettings.knowledgeProducts?.length 
@@ -1108,7 +1180,10 @@ PRINSIP JAWABAN (SANGAT KRUSIAL - PATUHI SECARA KETAT):
    - JANGAN mengulang salam pembuka/penutup formal yang panjang dan kaku berulang kali jika percakapan sudah berjalan mengalir.
    - Hindari bahasa klise robotik seperti "Sebagai asisten AI...", "Pesan Anda telah kami catat...", dll.
 
-3. FALLBACK KONTEKSTUAL OTOMATIS:
+3. PERCAKAPAN PEMBUKA & BASA-BASI HUMANIS:
+   - Jika pengguna hanya menyapa, mengucap salam, mengatakan "mau tanya nih", "boleh tanya?", atau basa-basi pembuka, balaslah dengan sangat hangat, ramah, dan luwes selayaknya staf CS manusia yang menyambut pelanggan. JANGAN PERNAH menganggap sapaan pembuka sebagai fallback!
+
+4. FALLBACK KONTEKSTUAL OTOMATIS:
    - Jika informasi yang ditanyakan pengguna TIDAK TERCANTUM di dalam Catatan Paragraf Basis Pengetahuan di bawah:
      * JANGAN gunakan kalimat template bot kaku.
      * Buatlah balasan ramah yang kontekstual dan mengalir wajar sesuai topik yang baru saja ditanyakan atau topik percakapan sebelumnya (misalnya: dengan sopan menjelaskan bahwa detail spesifik mengenai topik tersebut saat ini belum tercatat di panduan resmi Anda).
