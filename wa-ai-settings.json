@@ -179,6 +179,23 @@
         "kirim"
       ],
       "updatedAt": 1729300000000
+    },
+    {
+      "id": "snip-5",
+      "title": "Ketentuan Garansi & Prosedur Retur Barang",
+      "category": "Garansi & Retur",
+      "content": "Ketentuan klaim garansi dan pengembalian barang (retur):\n1. Pelanggan wajib mengajukan komplain maksimal 3x24 jam sejak barang diterima dari ekspedisi/sopir.\n2. Wajib melampirkan video unboxing lengkap tanpa jeda dan foto nomor Surat Jalan/Invoice pembelian.\n3. Retur berlaku untuk barang yang mengalami cacat produksi pabrik atau ketidaksesuaian tipe/spesifikasi dengan Surat Pesanan (PO).\n4. Barang pengganti akan dikirimkan secara gratis segera setelah barang retur diverifikasi oleh tim gudang kami.",
+      "keywords": [
+        "retur",
+        "garansi",
+        "klaim",
+        "barang rusak",
+        "cacat",
+        "komplain",
+        "tukar barang",
+        "aturan retur"
+      ],
+      "updatedAt": 1729300000000
     }
   ],
   "knowledgeWebSources": [
@@ -199,6 +216,70 @@
       "updatedAt": 1729300000000
     }
   ],
-  "knowledgeBase": [],
+  "knowledgeBase": [
+    {
+      "id": "prod-1",
+      "productName": "Plastik Sungkup Pertanian UV",
+      "description": "Plastik sungkup transparan berkualitas tinggi dengan proteksi anti-UV untuk perlindungan optimal tanaman cabai, semangka, dan melon dari hama serta guyuran hujan ekstrem.",
+      "price": "Rp 450.000 / Roll (Ukuran 1m x 200m)",
+      "keywords": [
+        "plastik sungkup",
+        "sungkup",
+        "uv",
+        "pertanian",
+        "tutup tanaman",
+        "plastik uv"
+      ],
+      "faq": [
+        {
+          "q": "Berapa lama ketahanan plastik sungkup ini di lapangan?",
+          "a": "Plastik sungkup kami memiliki aditif stabilizer UV dengan ketahanan pemakaian hingga 2-3 musim tanam normal."
+        },
+        {
+          "q": "Apakah bisa custom ukuran lebar roll?",
+          "a": "Bisa, untuk pembelian jumlah tertentu (minimum order pabrik) kami melayani pemotongan ukuran custom."
+        }
+      ]
+    },
+    {
+      "id": "prod-2",
+      "productName": "Mulsa Plastik Hitam Perak (MPHP)",
+      "description": "Mulsa pertanian dua lapis (sisi hitam menekan gulma, sisi perak memantulkan sinar matahari untuk menghalau kutu daun dan hama trips). Sangat ulet dan tidak mudah sobek.",
+      "price": "Rp 385.000 / Roll (Tebal 0.35 mikron)",
+      "keywords": [
+        "mulsa",
+        "hitam perak",
+        "mphp",
+        "plastik mulsa",
+        "gulma",
+        "bedengan"
+      ],
+      "faq": [
+        {
+          "q": "Apa fungsi sisi perak pada mulsa?",
+          "a": "Sisi perak menghadap ke atas untuk memantulkan sinar matahari sehingga suhu tanah stabil dan mengusir serangga hama."
+        }
+      ]
+    },
+    {
+      "id": "prod-3",
+      "productName": "Insect Net / Kasa Nyamuk Hijau 50 Mesh",
+      "description": "Jaring kasa pelindung greenhouse berbahan monofilament HDPE murni, kerapatan 50 mesh anti-serangga kecil tanpa menghambat sirkulasi udara dan cahaya tanaman.",
+      "price": "Rp 1.250.000 / Roll (3m x 100m)",
+      "keywords": [
+        "insect net",
+        "kasa hijau",
+        "greenhouse",
+        "jaring serangga",
+        "kutu kebul"
+      ],
+      "faq": [
+        {
+          "q": "Apakah tahan terhadap terpaan angin kencang?",
+          "a": "Ya, anyaman monofilament kami memiliki jahitan rajut kuat berpola kunci (lock-stitch) sehingga tidak mudah robek melebar."
+        }
+      ]
+    }
+  ],
   "logs": []
 }

@@ -40,6 +40,9 @@ export interface WAChat {
   lastMessageTime: number;
   messages: WAChatMessage[];
   connectedPhone?: string; // Nomor terhubung pemilik sesi chat
+  isHandedOverToHuman?: boolean; // Jika true, AI berhenti auto-reply percakapan ini
+  fallbackCount?: number; // Jumlah berturut-turut bot mengalami fallback
+  waitingHandoverConsent?: boolean; // Sedang menunggu konfirmasi user (setuju dialihkan ke CS)
 }
 
 export interface WAKBProduct {
@@ -976,11 +979,33 @@ class WAService {
     }
   }
 
-  public async generateAIResponse(senderName: string, userMessage: string): Promise<{
+  public setChatHandover(jid: string, isHandedOver: boolean): boolean {
+    const connectedPhone = this.getConnectedPhoneKey();
+    let phoneMap = this.chatsByPhone.get(connectedPhone) || this.chatsByPhone.get("default");
+    if (!phoneMap) return false;
+    let chat = phoneMap.get(jid) || Array.from(phoneMap.values()).find(c => c.jid === jid || c.id === jid);
+    if (chat) {
+      chat.isHandedOverToHuman = isHandedOver;
+      if (!isHandedOver) {
+        chat.fallbackCount = 0;
+        chat.waitingHandoverConsent = false;
+      }
+      this.saveChatsForPhone(connectedPhone, chat);
+      return true;
+    }
+    return false;
+  }
+
+  public async generateAIResponse(
+    senderName: string, 
+    userMessage: string,
+    recentHistory?: { role: 'user' | 'model'; text: string }[]
+  ): Promise<{
     replyText: string;
     modelUsed: string;
     isHandover: boolean;
     isRestricted: boolean;
+    isFallback: boolean;
     containerMatched: 'products' | 'snippets' | 'websites' | 'guardrail' | 'handover' | 'greeting' | 'fallback';
   }> {
     const msgLower = userMessage.toLowerCase().trim();
@@ -988,6 +1013,7 @@ class WAService {
     let modelUsed = "Basis Pengetahuan & Aturan Cerdas";
     let isHandover = false;
     let isRestricted = false;
+    let isFallback = false;
     let containerMatched: 'products' | 'snippets' | 'websites' | 'guardrail' | 'handover' | 'greeting' | 'fallback' = 'fallback';
 
     // 1. CEK TOPIK TERLARANG (RESTRICTED TOPICS)
@@ -1010,12 +1036,12 @@ class WAService {
         isRestricted = true;
         modelUsed = "Guardrail (Topik Terlarang)";
         containerMatched = 'guardrail';
-        replyText = `Mohon maaf ${senderName}, kami tidak dapat memberikan tanggapan terkait topik tersebut demi mematuhi kebijakan dan etika layanan resmi kami. Silakan tanyakan hal lain seputar informasi produk, penawaran harga, atau layanan PT. Panca Prima Wijaya.`;
+        replyText = `Mohon maaf Kak ${senderName}, kami tidak dapat memberikan tanggapan terkait topik tersebut demi mematuhi kebijakan dan etika layanan resmi kami. Silakan tanyakan hal lain seputar informasi produk, penawaran harga, atau layanan PT. Panca Prima Wijaya ya.`;
         break;
       }
     }
 
-    // 2. CEK PENGALIHAN KE AGEN MANUSIA (HANDOVER TO HUMAN)
+    // 2. CEK PENGALIHAN MANUAL KE AGEN MANUSIA (KEYWORD TRIGGER)
     if (!replyText && this.aiSettings.handoverToHuman?.enabled) {
       const triggers = this.aiSettings.handoverToHuman.triggerKeywords || [];
       const isHandoverTriggered = triggers.some(trg => trg.trim() && msgLower.includes(trg.trim().toLowerCase()));
@@ -1025,74 +1051,92 @@ class WAService {
         containerMatched = 'handover';
         const contact = this.aiSettings.handoverToHuman.handoverContact || "0811-1234-5678";
         const template = this.aiSettings.handoverToHuman.handoverMessage || 
-          "Baik Bapak/Ibu {name}, percakapan Anda kami teruskan langsung ke Sales & CS Specialist kami di nomor {contact}. Tim kami akan segera merespon secara langsung.";
+          "Baik Kak {name}, percakapan Anda kami teruskan langsung ke Sales & CS Specialist kami di nomor {contact}. Tim kami akan segera merespons secara langsung ya.";
         replyText = template
           .replace(/{contact}/g, contact)
           .replace(/{name}/g, senderName);
       }
     }
 
-    // 3. JIKA BUKAN TOPIK TERLARANG & BUKAN HANDOVER, RANGKAI SEMUA KONTEN KNOWLEDGE BASE (3 KONTAINER)
+    // 3. SUSUN KNOWLEDGE BASE SEBAGAI PARAGRAF & KONTEN RINGKAS
     if (!replyText) {
-      // Kontainer 1: Produk & Layanan
+      const snippets = this.aiSettings.knowledgeSnippets || [];
       const products = this.aiSettings.knowledgeProducts?.length 
         ? this.aiSettings.knowledgeProducts 
         : (this.aiSettings.knowledgeBase || []);
-      
-      const productsText = products.map((p, idx) => {
-        let str = `[PRODUK #${idx + 1}] ${p.productName}\nHarga: ${p.price}\nDeskripsi: ${p.description}\nKata Kunci: ${(p.keywords || []).join(', ')}`;
-        if (p.faq && p.faq.length > 0) {
-          str += `\nFAQ Produk:\n` + p.faq.map(f => `  • Tanya: ${f.q}\n    Jawab: ${f.a}`).join('\n');
-        }
-        return str;
-      }).join('\n\n');
-
-      // Kontainer 2: Paragraf Biasa / Catatan Dokumen Bebas yang Diinput User
-      const snippets = this.aiSettings.knowledgeSnippets || [];
-      const snippetsText = snippets.map((s, idx) => 
-        `[DOKUMEN/CATATAN #${idx + 1}: ${s.title} (Kategori: ${s.category || 'Umum'})]\n${s.content}\nKata Kunci Terkait: ${(s.keywords || []).join(', ')}`
-      ).join('\n\n');
-
-      // Kontainer 3: Sumber Website Resmi
       const webSources = (this.aiSettings.knowledgeWebSources || []).filter(w => w.isActive);
-      const webText = webSources.map((w, idx) => 
-        `[SUMBER WEBSITE #${idx + 1}: ${w.title} (${w.url})]\nRingkasan Informasi: ${w.summary}`
-      ).join('\n\n');
 
-      // Setup Prompt & AI Instructions
-      const tone = this.aiSettings.toneOfVoice || this.aiSettings.tone || "Ramah & Solutif";
+      const knowledgeSections: string[] = [];
+
+      // Semua dokumen disusun menjadi Paragraf & Konten Pengetahuan yang bersih dan fokus
+      snippets.forEach((s, idx) => {
+        knowledgeSections.push(`[PARAGRAF DOKUMEN #${idx + 1}: ${s.title.toUpperCase()}${s.category ? ` - ${s.category}` : ''}]\n${s.content}`);
+      });
+
+      // Produk juga disajikan sebagai paragraf konten yang to-the-point
+      products.forEach((p, idx) => {
+        let text = `[PARAGRAF PRODUK #${idx + 1}: ${p.productName.toUpperCase()}]\n${p.description}\nEstimasi Harga: ${p.price}`;
+        if (p.faq && p.faq.length > 0) {
+          text += `\nDetail: ` + p.faq.map(f => `${f.q}: ${f.a}`).join(' | ');
+        }
+        knowledgeSections.push(text);
+      });
+
+      // Sumber web juga disajikan sebagai paragraf konten
+      webSources.forEach((w, idx) => {
+        knowledgeSections.push(`[PARAGRAF REFERENSI #${idx + 1}: ${w.title}]\n${w.summary}`);
+      });
+
+      const fullKnowledgeText = knowledgeSections.join("\n\n---\n\n");
+
+      const tone = this.aiSettings.toneOfVoice || this.aiSettings.tone || "Ramah, Bersahabat & Solutif";
       const lang = this.aiSettings.responseLanguage || "Bahasa Indonesia";
-      const sysInstructions = this.aiSettings.systemInstructions || 
-        "Anda adalah asisten AI customer service resmi PT. Panca Prima Wijaya di WhatsApp. Jawablah pertanyaan pelanggan secara ramah, ringkas, sopan, dan akurat.";
-      const ctaRule = this.aiSettings.salesCta?.enabled 
-        ? `\nSALES CALL-TO-ACTION (CTA):\nJika pelanggan menanyakan harga, pemesanan, atau berminat dengan produk, sertakan ajakan bertindak yang halus di akhir jawaban: "${this.aiSettings.salesCta.ctaMessage}"` 
-        : "";
 
-      const fullSystemPrompt = `${sysInstructions}
+      const fullSystemPrompt = `PERAN & IDENTITAS:
+Anda adalah Customer Service WhatsApp resmi dari PT. Panca Prima Wijaya.
+Gaya komunikasi Anda: Sangat ramah, bersahabat, hangat, sopan, dan santun seperti staf CS manusia asli (BUKAN template bot kaku, BUKAN siaran broadcast formal).
+Bahasa respon: ${lang}. Nada bicara: ${tone}.
 
-PANDUAN GAYA BAHASA & RESPON:
-- Gaya Bahasa / Tone of Voice: ${tone}
-- Bahasa Respon: ${lang}
-- Pesan Fallback jika tidak yakin: "${this.aiSettings.fallbackMessage}"${ctaRule}
+PRINSIP JAWABAN (SANGAT KRUSIAL - PATUHI SECARA KETAT):
+1. FOKUS HANYA PADA APA YANG DITANYAKAN (DILARANG MEMUNTAHKAN/DUMP INFORMASI LAIN):
+   - Jika pengguna bertanya tentang Aturan A (misalnya: aturan garansi, tata cara retur, rekening transfer, atau jam buka kantor), jelaskan HANYA aturan A tersebut secara tuntas!
+   - DILARANG KERAS menyertakan informasi aturan B atau C, daftar rekening (jika tidak ditanya pembayaran), atau mempromosikan produk lain yang tidak ada hubungannya dengan pertanyaan pengguna.
+   - Jawab secara to-the-point, jelas, dan padat (cukup 1-2 paragraf pendek) agar sangat nyaman dan cepat dipahami di layar chat WhatsApp.
 
-=== KONTAINER BASIS PENGETAHUAN PERUSAHAAN ===
---- 1. KATEGORI PRODUK & LAYANAN ---
-${productsText || "Belum ada produk yang didaftarkan."}
+2. GAYA BAHASA NATURAL, RAMAH & ANTI-TEMPLATE:
+   - Sapa nama dengan hangat dan santun (contoh: "Halo Kak ${senderName}" atau "Baik Kak ${senderName}").
+   - JANGAN mengulang salam pembuka/penutup formal yang panjang dan kaku berulang kali jika percakapan sudah berjalan mengalir.
+   - Hindari bahasa klise robotik seperti "Sebagai asisten AI...", "Pesan Anda telah kami catat...", dll.
 
---- 2. DOKUMEN & PARAGRAF PERUSAHAAN (SOP, ALAMAT, REKENING, PROSEDUR) ---
-${snippetsText || "Belum ada dokumen teks tambahan."}
+3. FALLBACK KONTEKSTUAL OTOMATIS:
+   - Jika informasi yang ditanyakan pengguna TIDAK TERCANTUM di dalam Catatan Paragraf Basis Pengetahuan di bawah:
+     * JANGAN gunakan kalimat template bot kaku.
+     * Buatlah balasan ramah yang kontekstual dan mengalir wajar sesuai topik yang baru saja ditanyakan atau topik percakapan sebelumnya (misalnya: dengan sopan menjelaskan bahwa detail spesifik mengenai topik tersebut saat ini belum tercatat di panduan resmi Anda).
+     * Wajib akhiri balasan fallback dengan tag rahasia: [FALLBACK_TAG] (kode ini tidak akan dilihat user dan dipakai sistem internal untuk menghitung fallback).
 
---- 3. SUMBER RESMI WEBSITE ---
-${webText || "Belum ada tautan website resmi."}
-
-=== ATURAN KERJA ===
-1. Jawab pertanyaan pelanggan (${senderName}) hanya berdasarkan fakta di atas.
-2. Jangan pernah mengarang data teknis, harga, atau nomor rekening di luar dokumen resmi.
-3. Buat jawaban padat, nyaman dibaca di layar chat WhatsApp (gunakan bullet point bila ada beberapa poin).`;
+=== CATATAN BASIS PENGETAHUAN PERUSAHAAN (PARAGRAF & KONTEN) ===
+${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
+`;
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (apiKey) {
-        // Coba model resmi gemini-3.8-flash, lalu fallback ke gemini-2.5-flash
+        // Susun payload dengan riwayat pesan sebelumnya agar Gemini memahami alur percakapan multi-turn
+        const contentsPayload: any[] = [];
+        if (recentHistory && recentHistory.length > 0) {
+          for (const h of recentHistory) {
+            if (h.text && h.text.trim()) {
+              contentsPayload.push({
+                role: h.role,
+                parts: [{ text: h.text }]
+              });
+            }
+          }
+        }
+        contentsPayload.push({
+          role: "user",
+          parts: [{ text: userMessage }]
+        });
+
         const modelCandidates = ["gemini-3.8-flash", "gemini-2.5-flash"];
         for (const candidate of modelCandidates) {
           try {
@@ -1100,7 +1144,7 @@ ${webText || "Belum ada tautan website resmi."}
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                contents: [{ role: "user", parts: [{ text: userMessage }] }],
+                contents: contentsPayload,
                 systemInstruction: { parts: [{ text: fullSystemPrompt }] },
                 generationConfig: { temperature: 0.3, maxOutputTokens: 350 }
               })
@@ -1110,101 +1154,133 @@ ${webText || "Belum ada tautan website resmi."}
               const data = await res.json();
               const genText = data.candidates?.[0]?.content?.parts?.[0]?.text;
               if (genText) {
-                replyText = genText.trim();
-                modelUsed = `Gemini AI (${candidate})`;
-                // Determine container matched based on content keywords
-                if (products.some(p => msgLower.includes(p.productName.toLowerCase()) || (p.keywords || []).some(k => k && msgLower.includes(k.toLowerCase())))) {
-                  containerMatched = 'products';
-                } else if (snippets.some(s => msgLower.includes(s.title.toLowerCase()) || (s.keywords || []).some(k => k && msgLower.includes(k.toLowerCase())))) {
+                let cleanGen = genText.trim();
+                if (cleanGen.includes("[FALLBACK_TAG]")) {
+                  isFallback = true;
+                  cleanGen = cleanGen.replace(/\[FALLBACK_TAG\]/g, "").trim();
+                  containerMatched = 'fallback';
+                } else {
+                  isFallback = false;
                   containerMatched = 'snippets';
-                } else if (webSources.some(w => msgLower.includes(w.title.toLowerCase()) || msgLower.includes('web') || msgLower.includes('situs'))) {
-                  containerMatched = 'websites';
                 }
+                replyText = cleanGen;
+                modelUsed = `Gemini AI (${candidate})`;
                 break;
               }
             } else {
-              console.warn(`[waService] Gemini API (${candidate}) returned status ${res.status}`);
+              console.warn(`[waService] Gemini API (${candidate}) status ${res.status}`);
             }
           } catch (genErr) {
-            console.warn(`[waService] Gemini API (${candidate}) call error:`, genErr);
+            console.warn(`[waService] Gemini API (${candidate}) error:`, genErr);
           }
         }
       }
 
-      // 4. ATURAN CERDAS LOKAL (FALLBACK JIKA GEMINI LIMIT 429 ATAU OFFLINE)
+      // 4. ATURAN LOKAL CERDAS JIKA GEMINI SEDANG LIMIT / OFFLINE
       if (!replyText) {
-        let matched = false;
+        // Gabungkan seluruh snippets paragraf & produk menjadi daftar pengetahuan terpadu
+        const allParagraphs: { title: string; category?: string; content: string; keywords: string[] }[] = [];
+        snippets.forEach(s => {
+          allParagraphs.push({
+            title: s.title,
+            category: s.category,
+            content: s.content,
+            keywords: s.keywords || []
+          });
+        });
+        products.forEach(p => {
+          let c = `Produk *${p.productName}*\nEstimasi Harga: ${p.price}\nDeskripsi: ${p.description}`;
+          if (p.faq && p.faq.length > 0) {
+            c += `\nDetail: ` + p.faq.map(f => `${f.q}: ${f.a}`).join(' | ');
+          }
+          allParagraphs.push({
+            title: p.productName,
+            category: 'Katalog Produk',
+            content: c,
+            keywords: p.keywords || []
+          });
+        });
+        webSources.forEach(w => {
+          allParagraphs.push({
+            title: w.title,
+            category: 'Referensi Website',
+            content: `${w.title}\n${w.summary}`,
+            keywords: [w.title.toLowerCase()]
+          });
+        });
 
-        // Cek Pencocokan Produk
-        for (const p of products) {
-          const keywords = (p.keywords || []).map(k => k.toLowerCase());
-          if (keywords.some(kw => kw && msgLower.includes(kw)) || msgLower.includes(p.productName.toLowerCase())) {
-            replyText = `Halo ${senderName}! Terkait *${p.productName}*:\n${p.description}\n\n💰 *Harga:* ${p.price}`;
-            if (p.faq && p.faq.length > 0) {
-              replyText += `\n\n*FAQ Terkait:*\n` + p.faq.slice(0, 2).map(f => `• _${f.q}_\n  ${f.a}`).join('\n');
+        // Ekstraksi istilah kata kunci dari pesan pengguna
+        const stopWords = new Set([
+          'bagaimana', 'apakah', 'gimana', 'minta', 'tolong', 'info', 'bisa', 'saya', 'kami', 
+          'untuk', 'dengan', 'yang', 'atau', 'pada', 'tentang', 'soal', 'punya', 'ada', 'dong', 
+          'kak', 'bapak', 'ibu', 'halo', 'hai', 'siang', 'pagi', 'sore', 'malam', 'ya', 'saja', 'nya',
+          'siapa', 'nama', 'saat', 'ini', 'itu', 'lama', 'tahu', 'hari', 'buat', 'mau', 'pun', 'dari', 
+          'ke', 'di', 'dan', 'lah', 'kah', 'sih', 'kok', 'mana', 'kapan', 'kenapa', 'mengapa', 'seperti',
+          'apa', 'jika', 'kalau', 'bila', 'oleh', 'akan', 'sudah', 'telah', 'sedang', 'lebih', 'paling'
+        ]);
+
+        const queryTerms = msgLower
+          .replace(/[?!.,;:"'()\[\]\/\\]/g, ' ')
+          .split(/\s+/)
+          .filter(t => t.length >= 3 && !stopWords.has(t));
+
+        let bestMatch: { title: string; category?: string; content: string } | null = null;
+        let highestScore = 0;
+
+        for (const p of allParagraphs) {
+          let score = 0;
+          let matchedTitleOrKeyword = false;
+          const tLower = p.title.toLowerCase();
+          const cLower = p.content.toLowerCase();
+
+          // 1. Cek kata kunci spesifik yang relevan
+          for (const kw of p.keywords) {
+            if (kw && msgLower.includes(kw.toLowerCase())) {
+              score += 7;
+              matchedTitleOrKeyword = true;
             }
-            matched = true;
-            containerMatched = 'products';
-            break;
           }
-        }
 
-        // Cek Pencocokan Paragraf Biasa / Catatan Teks (SOP, Alamat, Rekening, dll)
-        if (!matched) {
-          for (const s of snippets) {
-            const keywords = (s.keywords || []).map(k => k.toLowerCase());
-            const titleLower = s.title.toLowerCase();
-            const catLower = (s.category || '').toLowerCase();
-            if (
-              keywords.some(kw => kw && msgLower.includes(kw)) || 
-              msgLower.includes(titleLower) ||
-              (catLower && msgLower.includes(catLower)) ||
-              (titleLower.includes("rekening") && (msgLower.includes("rekening") || msgLower.includes("transfer") || msgLower.includes("bank") || msgLower.includes("bca") || msgLower.includes("mandiri"))) ||
-              (titleLower.includes("operasional") && (msgLower.includes("jam") || msgLower.includes("buka") || msgLower.includes("tutup") || msgLower.includes("operasional") || msgLower.includes("libur"))) ||
-              (titleLower.includes("pemesanan") && (msgLower.includes("faktur") || msgLower.includes("ppn") || msgLower.includes("pajak") || msgLower.includes("surat jalan")))
-            ) {
-              replyText = `Halo ${senderName}! Terkait *${s.title}*:\n\n${s.content}`;
-              matched = true;
-              containerMatched = 'snippets';
-              break;
+          // 2. Cek kecocokan istilah pertanyaan di judul (bobot tinggi)
+          for (const term of queryTerms) {
+            if (tLower.includes(term)) {
+              score += 6;
+              matchedTitleOrKeyword = true;
+            } else if (cLower.includes(term)) {
+              score += 2;
             }
           }
-        }
 
-        // Cek Pencocokan Sumber Website
-        if (!matched) {
-          for (const w of webSources) {
-            const titleLower = w.title.toLowerCase();
-            if (
-              msgLower.includes("website") || msgLower.includes("link") || 
-              msgLower.includes("situs") || msgLower.includes("web") || 
-              msgLower.includes("portal") || msgLower.includes("katalog") ||
-              msgLower.includes(titleLower)
-            ) {
-              replyText = `Halo ${senderName}! Informasi resmi dapat Anda lihat melalui website kami:\n🔗 *${w.title}*\n${w.url}\n\n${w.summary}`;
-              matched = true;
-              containerMatched = 'websites';
-              break;
-            }
+          // 3. Cek judul persis jika query singkat
+          if (queryTerms.length > 0 && queryTerms.every(term => tLower.includes(term))) {
+            score += 10;
+            matchedTitleOrKeyword = true;
+          }
+
+          // Hanya cocok jika ada kecocokan di judul/keyword atau skor konten sangat tinggi
+          if (matchedTitleOrKeyword && score > highestScore && score >= 6) {
+            highestScore = score;
+            bestMatch = p;
+          } else if (!matchedTitleOrKeyword && score > highestScore && score >= 10) {
+            highestScore = score;
+            bestMatch = p;
           }
         }
 
-        // Tambahkan Sales CTA jika berkaitan dengan pembelian/harga
-        if (matched && this.aiSettings.salesCta?.enabled) {
-          const ctaKeywords = (this.aiSettings.salesCta.triggerKeywords || ["harga", "pesan", "order", "beli"]).map(k => k.toLowerCase());
-          if (ctaKeywords.some(kw => msgLower.includes(kw))) {
-            replyText += `\n\n📌 _${this.aiSettings.salesCta.ctaMessage}_`;
-          }
-        }
-
-        // Respon Salam
-        if (!matched) {
-          if (/halo|hai|hi|pagi|siang|sore|malam|assalam|permisi|selamat/i.test(msgLower)) {
-            replyText = `Halo ${senderName}! ` + this.aiSettings.greetingMessage;
+        if (bestMatch) {
+          // JAWAB HANYA APA YANG DITANYAKAN (RAMAH, BERSAHABAT & TO-THE-POINT)
+          replyText = `Halo Kak ${senderName}! Terkait *${bestMatch.title}*:\n\n${bestMatch.content}`;
+          containerMatched = 'snippets';
+        } else {
+          // Cek sapaan salam santai
+          if (/^(halo|hai|hi|pagi|siang|sore|malam|assalam|permisi|selamat)\b/i.test(msgLower) && msgLower.length < 25) {
+            replyText = `Halo Kak ${senderName}! Ada yang bisa kami bantu seputar informasi produk atau layanan kami hari ini? 😊`;
             containerMatched = 'greeting';
           } else {
-            replyText = this.aiSettings.fallbackMessage || 
-              `Halo ${senderName}! Terima kasih telah menghubungi PT. Panca Prima Wijaya. Pesan Anda telah kami terima dan tim kami akan segera menghubungi Anda kembali.`;
+            // Contextual polite fallback alih-alih kalimat robot kaku
+            const previewTopic = userMessage.length > 35 ? userMessage.substring(0, 35) + '...' : userMessage;
+            replyText = `Mohon maaf ya Kak ${senderName}, untuk informasi terkait "${previewTopic}" saat ini belum tercantum di catatan panduan kami.`;
+            isFallback = true;
             containerMatched = 'fallback';
           }
         }
@@ -1216,69 +1292,250 @@ ${webText || "Belum ada tautan website resmi."}
       modelUsed,
       isHandover,
       isRestricted,
+      isFallback,
       containerMatched
     };
   }
 
-  public async simulateAIAutoReply(userMessage: string, senderName: string = "Calon Pelanggan") {
-    return this.generateAIResponse(senderName, userMessage);
+  private simSessions: Map<string, {
+    fallbackCount: number;
+    waitingHandoverConsent: boolean;
+    isHandedOverToHuman: boolean;
+  }> = new Map();
+
+  public resetSimSession(sessionId: string = "default-sim") {
+    this.simSessions.set(sessionId, {
+      fallbackCount: 0,
+      waitingHandoverConsent: false,
+      isHandedOverToHuman: false
+    });
+  }
+
+  public async simulateAIAutoReply(
+    userMessage: string, 
+    senderName: string = "Calon Pelanggan", 
+    history?: { role: 'user' | 'model'; text: string }[],
+    sessionId: string = "default-sim"
+  ) {
+    if (!this.simSessions.has(sessionId)) {
+      this.resetSimSession(sessionId);
+    }
+    const session = this.simSessions.get(sessionId)!;
+
+    // 1. Jika sesi simulasi sudah dialihkan ke CS Manusia, AI tidak lagi membalas
+    if (session.isHandedOverToHuman) {
+      return {
+        replyText: `[Percakapan simulasi ini sudah dialihkan dan sedang ditangani oleh CS Manusia. AI otomatis dinonaktifkan untuk obrolan ini.]`,
+        modelUsed: "Handover CS Manusia",
+        isHandover: true,
+        isRestricted: false,
+        isFallback: false,
+        containerMatched: 'handover' as const,
+        isHandedOverToHuman: true,
+        fallbackCount: 0,
+        waitingHandoverConsent: false
+      };
+    }
+
+    const msgLower = userMessage.toLowerCase().trim();
+
+    // 2. Cek apakah sedang menunggu persetujuan pengalihan ke CS setelah 3x fallback
+    if (session.waitingHandoverConsent) {
+      const isConsentYes = /^(ya|iya|boleh|mau|hubungkan|alihkan|tolong|oke|ok|siap|bisa|teruskan|sambungkan|lanjut|y|hubungi|silakan|silahkan)\b/i.test(msgLower) ||
+        msgLower === "ya" || msgLower === "boleh" || msgLower === "mau" || msgLower.includes("alihkan") || msgLower.includes("hubungkan") || msgLower.includes("teruskan") || msgLower.includes("hubungi");
+
+      const isConsentNo = /^(tidak|enggak|nggak|batal|jangan|skip|ga usah|gak usah|tdk|no|g|ga|gak)\b/i.test(msgLower) ||
+        msgLower.includes("tidak") || msgLower.includes("enggak") || msgLower.includes("nggak") || msgLower.includes("jangan") || msgLower.includes("batal");
+
+      if (isConsentYes && !isConsentNo) {
+        session.isHandedOverToHuman = true;
+        session.waitingHandoverConsent = false;
+        session.fallbackCount = 0;
+        return {
+          replyText: `Baik Kak ${senderName}, percakapan ini sudah kami alihkan langsung ke tim Customer Service kami ya. Tim kami akan segera merespons dan membantu Kakak secara personal di sini. Mohon ditunggu sebentar ya Kak, terima kasih banyak atas kesabarannya! 🙏`,
+          modelUsed: "Handover CS Manusia (Persetujuan User)",
+          isHandover: true,
+          isRestricted: false,
+          isFallback: false,
+          containerMatched: 'handover' as const,
+          isHandedOverToHuman: true,
+          fallbackCount: 0,
+          waitingHandoverConsent: false
+        };
+      } else if (isConsentNo) {
+        session.waitingHandoverConsent = false;
+        session.fallbackCount = 0;
+        return {
+          replyText: `Baik Kak ${senderName}, siap! Jika ada pertanyaan lain seputar informasi produk atau layanan kami yang bisa saya bantu, silakan tanyakan ya 😊`,
+          modelUsed: "Batal Alihkan CS",
+          isHandover: false,
+          isRestricted: false,
+          isFallback: false,
+          containerMatched: 'greeting' as const,
+          isHandedOverToHuman: false,
+          fallbackCount: 0,
+          waitingHandoverConsent: false
+        };
+      }
+    }
+
+    // 3. Hasilkan balasan AI
+    const result = await this.generateAIResponse(senderName, userMessage, history);
+    let { replyText, modelUsed, isHandover, isRestricted, isFallback, containerMatched } = result;
+
+    if (isFallback) {
+      session.fallbackCount = (session.fallbackCount || 0) + 1;
+      if (session.fallbackCount >= 3) {
+        replyText += `\n\nBtw Kak ${senderName}, karena saya belum menemukan informasi detail mengenai hal ini, apakah Kakak ingin obrolan ini kami alihkan ke tim terkait / Customer Service kami agar bisa dibantu langsung? (Ketik *Ya / Boleh* jika berkenan 😊)`;
+        session.waitingHandoverConsent = true;
+      }
+    } else if (!isRestricted && !isHandover) {
+      session.fallbackCount = 0;
+      session.waitingHandoverConsent = false;
+    }
+
+    return {
+      replyText,
+      modelUsed,
+      isHandover,
+      isRestricted,
+      isFallback,
+      containerMatched,
+      fallbackCount: session.fallbackCount,
+      waitingHandoverConsent: session.waitingHandoverConsent,
+      isHandedOverToHuman: session.isHandedOverToHuman
+    };
   }
 
   public async handleAIAutoReply(jid: string, senderName: string, userMessage: string) {
     try {
-      const result = await this.generateAIResponse(senderName, userMessage);
-      const { replyText, modelUsed, isHandover, isRestricted } = result;
-
-      console.log(`[waService] Menyiapkan auto-reply untuk ${jid} via model [${modelUsed}]: "${replyText}"`);
-
-      // 5. KIRIM PESAN KE WHATSAPP JIKA SOKET TERHUBUNG
-      if (this.socket && this.connectionState === "connected") {
-        await this.socket.sendMessage(jid, { text: replyText });
-        console.log(`[waService] Berhasil mengirim auto-reply ke WhatsApp ${jid}`);
-      } else {
-        console.warn(`[waService] Soket WhatsApp tidak dalam status connected, tidak dapat mengirim auto-reply`);
-      }
-
-      // 6. SIMPAN BALASAN KE RIWAYAT CHAT LOKAL & SUPABASE
       const connectedPhone = this.getConnectedPhoneKey();
-      let phoneMap = this.chatsByPhone.get(connectedPhone);
+      let phoneMap = this.chatsByPhone.get(connectedPhone) || this.chatsByPhone.get("default");
+      let chat: WAChat | undefined;
       if (phoneMap) {
-        let chat = phoneMap.get(jid);
-        if (!chat) {
-          chat = Array.from(phoneMap.values()).find(c => c.jid === jid || c.id === jid);
-        }
-        if (chat) {
-          chat.messages.push({
-            id: "bot-" + Date.now(),
-            fromMe: true,
-            sender: "bot",
-            senderName: this.aiSettings.botName,
-            text: replyText,
-            timestamp: Date.now(),
-            status: "read"
-          });
-          chat.lastMessage = replyText;
-          chat.lastMessageTime = Date.now();
-          this.saveChatsForPhone(connectedPhone, chat);
+        chat = phoneMap.get(jid) || Array.from(phoneMap.values()).find(c => c.jid === jid || c.id === jid);
+      }
+
+      // 1. JIKA CHAT SUDAH DIALIHKAN KE CS MANUSIA, BOT TIDAK MEMBALAS LAGI
+      if (chat?.isHandedOverToHuman) {
+        console.log(`[waService] Percakapan ${jid} sedang ditangani CS Manusia. AI auto-reply dilewati.`);
+        return;
+      }
+
+      const msgLower = userMessage.toLowerCase().trim();
+
+      // 2. CEK STATUS MENUNGGU PERSETUJUAN PENGALIHAN KE CS (SETELAH 3x FALLBACK)
+      if (chat?.waitingHandoverConsent) {
+        const isConsentYes = /^(ya|iya|boleh|mau|hubungkan|alihkan|tolong|oke|ok|siap|bisa|teruskan|sambungkan|lanjut|y)\b/i.test(msgLower) ||
+          msgLower === "ya" || msgLower === "boleh" || msgLower === "mau" || msgLower.includes("hubungkan") || msgLower.includes("alihkan");
+        
+        const isConsentNo = /^(tidak|enggak|nggak|batal|jangan|skip|ga usah|gak usah|tdk|no)\b/i.test(msgLower) ||
+          msgLower.includes("tidak") || msgLower.includes("enggak") || msgLower.includes("nggak") || msgLower.includes("jangan");
+
+        if (isConsentYes && !isConsentNo) {
+          const handoverReply = `Baik Kak ${senderName}, percakapan ini sudah saya alihkan ke tim Customer Service kami. Tim kami akan segera merespons dan membantu Kakak secara langsung di sini ya. Terima kasih banyak atas kesabarannya! 🙏`;
+          
+          chat.isHandedOverToHuman = true;
+          chat.waitingHandoverConsent = false;
+          chat.fallbackCount = 0;
+
+          await this.executeSendBotReply(jid, senderName, handoverReply, "Handover CS Manusia (Persetujuan User)", true, false);
+          return;
+        } else if (isConsentNo) {
+          const declineReply = `Baik Kak ${senderName}, siap! Jika ada pertanyaan lain seputar produk atau layanan kami yang bisa saya bantu, silakan tanyakan ya 😊`;
+          
+          chat.waitingHandoverConsent = false;
+          chat.fallbackCount = 0;
+
+          await this.executeSendBotReply(jid, senderName, declineReply, "Batal Alihkan CS", false, false);
+          return;
         }
       }
 
-      // 7. SIMPAN LOG AKTIVITAS BOT
-      this.aiSettings.logs.unshift({
-        id: "log-" + Date.now(),
-        timestamp: Date.now(),
-        sender: senderName + " (" + jid.split("@")[0] + ")",
-        incoming: userMessage,
-        reply: replyText,
-        modelUsed,
-        isHandover,
-        isRestricted
-      });
-      if (this.aiSettings.logs.length > 50) this.aiSettings.logs.pop();
-      this.saveSettings({});
+      // 3. AMBIL RIWAYAT PESAN TERAKHIR AGAR MEMAHAMI KONTEKS MULTI-TURN
+      const recentHistory: { role: 'user' | 'model'; text: string }[] = [];
+      if (chat && chat.messages && chat.messages.length > 0) {
+        const priorMsgs = chat.messages.slice(-7, -1);
+        for (const m of priorMsgs) {
+          if (m.text && m.text.trim()) {
+            recentHistory.push({
+              role: m.fromMe ? 'model' : 'user',
+              text: m.text
+            });
+          }
+        }
+      }
+
+      // 4. HASILKAN BALASAN AI
+      const result = await this.generateAIResponse(senderName, userMessage, recentHistory);
+      let { replyText, modelUsed, isHandover, isRestricted, isFallback } = result;
+
+      // 5. ATURAN FALLBACK 3 KALI -> TAWARKAN PENGALIHAN KE TIM CS MANUSIA
+      if (isFallback && chat) {
+        chat.fallbackCount = (chat.fallbackCount || 0) + 1;
+        console.log(`[waService] Fallback terdeteksi untuk ${jid}, hitungan fallback ke-${chat.fallbackCount}`);
+        
+        if (chat.fallbackCount >= 3) {
+          replyText += `\n\nBtw Kak ${senderName}, karena saya belum menemukan informasi detail mengenai hal ini, apakah Kakak ingin saya hubungkan percakapan ini ke tim Customer Service kami agar bisa dibantu langsung? (Ketik *Ya / Boleh* jika berkenan 😊)`;
+          chat.waitingHandoverConsent = true;
+        }
+      } else if (chat && !isFallback && !isRestricted && !isHandover) {
+        chat.fallbackCount = 0;
+        chat.waitingHandoverConsent = false;
+      }
+
+      // 6. KIRIM DAN SIMPAN BALASAN
+      await this.executeSendBotReply(jid, senderName, replyText, modelUsed, isHandover, isRestricted);
     } catch (err) {
       console.error("[waService] Error in handleAIAutoReply:", err);
     }
+  }
+
+  private async executeSendBotReply(jid: string, senderName: string, replyText: string, modelUsed: string, isHandover: boolean, isRestricted: boolean) {
+    // 1. Kirim pesan ke socket WhatsApp
+    if (this.socket && this.connectionState === "connected") {
+      try {
+        await this.socket.sendMessage(jid, { text: replyText });
+        console.log(`[waService] Berhasil mengirim pesan bot ke ${jid}`);
+      } catch (err) {
+        console.warn(`[waService] Gagal kirim pesan ke socket WhatsApp:`, err);
+      }
+    }
+
+    // 2. Simpan pesan ke riwayat chat
+    const connectedPhone = this.getConnectedPhoneKey();
+    let phoneMap = this.chatsByPhone.get(connectedPhone) || this.chatsByPhone.get("default");
+    if (phoneMap) {
+      let chat = phoneMap.get(jid) || Array.from(phoneMap.values()).find(c => c.jid === jid || c.id === jid);
+      if (chat) {
+        chat.messages.push({
+          id: "bot-" + Date.now(),
+          fromMe: true,
+          sender: "bot",
+          senderName: this.aiSettings.botName,
+          text: replyText,
+          timestamp: Date.now(),
+          status: "read"
+        });
+        chat.lastMessage = replyText;
+        chat.lastMessageTime = Date.now();
+        this.saveChatsForPhone(connectedPhone, chat);
+      }
+    }
+
+    // 3. Simpan log aktivitas bot
+    this.aiSettings.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: Date.now(),
+      sender: senderName + " (" + jid.split("@")[0] + ")",
+      incoming: "Pesan Pengguna",
+      reply: replyText,
+      modelUsed,
+      isHandover,
+      isRestricted
+    });
+    if (this.aiSettings.logs.length > 50) this.aiSettings.logs.pop();
+    this.saveSettings({});
   }
 
   public async sendMessage(jid: string, text: string, media?: WAChatMedia): Promise<{ success: boolean; message: WAChatMessage }> {

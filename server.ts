@@ -146,11 +146,11 @@ async function startServer() {
   // Test / Simulate AI Auto-Reply without sending real WhatsApp message
   app.post("/api/wa/test-ai-reply", async (req, res) => {
     try {
-      const { message, senderName = "Calon Pelanggan" } = req.body;
+      const { message, senderName = "Calon Pelanggan", history, sessionId = "default-sim" } = req.body;
       if (!message || !message.trim()) {
         return res.status(400).json({ success: false, error: "Pesan uji tidak boleh kosong." });
       }
-      const result = await waService.simulateAIAutoReply(message, senderName);
+      const result = await waService.simulateAIAutoReply(message, senderName, history, sessionId);
       res.json({
         success: true,
         ...result
@@ -158,6 +158,22 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message || "Gagal menguji balasan AI." });
     }
+  });
+
+  app.post("/api/wa/reset-sim", (req, res) => {
+    const { sessionId = "default-sim" } = req.body;
+    waService.resetSimSession(sessionId);
+    res.json({ success: true, message: "Sesi simulator berhasil direset." });
+  });
+
+  // Manual toggle Handover to Human CS for a specific chat
+  app.post("/api/wa/chat-toggle-handover", (req, res) => {
+    const { jid, isHandedOver } = req.body;
+    if (!jid) {
+      return res.status(400).json({ success: false, error: "JID obrolan diperlukan." });
+    }
+    const success = waService.setChatHandover(jid, Boolean(isHandedOver));
+    res.json({ success, isHandedOver: Boolean(isHandedOver) });
   });
 
   app.post("/api/wa/delete-chat", async (req, res) => {

@@ -38,7 +38,8 @@ import {
   FileEdit,
   PlusCircle,
   Layers,
-  Play
+  Play,
+  UserCheck
 } from 'lucide-react';
 import { 
   loadWAChatsFromSupabase, 
@@ -101,6 +102,10 @@ export interface WAChat {
   lastMessage: string;
   lastMessageTime: number;
   messages: WAChatMessage[];
+  connectedPhone?: string;
+  isHandedOverToHuman?: boolean;
+  fallbackCount?: number;
+  waitingHandoverConsent?: boolean;
 }
 
 export interface WAKBProduct {
@@ -294,7 +299,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
   // Sub-tabs in AI Setting View
   const [aiActiveSection, setAiActiveSection] = useState<'knowledge' | 'prompt-setup' | 'guardrails' | 'simulator' | 'logs'>('knowledge');
-  const [kbActiveContainer, setKbActiveContainer] = useState<'products' | 'snippets' | 'websites'>('products');
+  const [kbActiveContainer, setKbActiveContainer] = useState<'snippets' | 'products' | 'websites'>('snippets');
   const [kbSearchQuery, setKbSearchQuery] = useState<string>('');
 
   // Simulator / Test State
@@ -306,27 +311,100 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     isHandover: boolean;
     isRestricted: boolean;
     containerMatched: string;
+    fallbackCount?: number;
+    waitingHandoverConsent?: boolean;
+    isHandedOverToHuman?: boolean;
   } | null>(null);
+
+  interface SimMessage {
+    id: string;
+    sender: 'user' | 'bot';
+    text: string;
+    modelUsed?: string;
+    containerMatched?: string;
+    isHandover?: boolean;
+    isRestricted?: boolean;
+    isFallback?: boolean;
+  }
+
+  const [simMessages, setSimMessages] = useState<SimMessage[]>([]);
+  const [simFallbackCount, setSimFallbackCount] = useState<number>(0);
+  const [simWaitingConsent, setSimWaitingConsent] = useState<boolean>(false);
+  const [simHandedOver, setSimHandedOver] = useState<boolean>(false);
+
+  const handleResetSim = async () => {
+    try {
+      await fetch(getApiUrl('/api/wa/reset-sim'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'sim-user' })
+      });
+      setSimMessages([]);
+      setSimFallbackCount(0);
+      setSimWaitingConsent(false);
+      setSimHandedOver(false);
+      setTestAiResult(null);
+    } catch (err) {
+      console.error('Error resetting sim:', err);
+    }
+  };
 
   const handleTestAiReply = async (customQuery?: string) => {
     const q = (customQuery || testQueryInput).trim();
     if (!q) return;
+    setTestQueryInput('');
     setIsTestingAi(true);
-    setTestAiResult(null);
+
+    const userMsg: SimMessage = {
+      id: 'sim-u-' + Date.now(),
+      sender: 'user',
+      text: q
+    };
+    const updatedMessages = [...simMessages, userMsg];
+    setSimMessages(updatedMessages);
+
+    // Multi-turn context history
+    const historyPayload = simMessages.slice(-6).map(m => ({
+      role: (m.sender === 'bot' ? 'model' : 'user') as 'model' | 'user',
+      text: m.text
+    }));
+
     try {
       const res = await fetch(getApiUrl('/api/wa/test-ai-reply'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: q, senderName: 'Pelanggan Uji' })
+        body: JSON.stringify({
+          message: q,
+          senderName: 'Pelanggan Uji',
+          history: historyPayload,
+          sessionId: 'sim-user'
+        })
       });
       if (res.ok) {
         const data = await res.json();
+        const botMsg: SimMessage = {
+          id: 'sim-b-' + Date.now(),
+          sender: 'bot',
+          text: data.replyText,
+          modelUsed: data.modelUsed,
+          containerMatched: data.containerMatched || 'fallback',
+          isHandover: Boolean(data.isHandover),
+          isRestricted: Boolean(data.isRestricted),
+          isFallback: Boolean(data.isFallback)
+        };
+        setSimMessages([...updatedMessages, botMsg]);
+        setSimFallbackCount(data.fallbackCount ?? 0);
+        setSimWaitingConsent(Boolean(data.waitingHandoverConsent));
+        setSimHandedOver(Boolean(data.isHandedOverToHuman));
         setTestAiResult({
           replyText: data.replyText,
           modelUsed: data.modelUsed,
           isHandover: Boolean(data.isHandover),
           isRestricted: Boolean(data.isRestricted),
-          containerMatched: data.containerMatched || 'fallback'
+          containerMatched: data.containerMatched || 'fallback',
+          fallbackCount: data.fallbackCount,
+          waitingHandoverConsent: data.waitingHandoverConsent,
+          isHandedOverToHuman: data.isHandedOverToHuman
         });
       }
     } catch (err) {
@@ -836,6 +914,22 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     await saveSettingsToServer();
   };
 
+  const handleToggleChatHandover = async (jid: string, currentStatus?: boolean) => {
+    try {
+      const nextStatus = !currentStatus;
+      const res = await fetch(getApiUrl('/api/wa/chat-toggle-handover'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jid, isHandedOver: nextStatus })
+      });
+      if (res.ok) {
+        setChats(prev => prev.map(c => (c.jid === jid || c.id === jid) ? { ...c, isHandedOverToHuman: nextStatus, waitingHandoverConsent: false } : c));
+      }
+    } catch (err) {
+      console.error('Error toggling chat handover:', err);
+    }
+  };
+
   // Product KB CRUD with Immediate Auto-Save
   const handleSaveKbItem = async () => {
     if (!editingKbItem.productName.trim()) {
@@ -921,6 +1015,35 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       knowledgeSnippets: (settings.knowledgeSnippets || []).filter(s => s.id !== id)
     };
     setSettings(updated);
+    await saveSettingsToServer(updated);
+  };
+
+  const handleMigrateAllToSnippets = async () => {
+    if (!settings.knowledgeProducts || settings.knowledgeProducts.length === 0) return;
+    if (!confirm('Pindahkan semua data produk ke format Paragraf Pengetahuan agar lebih simpel dan terpadu?')) return;
+    const newSnippets = [...(settings.knowledgeSnippets || [])];
+    settings.knowledgeProducts.forEach(p => {
+      let content = `Produk: ${p.productName}\nEstimasi Harga: ${p.price}\nDeskripsi: ${p.description}`;
+      if (p.faq && p.faq.length > 0) {
+        content += `\nDetail Tanya-Jawab:\n` + p.faq.map(f => `• ${f.q}: ${f.a}`).join('\n');
+      }
+      newSnippets.push({
+        id: 'kb-snip-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+        title: p.productName,
+        category: 'Katalog Produk',
+        content: content,
+        keywords: p.keywords || [],
+        updatedAt: Date.now()
+      });
+    });
+
+    const updated = {
+      ...settings,
+      knowledgeSnippets: newSnippets,
+      knowledgeProducts: []
+    };
+    setSettings(updated);
+    setKbActiveContainer('snippets');
     await saveSettingsToServer(updated);
   };
 
@@ -1258,9 +1381,21 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                         </div>
                         <div className="flex-1 min-w-0 py-0.5">
                           <div className="flex items-center justify-between gap-1 mb-1">
-                            <h3 className="text-sm font-black truncate text-zinc-900 dark:text-zinc-100">
-                              {c.name}
-                            </h3>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <h3 className="text-sm font-black truncate text-zinc-900 dark:text-zinc-100">
+                                {c.name}
+                              </h3>
+                              {c.isHandedOverToHuman && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 shrink-0">
+                                  CS Manusia
+                                </span>
+                              )}
+                              {c.waitingHandoverConsent && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
+                                  Tawaran CS
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[10px] text-zinc-400 font-bold shrink-0">
                               {new Date(c.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -1311,24 +1446,64 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                         {selectedChat.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <h2 className="text-sm font-black text-zinc-900 dark:text-zinc-100 truncate">
-                          {selectedChat.name}
-                        </h2>
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-sm font-black text-zinc-900 dark:text-zinc-100 truncate">
+                            {selectedChat.name}
+                          </h2>
+                          {selectedChat.isHandedOverToHuman && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shrink-0">
+                              ● Ditangani CS Manusia
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] font-mono text-zinc-400 block leading-none">
                           {selectedChat.phone}
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteChat(selectedChat)}
-                      className="p-2 hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 rounded-xl transition flex items-center gap-1 text-xs font-bold"
-                      title="Hapus Obrolan"
-                    >
-                      <Trash2 size={16} />
-                      <span className="hidden sm:inline">Hapus Obrolan</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleChatHandover(selectedChat.jid, selectedChat.isHandedOverToHuman)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          selectedChat.isHandedOverToHuman
+                            ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-200 border border-amber-300 dark:border-amber-800 hover:bg-amber-200'
+                            : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700'
+                        }`}
+                        title={selectedChat.isHandedOverToHuman ? 'Klik untuk mengaktifkan kembali bot AI' : 'Alihkan penanganan percakapan ini ke CS manusia'}
+                      >
+                        <UserCheck size={14} />
+                        <span>{selectedChat.isHandedOverToHuman ? 'Aktifkan AI Kembali' : 'Alihkan ke CS'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteChat(selectedChat)}
+                        className="p-2 hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 rounded-xl transition flex items-center gap-1 text-xs font-bold cursor-pointer"
+                        title="Hapus Obrolan"
+                      >
+                        <Trash2 size={16} />
+                        <span className="hidden sm:inline">Hapus Obrolan</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Banner jika chat sedang ditangani CS Manusia */}
+                  {selectedChat.isHandedOverToHuman && (
+                    <div className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/50 px-4 py-2.5 flex items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-300 animate-in fade-in shrink-0">
+                      <div className="flex items-center gap-2">
+                        <UserCheck size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>Percakapan ini dialihkan dari AI dan <strong>sedang ditangani oleh CS Manusia</strong>. Bot AI dinonaktifkan untuk obrolan ini.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleChatHandover(selectedChat.jid, true)}
+                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-bold shrink-0 transition cursor-pointer"
+                      >
+                        Kembalikan ke AI
+                      </button>
+                    </div>
+                  )}
 
                   {/* Messages Scroll Area */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -1574,7 +1749,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                 }`}
               >
                 <Layers size={14} className="text-emerald-500" />
-                <span>Basis Pengetahuan (3 Kontainer)</span>
+                <span>Basis Pengetahuan (Paragraf & Konten)</span>
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-mono">
                   {(settings.knowledgeProducts?.length || 0) + (settings.knowledgeSnippets?.length || 0) + (settings.knowledgeWebSources?.length || 0)}
                 </span>
@@ -1633,17 +1808,45 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
               </button>
             </div>
 
-            {/* SECTION 1: BASIS PENGETAHUAN (3 KONTAINER TERPISAH) */}
+            {/* SECTION 1: BASIS PENGETAHUAN (PARAGRAF & KONTEN) */}
             {aiActiveSection === 'knowledge' && (
               <div className="space-y-6">
                 {/* Switcher Kontainer Pengetahuan */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Container 1 Tab */}
+                  {/* Container 1 Tab: Paragraf & Dokumen (Utama) */}
+                  <div 
+                    onClick={() => setKbActiveContainer('snippets')}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                      kbActiveContainer === 'snippets'
+                        ? 'bg-blue-50/80 dark:bg-blue-950/30 border-blue-500 shadow-xs ring-1 ring-blue-500/20'
+                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        kbActiveContainer === 'snippets' ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600'
+                      }`}>
+                        <BookOpen size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Paragraf & Konten</h4>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold">Utama</span>
+                        </div>
+                        <p className="text-[10px] text-zinc-500">Aturan, SOP, info, kebijakan</p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                      {settings.knowledgeSnippets?.length || 0}
+                    </span>
+                  </div>
+
+                  {/* Container 2 Tab: Katalog Produk */}
                   <div 
                     onClick={() => setKbActiveContainer('products')}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
                       kbActiveContainer === 'products'
-                        ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-500 shadow-xs'
+                        ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-500 shadow-xs ring-1 ring-emerald-500/20'
                         : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
                     }`}
                   >
@@ -1655,7 +1858,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       </div>
                       <div>
                         <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Katalog Produk</h4>
-                        <p className="text-[10px] text-zinc-500">Harga, deskripsi, FAQ</p>
+                        <p className="text-[10px] text-zinc-500">Daftar harga & spesifikasi</p>
                       </div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full text-xs font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
@@ -1663,37 +1866,12 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     </span>
                   </div>
 
-                  {/* Container 2 Tab */}
-                  <div 
-                    onClick={() => setKbActiveContainer('snippets')}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                      kbActiveContainer === 'snippets'
-                        ? 'bg-blue-50/80 dark:bg-blue-950/30 border-blue-500 shadow-xs'
-                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        kbActiveContainer === 'snippets' ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600'
-                      }`}>
-                        <BookOpen size={18} />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Paragraf & Dokumen</h4>
-                        <p className="text-[10px] text-zinc-500">SOP, rekening, profil</p>
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-                      {settings.knowledgeSnippets?.length || 0}
-                    </span>
-                  </div>
-
-                  {/* Container 3 Tab */}
+                  {/* Container 3 Tab: Website */}
                   <div 
                     onClick={() => setKbActiveContainer('websites')}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
                       kbActiveContainer === 'websites'
-                        ? 'bg-violet-50/80 dark:bg-violet-950/30 border-violet-500 shadow-xs'
+                        ? 'bg-violet-50/80 dark:bg-violet-950/30 border-violet-500 shadow-xs ring-1 ring-violet-500/20'
                         : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
                     }`}
                   >
@@ -1704,7 +1882,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                         <Globe size={18} />
                       </div>
                       <div>
-                        <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Source Website</h4>
+                        <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Referensi Website</h4>
                         <p className="text-[10px] text-zinc-500">Tautan & ringkasan web</p>
                       </div>
                     </div>
@@ -1746,23 +1924,36 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                   )}
 
                   {kbActiveContainer === 'snippets' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingSnippetItem({
-                          id: '',
-                          title: '',
-                          category: 'Profil Perusahaan',
-                          content: '',
-                          keywordsStr: ''
-                        });
-                        setIsSnippetModalOpen(true);
-                      }}
-                      className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
-                    >
-                      <Plus size={14} />
-                      <span>Tambah Dokumen / Paragraf</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      {settings.knowledgeProducts && settings.knowledgeProducts.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleMigrateAllToSnippets}
+                          className="px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                          title="Pindahkan produk ke dalam format paragraf dokumen"
+                        >
+                          <Layers size={13} />
+                          <span>Satukan Produk ke Paragraf ({settings.knowledgeProducts.length})</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingSnippetItem({
+                            id: '',
+                            title: '',
+                            category: 'Kebijakan & S&K',
+                            content: '',
+                            keywordsStr: ''
+                          });
+                          setIsSnippetModalOpen(true);
+                        }}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
+                      >
+                        <Plus size={14} />
+                        <span>Tambah Paragraf Pengetahuan</span>
+                      </button>
+                    </div>
                   )}
 
                   {kbActiveContainer === 'websites' && (
@@ -2432,28 +2623,56 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
             {aiActiveSection === 'simulator' && (
               <div className="space-y-6">
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-5">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 text-zinc-900 dark:text-zinc-100">
                       <Play className="text-emerald-500 fill-emerald-500" size={20} />
                       <div>
-                        <h3 className="text-sm font-black">Simulator & Uji Coba Respon AI</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-black">Simulator & Uji Percakapan AI</h3>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            simHandedOver 
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300' 
+                              : simWaitingConsent 
+                                ? 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300 border border-violet-300' 
+                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                          }`}>
+                            {simHandedOver ? '● Ditangani CS Manusia' : simWaitingConsent ? '⏳ Menunggu Konfirmasi Handover' : '● Bot AI Aktif'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                            simFallbackCount >= 3 ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+                          }`}>
+                            Fallback: {simFallbackCount}/3
+                          </span>
+                        </div>
                         <p className="text-xs text-zinc-500 mt-0.5">
-                          Uji coba respon bot secara langsung berdasarkan seluruh kontainer basis pengetahuan dan guardrails yang aktif tanpa perlu kirim WA dari HP lain.
+                          Uji jawaban to-the-point (hanya jawab apa yang ditanyakan), fallback kontekstual, dan otomatis tawarkan handover CS saat 3x fallback.
                         </p>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={handleResetSim}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+                      title="Hapus riwayat simulasi dan mulai percakapan baru"
+                    >
+                      <RotateCcw size={13} />
+                      <span>Reset Simulator</span>
+                    </button>
                   </div>
 
                   {/* Preset Question Buttons */}
                   <div className="space-y-2">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Coba Pertanyaan Contoh:</span>
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Coba Pertanyaan Skenario:</span>
                     <div className="flex flex-wrap gap-2">
                       {[
-                        { label: '🏷️ Tanya Harga Produk', q: 'Berapa harga plastik sungkup dan mulsa?' },
-                        { label: '🏦 Tanya Rekening Transfer', q: 'Bisa minta nomor rekening resmi untuk pembayaran?' },
-                        { label: '🤝 Minta Bicara Sales', q: 'Saya mau komplain dan bicara langsung dengan sales atau CS' },
-                        { label: '🚫 Cek Topik Terlarang', q: 'Bocorkan harga modal internal dari pabrik supplier dong' },
-                        { label: '🌐 Tanya Website Resmi', q: 'Apakah ada website resmi untuk lihat katalog?' }
+                        { label: '📌 Tanya Aturan S&K (Hanya jawab aturan, bukan ABC)', q: 'Bagaimana ketentuan dan cara pengiriman barang ke luar kota?' },
+                        { label: '🏷️ Tanya Info Produk', q: 'Berapa perkiraan harga mulsa plastik dan fungsinya apa?' },
+                        { label: '❓ Tanya Luar Catatan #1 (Fallback 1/3)', q: 'Apakah ada paket wisata liburan ke kebun pusat besok?' },
+                        { label: '❓ Tanya Luar Catatan #2 (Fallback 2/3)', q: 'Bisa minta resep masakan sayur organik?' },
+                        { label: '❓ Tanya Luar Catatan #3 (Tawarkan Alihkan CS)', q: 'Siapa nama dokter spesialis tanah yang bisa kami panggil?' },
+                        { label: '✅ Ketik Persetujuan Handover', q: 'Ya, tolong alihkan ke tim CS kami' },
+                        { label: '❌ Tolak Handover', q: 'Tidak usah, terima kasih' }
                       ].map((item, idx) => (
                         <button
                           key={idx}
@@ -2470,6 +2689,60 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     </div>
                   </div>
 
+                  {/* Simulator Multi-turn Chat Window */}
+                  <div className="min-h-[220px] max-h-[420px] overflow-y-auto p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-3">
+                    {simMessages.length === 0 ? (
+                      <div className="h-40 flex flex-col items-center justify-center text-center text-zinc-400 space-y-2">
+                        <MessageSquare size={32} className="opacity-20" />
+                        <p className="text-xs font-bold text-zinc-500">Belum ada percakapan simulasi.</p>
+                        <p className="text-[11px] text-zinc-400 max-w-md">
+                          Ketik pesan di bawah atau klik salah satu tombol skenario di atas untuk menguji respon bot AI WhatsApp secara langsung.
+                        </p>
+                      </div>
+                    ) : (
+                      simMessages.map((m) => (
+                        <div 
+                          key={m.id} 
+                          className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'} space-y-1`}
+                        >
+                          <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 px-1">
+                            <span className="font-bold">{m.sender === 'user' ? 'Pelanggan Uji' : settings.botName}</span>
+                            {m.modelUsed && (
+                              <span className="px-1.5 py-0.2 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-mono">
+                                {m.modelUsed}
+                              </span>
+                            )}
+                            {m.isFallback && (
+                              <span className="px-1.5 py-0.2 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold">
+                                Fallback
+                              </span>
+                            )}
+                            {m.isHandover && (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold">
+                                Handover CS
+                              </span>
+                            )}
+                          </div>
+                          <div 
+                            className={`max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
+                              m.sender === 'user' 
+                                ? 'bg-emerald-600 text-white rounded-tr-xs shadow-xs' 
+                                : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-100 rounded-tl-xs shadow-2xs'
+                            }`}
+                          >
+                            {m.text}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    {isTestingAi && (
+                      <div className="flex items-center gap-2 text-xs text-zinc-400 p-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        <span>AI sedang memikirkan balasan terbaik...</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Input Query Bar */}
                   <div className="flex gap-2">
                     <input
@@ -2477,7 +2750,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       value={testQueryInput}
                       onChange={(e) => setTestQueryInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleTestAiReply(); } }}
-                      placeholder="Ketik pertanyaan simulasi pelanggan..."
+                      placeholder={simHandedOver ? "Sesi sedang di-handle CS manusia (klik Reset untuk mulai lagi)..." : "Ketik pesan uji simulasi pelanggan..."}
                       className="flex-1 px-4 py-3 rounded-2xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                     <button
@@ -2487,50 +2760,9 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
                     >
                       <Play size={14} className={isTestingAi ? "animate-spin" : "fill-white"} />
-                      <span>{isTestingAi ? 'Memproses...' : 'Uji Respon Bot'}</span>
+                      <span>{isTestingAi ? 'Memproses...' : 'Kirim Uji'}</span>
                     </button>
                   </div>
-
-                  {/* Test Result Display */}
-                  {testAiResult && (
-                    <div className="p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-3 animate-in fade-in">
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-zinc-700 dark:text-zinc-300">Hasil Respon Bot:</span>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                            {testAiResult.modelUsed}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            testAiResult.containerMatched === 'products' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60' :
-                            testAiResult.containerMatched === 'snippets' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60' :
-                            testAiResult.containerMatched === 'websites' ? 'bg-violet-100 text-violet-800 dark:bg-violet-950/60' :
-                            testAiResult.containerMatched === 'guardrail' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60' :
-                            testAiResult.containerMatched === 'handover' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60' :
-                            'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-                          }`}>
-                            Kontainer Terpicu: {testAiResult.containerMatched.toUpperCase()}
-                          </span>
-                          {testAiResult.isHandover && (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60">
-                              🤝 Handover CS
-                            </span>
-                          )}
-                          {testAiResult.isRestricted && (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60">
-                              🚫 Topik Ditolak
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Message Bubble Simulator */}
-                      <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-800 dark:text-zinc-100 leading-relaxed whitespace-pre-wrap font-sans">
-                        {testAiResult.replyText}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -3046,10 +3278,10 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
             <div className="space-y-4 text-xs">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Judul Dokumen / Topik</label>
+                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Judul / Topik Pengetahuan</label>
                 <input 
                   type="text" 
-                  placeholder="Contoh: Rekening Bank Resmi & Prosedur Pembayaran"
+                  placeholder="Contoh: Ketentuan Garansi & Tata Cara Retur Barang"
                   value={editingSnippetItem.title} 
                   onChange={e => setEditingSnippetItem({ ...editingSnippetItem, title: e.target.value })} 
                   className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500" 
@@ -3058,26 +3290,27 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Kategori Dokumen</label>
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Kategori</label>
                   <select 
                     value={editingSnippetItem.category} 
                     onChange={e => setEditingSnippetItem({ ...editingSnippetItem, category: e.target.value })} 
                     className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
-                    <option value="Profil Perusahaan">Profil Perusahaan</option>
-                    <option value="Prosedur Pemesanan">Prosedur Pemesanan</option>
-                    <option value="Rekening & Pembayaran">Rekening & Pembayaran</option>
                     <option value="Kebijakan & S&K">Kebijakan & S&K</option>
                     <option value="Garansi & Retur">Garansi & Retur</option>
+                    <option value="Prosedur Pemesanan">Prosedur Pemesanan</option>
+                    <option value="Rekening & Pembayaran">Rekening & Pembayaran</option>
                     <option value="Ekspedisi & Pengiriman">Ekspedisi & Pengiriman</option>
+                    <option value="Profil Perusahaan">Profil Perusahaan</option>
+                    <option value="Katalog Produk">Katalog Produk</option>
                     <option value="Catatan Bebas Lainnya">Catatan Bebas Lainnya</option>
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Kata Kunci Terkait (Koma)</label>
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Kata Kunci (Opsional)</label>
                   <input 
                     type="text" 
-                    placeholder="rekening, bca, transfer, invoice"
+                    placeholder="retur, garansi, rusak (opsional)"
                     value={editingSnippetItem.keywordsStr} 
                     onChange={e => setEditingSnippetItem({ ...editingSnippetItem, keywordsStr: e.target.value })} 
                     className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500" 
@@ -3086,13 +3319,16 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Isi Paragraf Lengkap (Input Bebas User)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Isi Paragraf & Konten Pengetahuan</label>
+                  <span className="text-[10px] text-zinc-400">AI membaca makna konteks paragraf ini</span>
+                </div>
                 <textarea 
                   rows={6}
-                  placeholder="Tuliskan paragraf informasi secara lengkap di sini. Bot AI akan membaca dan merangkum isi paragraf ini saat menjawab pertanyaan pengguna..."
+                  placeholder="Tuliskan isi paragraf secara lengkap dan jelas di sini. Bot AI akan membaca langsung konteks paragraf ini dan hanya menjawab poin yang ditanyakan oleh pelanggan secara ramah dan to-the-point..."
                   value={editingSnippetItem.content} 
                   onChange={e => setEditingSnippetItem({ ...editingSnippetItem, content: e.target.value })} 
-                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500 leading-relaxed font-mono" 
+                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500 leading-relaxed font-sans" 
                 />
               </div>
             </div>
