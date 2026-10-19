@@ -545,12 +545,3 @@ export const deleteWAChatFromSupabase = async (jid: string, connectedPhone?: str
         return null;
     }
 };
-
-export const clearWAChatsFromSupabase = async () => {
-    try {
-        return await withRetry(() => supabase.from('wa_chats').delete().neq('id', 'none'));
-    } catch (err: any) {
-        console.warn('[SupabaseSync] Error clearing wa_chats from Supabase:', err.message);
-        return null;
-    }
-};

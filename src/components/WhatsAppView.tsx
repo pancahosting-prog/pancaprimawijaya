@@ -29,33 +29,11 @@ import {
   loadWAChatsFromSupabase, 
   saveWAChatToSupabase, 
   deleteWAChatFromSupabase,
-  clearWAChatsFromSupabase,
   loadKnownConnectedNumbersFromSupabase,
   checkSupabaseTableStatus 
 } from '../lib/supabaseSync';
 import { SUPABASE_MIGRATION_SQL } from '../lib/supabaseMigrationSql';
 import { getApiUrl } from '../lib/apiUtils';
-
-export const formatDisplayPhone = (rawPhoneOrJid?: string, name?: string): { phone: string; name: string } => {
-  if (!rawPhoneOrJid) return { phone: name || "Pengguna WA", name: name || "Pengguna WA" };
-
-  let val = rawPhoneOrJid.split("@")[0].split(":")[0];
-  const digits = val.replace(/[^0-9]/g, "");
-
-  if (digits && digits.length >= 8 && digits.length <= 15 && !val.includes("lid")) {
-    let formatted = digits;
-    if (formatted.startsWith("62")) {
-      formatted = "0" + formatted.slice(2);
-    } else if (!formatted.startsWith("0")) {
-      formatted = "0" + formatted;
-    }
-    const displayName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net")) ? name : formatted;
-    return { phone: formatted, name: displayName };
-  }
-
-  const cleanName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net")) ? name : "Pengguna WA";
-  return { phone: cleanName, name: cleanName };
-};
 
 export interface WAChatMedia {
   type: 'image' | 'document' | 'video' | 'audio';
@@ -268,12 +246,6 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
             const cleanJid = chat.jid || chat.id;
             if (cleanJid && !seenJids.has(cleanJid)) {
               seenJids.add(cleanJid);
-
-              // Format display phone & name cleanly (08... format, no @lid/@s.whatsapp.net)
-              const cleanInfo = formatDisplayPhone(chat.phone || chat.jid || chat.id, chat.name);
-              chat.phone = cleanInfo.phone;
-              chat.name = cleanInfo.name;
-
               uniqueChats.push(chat);
             }
           });
@@ -310,51 +282,20 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       if (srvRes.ok) {
         const srvData = await srvRes.json();
         if (srvData.chats) {
-          const cleaned = srvData.chats.map((c: WAChat) => {
-            const info = formatDisplayPhone(c.phone || c.jid || c.id, c.name);
-            return { ...c, phone: info.phone, name: info.name };
-          });
-          setChats(cleaned);
+          setChats(srvData.chats);
         }
       }
 
       // 2. Direct client fallback from Supabase
       const cloudChats = await loadWAChatsFromSupabase(target);
       if (cloudChats && cloudChats.length > 0) {
-        const cleaned = cloudChats.map((c: any) => {
-          const info = formatDisplayPhone(c.phone || c.jid || c.id, c.name);
-          return { ...c, phone: info.phone, name: info.name };
-        });
-        setChats(cleaned);
+        setChats(cloudChats);
       }
 
       setSyncToast('Riwayat chat berhasil disinkronkan dari Supabase!');
       setTimeout(() => setSyncToast(null), 3000);
     } catch (err: any) {
       console.error('Error syncing WA with Supabase:', err);
-    } finally {
-      setIsSyncingSupabase(false);
-    }
-  };
-
-  // Clear ALL Chat History and Connected Numbers
-  const handleClearAllData = async () => {
-    if (!confirm('Apakah Anda yakin ingin bersihkan SELURUH data percakapan WhatsApp & nomor terhubung? Tindakan ini tidak dapat dibatalkan.')) return;
-
-    setIsSyncingSupabase(true);
-    try {
-      await fetch(getApiUrl('/api/wa/clear-all-data'), { method: 'POST' });
-      await clearWAChatsFromSupabase();
-
-      setChats([]);
-      setKnownNumbers([]);
-      setSelectedChatJid(null);
-      setSyncToast('Seluruh data percakapan WhatsApp berhasil dibersihkan!');
-      setTimeout(() => setSyncToast(null), 4000);
-      fetchStatus();
-    } catch (err) {
-      console.error('Error clearing all WA data:', err);
-      alert('Gagal bersihkan data WhatsApp.');
     } finally {
       setIsSyncingSupabase(false);
     }
@@ -645,15 +586,6 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     >
                       <Code size={13} />
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleClearAllData}
-                      disabled={isSyncingSupabase}
-                      className="p-1.5 rounded-md hover:bg-rose-100 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 transition cursor-pointer"
-                      title="Bersihkan Seluruh Data Percakapan & Perangkat WhatsApp"
-                    >
-                      <Trash2 size={13} />
-                    </button>
                   </div>
                 </div>
 
@@ -713,7 +645,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       <div
                         key={`${c.jid || c.id}_${idx}`}
                         onClick={() => setSelectedChatJid(c.jid || c.id)}
-                        className={`p-4 cursor-pointer transition-all flex items-start gap-3 select-none group relative ${
+                        className={`p-4 cursor-pointer transition-all flex items-start gap-3 select-none ${
                           isSelected && !isMobile
                             ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold'
                             : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40 active:bg-zinc-100 dark:active:bg-zinc-800'
@@ -735,17 +667,6 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                             {c.lastMessage}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteChat(c);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 rounded transition absolute right-2 bottom-2"
-                          title="Hapus Obrolan Ini"
-                        >
-                          <Trash2 size={13} />
-                        </button>
                         {c.unreadCount > 0 && (
                           <span className="mt-1 w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center shrink-0">
                             {c.unreadCount}
@@ -785,15 +706,6 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteChat(selectedChat)}
-                      className="p-2 hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 rounded-xl transition flex items-center gap-1 text-xs font-bold"
-                      title="Hapus Obrolan"
-                    >
-                      <Trash2 size={16} />
-                      <span className="hidden sm:inline">Hapus Obrolan</span>
-                    </button>
                   </div>
 
                   {/* Messages Scroll Area */}

@@ -160,11 +160,6 @@ async function startServer() {
     });
   });
 
-  app.post("/api/wa/clear-all-data", async (_req, res) => {
-    await waService.clearAllData();
-    res.json({ success: true, message: "Seluruh data percakapan WhatsApp dan nomor terhubung berhasil dibersihkan." });
-  });
-
   app.post("/api/wa/logout", async (_req, res) => {
     await waService.disconnectSession();
     res.json({ success: true, message: "Sesi WhatsApp berhasil diputuskan." });
