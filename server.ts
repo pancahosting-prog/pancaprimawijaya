@@ -138,8 +138,8 @@ async function startServer() {
     res.json({ success: true, settings: waService.aiSettings });
   });
 
-  app.post("/api/wa/settings", (req, res) => {
-    waService.saveSettings(req.body);
+  app.post("/api/wa/settings", async (req, res) => {
+    await waService.saveSettings(req.body);
     res.json({ success: true, settings: waService.aiSettings });
   });
 

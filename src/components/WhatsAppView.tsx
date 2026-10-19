@@ -808,16 +808,21 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     }
   };
 
-  const handleSaveSettings = async () => {
+  const saveSettingsToServer = async (customSettings?: WAISettings) => {
+    const toSave = customSettings || settings;
     setIsSavingSettings(true);
     try {
       const res = await fetch(getApiUrl('/api/wa/settings'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
+        body: JSON.stringify(toSave)
       });
       if (res.ok) {
-        setSaveSuccessMsg('Disimpan!');
+        const data = await res.json();
+        if (data && data.settings) {
+          setSettings(data.settings);
+        }
+        setSaveSuccessMsg('Tersimpan Otomatis!');
         setTimeout(() => setSaveSuccessMsg(null), 3000);
       }
     } catch (err) {
@@ -827,8 +832,12 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     }
   };
 
-  // Product KB CRUD
-  const handleSaveKbItem = () => {
+  const handleSaveSettings = async () => {
+    await saveSettingsToServer();
+  };
+
+  // Product KB CRUD with Immediate Auto-Save
+  const handleSaveKbItem = async () => {
     if (!editingKbItem.productName.trim()) {
       alert('Nama produk tidak boleh kosong.');
       return;
@@ -852,27 +861,31 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       updatedList.push(newKb);
     }
 
-    setSettings({ 
+    const updated = { 
       ...settings, 
       knowledgeProducts: updatedList, 
       knowledgeBase: updatedList 
-    });
+    };
+    setSettings(updated);
     setIsKbModalOpen(false);
+    await saveSettingsToServer(updated);
   };
 
-  const handleDeleteKbItem = (id: string) => {
+  const handleDeleteKbItem = async (id: string) => {
     if (!confirm('Hapus produk ini dari basis pengetahuan AI?')) return;
     const currentList = settings.knowledgeProducts?.length ? settings.knowledgeProducts : (settings.knowledgeBase || []);
-    const updated = currentList.filter(k => k.id !== id);
-    setSettings({ 
+    const updatedList = currentList.filter(k => k.id !== id);
+    const updated = { 
       ...settings, 
-      knowledgeProducts: updated, 
-      knowledgeBase: updated 
-    });
+      knowledgeProducts: updatedList, 
+      knowledgeBase: updatedList 
+    };
+    setSettings(updated);
+    await saveSettingsToServer(updated);
   };
 
-  // Paragraf Biasa / Catatan Teks CRUD
-  const handleSaveSnippetItem = () => {
+  // Paragraf Biasa / Catatan Teks CRUD with Immediate Auto-Save
+  const handleSaveSnippetItem = async () => {
     if (!editingSnippetItem.title.trim() || !editingSnippetItem.content.trim()) {
       alert('Judul dan isi dokumen/paragraf wajib diisi.');
       return;
@@ -895,18 +908,24 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       updatedList.push(newSnippet);
     }
 
-    setSettings({ ...settings, knowledgeSnippets: updatedList });
+    const updated = { ...settings, knowledgeSnippets: updatedList };
+    setSettings(updated);
     setIsSnippetModalOpen(false);
+    await saveSettingsToServer(updated);
   };
 
-  const handleDeleteSnippetItem = (id: string) => {
+  const handleDeleteSnippetItem = async (id: string) => {
     if (!confirm('Hapus dokumen/paragraf ini dari basis pengetahuan?')) return;
-    const updated = (settings.knowledgeSnippets || []).filter(s => s.id !== id);
-    setSettings({ ...settings, knowledgeSnippets: updated });
+    const updated = {
+      ...settings,
+      knowledgeSnippets: (settings.knowledgeSnippets || []).filter(s => s.id !== id)
+    };
+    setSettings(updated);
+    await saveSettingsToServer(updated);
   };
 
-  // Source Website & Referensi CRUD
-  const handleSaveWebSourceItem = () => {
+  // Source Website & Referensi CRUD with Immediate Auto-Save
+  const handleSaveWebSourceItem = async () => {
     if (!editingWebSourceItem.url.trim() || !editingWebSourceItem.title.trim()) {
       alert('URL dan judul sumber website wajib diisi.');
       return;
@@ -932,88 +951,110 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       updatedList.push(newSource);
     }
 
-    setSettings({ ...settings, knowledgeWebSources: updatedList });
+    const updated = { ...settings, knowledgeWebSources: updatedList };
+    setSettings(updated);
     setIsWebSourceModalOpen(false);
+    await saveSettingsToServer(updated);
   };
 
-  const handleDeleteWebSourceItem = (id: string) => {
+  const handleDeleteWebSourceItem = async (id: string) => {
     if (!confirm('Hapus sumber website ini?')) return;
-    const updated = (settings.knowledgeWebSources || []).filter(w => w.id !== id);
-    setSettings({ ...settings, knowledgeWebSources: updated });
+    const updated = {
+      ...settings,
+      knowledgeWebSources: (settings.knowledgeWebSources || []).filter(w => w.id !== id)
+    };
+    setSettings(updated);
+    await saveSettingsToServer(updated);
   };
 
-  const handleToggleWebSourceActive = (id: string) => {
-    const updated = (settings.knowledgeWebSources || []).map(w => 
-      w.id === id ? { ...w, isActive: !w.isActive } : w
-    );
-    setSettings({ ...settings, knowledgeWebSources: updated });
+  const handleToggleWebSourceActive = async (id: string) => {
+    const updated = {
+      ...settings,
+      knowledgeWebSources: (settings.knowledgeWebSources || []).map(w => 
+        w.id === id ? { ...w, isActive: !w.isActive } : w
+      )
+    };
+    setSettings(updated);
+    await saveSettingsToServer(updated);
   };
 
-  // Tag Adders
-  const handleAddRestrictedTopic = () => {
+  // Tag Adders with Auto-Save
+  const handleAddRestrictedTopic = async () => {
     if (!newRestrictedInput.trim()) return;
     const current = settings.restrictedTopics || [];
     if (!current.includes(newRestrictedInput.trim())) {
-      setSettings({ ...settings, restrictedTopics: [...current, newRestrictedInput.trim()] });
+      const updated = { ...settings, restrictedTopics: [...current, newRestrictedInput.trim()] };
+      setSettings(updated);
+      await saveSettingsToServer(updated);
     }
     setNewRestrictedInput('');
   };
 
-  const handleRemoveRestrictedTopic = (topic: string) => {
-    setSettings({
+  const handleRemoveRestrictedTopic = async (topic: string) => {
+    const updated = {
       ...settings,
       restrictedTopics: (settings.restrictedTopics || []).filter(t => t !== topic)
-    });
+    };
+    setSettings(updated);
+    await saveSettingsToServer(updated);
   };
 
-  const handleAddHandoverTrigger = () => {
+  const handleAddHandoverTrigger = async () => {
     if (!newHandoverKeywordInput.trim()) return;
     const current = settings.handoverToHuman?.triggerKeywords || [];
     if (!current.includes(newHandoverKeywordInput.trim())) {
-      setSettings({
+      const updated = {
         ...settings,
         handoverToHuman: {
           ...settings.handoverToHuman,
           triggerKeywords: [...current, newHandoverKeywordInput.trim()]
         }
-      });
+      };
+      setSettings(updated);
+      await saveSettingsToServer(updated);
     }
     setNewHandoverKeywordInput('');
   };
 
-  const handleRemoveHandoverTrigger = (kw: string) => {
-    setSettings({
+  const handleRemoveHandoverTrigger = async (kw: string) => {
+    const updated = {
       ...settings,
       handoverToHuman: {
         ...settings.handoverToHuman,
         triggerKeywords: (settings.handoverToHuman?.triggerKeywords || []).filter(k => k !== kw)
       }
-    });
+    };
+    setSettings(updated);
+    await saveSettingsToServer(updated);
   };
 
-  const handleAddSalesCtaTrigger = () => {
+  const handleAddSalesCtaTrigger = async () => {
     if (!newSalesCtaKeywordInput.trim()) return;
     const current = settings.salesCta?.triggerKeywords || [];
     if (!current.includes(newSalesCtaKeywordInput.trim())) {
-      setSettings({
+      const updated = {
         ...settings,
         salesCta: {
           ...settings.salesCta,
           triggerKeywords: [...current, newSalesCtaKeywordInput.trim()]
         }
-      });
+      };
+      setSettings(updated);
+      await saveSettingsToServer(updated);
     }
     setNewSalesCtaKeywordInput('');
   };
 
-  const handleRemoveSalesCtaTrigger = (kw: string) => {
-    setSettings({
+  const handleRemoveSalesCtaTrigger = async (kw: string) => {
+    const updated = {
       ...settings,
       salesCta: {
         ...settings.salesCta,
         triggerKeywords: (settings.salesCta?.triggerKeywords || []).filter(k => k !== kw)
       }
-    });
+    };
+    setSettings(updated);
+    await saveSettingsToServer(updated);
   };
 
   const selectedChat = chats.find(c => c.jid === selectedChatJid);
@@ -1481,19 +1522,33 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800">
                   <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Auto-Reply</span>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
                       type="checkbox" 
                       checked={settings.autoReplyEnabled} 
-                      onChange={(e) => setSettings({ ...settings, autoReplyEnabled: e.target.checked })} 
+                      onChange={(e) => {
+                        const updated = { ...settings, autoReplyEnabled: e.target.checked };
+                        setSettings(updated);
+                        saveSettingsToServer(updated);
+                      }} 
                       className="sr-only peer" 
                     />
                     <div className="w-10 h-5 bg-zinc-300 dark:bg-zinc-700 rounded-full peer peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
                   </label>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsSqlModalOpen(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800/60 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition flex items-center gap-1.5 cursor-pointer"
+                  title="Lihat status & script SQL Supabase"
+                >
+                  <Database size={13} />
+                  <span>Script SQL Tabel</span>
+                </button>
 
                 <button 
                   type="button"
@@ -2953,9 +3008,11 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
               <button 
                 type="button"
                 onClick={handleSaveKbItem} 
-                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition cursor-pointer"
+                disabled={isSavingSettings}
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition cursor-pointer flex items-center justify-center gap-1.5"
               >
-                Simpan Produk
+                <Save size={13} />
+                <span>{isSavingSettings ? 'Menyimpan...' : 'Simpan Produk (Auto-Save)'}</span>
               </button>
             </div>
           </div>
@@ -3051,9 +3108,11 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
               <button 
                 type="button"
                 onClick={handleSaveSnippetItem} 
-                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition cursor-pointer"
+                disabled={isSavingSettings}
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition cursor-pointer flex items-center justify-center gap-1.5"
               >
-                Simpan Paragraf
+                <Save size={13} />
+                <span>{isSavingSettings ? 'Menyimpan...' : 'Simpan Paragraf (Auto-Save)'}</span>
               </button>
             </div>
           </div>
@@ -3147,9 +3206,11 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
               <button 
                 type="button"
                 onClick={handleSaveWebSourceItem} 
-                className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-600/20 transition cursor-pointer"
+                disabled={isSavingSettings}
+                className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-600/20 transition cursor-pointer flex items-center justify-center gap-1.5"
               >
-                Simpan Sumber Web
+                <Save size={13} />
+                <span>{isSavingSettings ? 'Menyimpan...' : 'Simpan Sumber Web (Auto-Save)'}</span>
               </button>
             </div>
           </div>

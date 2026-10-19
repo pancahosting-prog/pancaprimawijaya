@@ -251,7 +251,7 @@ class WAService {
       : path.resolve(`./wa-chats-${clean}.json`);
   }
 
-  private loadSettings() {
+  private async loadSettings() {
     try {
       if (fs.existsSync(SETTINGS_FILE)) {
         const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
@@ -272,12 +272,38 @@ class WAService {
           systemInstructions: parsed.systemInstructions || this.aiSettings.systemInstructions
         };
       }
+
+      // Sync dari Supabase app_settings jika tersedia
+      if (supabaseServer) {
+        try {
+          const { data, error } = await supabaseServer
+            .from("app_settings")
+            .select("value")
+            .eq("key", "wa_ai_settings")
+            .maybeSingle();
+          if (data && data.value && !error) {
+            const dbVal = data.value;
+            const products = dbVal.knowledgeProducts || dbVal.knowledgeBase || this.aiSettings.knowledgeProducts;
+            this.aiSettings = {
+              ...this.aiSettings,
+              ...dbVal,
+              knowledgeProducts: products,
+              knowledgeBase: products,
+              knowledgeSnippets: dbVal.knowledgeSnippets || this.aiSettings.knowledgeSnippets,
+              knowledgeWebSources: dbVal.knowledgeWebSources || this.aiSettings.knowledgeWebSources
+            };
+            console.log("[waService] Berhasil sinkronisasi AI settings dari Supabase app_settings.");
+          }
+        } catch (dbErr) {
+          // Abaikan jika tabel belum ada di Supabase
+        }
+      }
     } catch (e) {
       console.error("[waService] Error loading WA AI settings:", e);
     }
   }
 
-  public saveSettings(newSettings: Partial<WAISettings>) {
+  public async saveSettings(newSettings: Partial<WAISettings>) {
     try {
       this.aiSettings = { ...this.aiSettings, ...newSettings };
       if (newSettings.knowledgeProducts) {
@@ -286,7 +312,23 @@ class WAService {
       if (newSettings.toneOfVoice) {
         this.aiSettings.tone = newSettings.toneOfVoice;
       }
+      // 1. Simpan ke file lokal wa-ai-settings.json
       fs.writeFileSync(SETTINGS_FILE, JSON.stringify(this.aiSettings, null, 2), "utf-8");
+
+      // 2. Dual-Persistence: simpan juga ke tabel Supabase app_settings jika terhubung
+      if (supabaseServer) {
+        try {
+          await supabaseServer.from("app_settings").upsert({
+            key: "wa_ai_settings",
+            value: this.aiSettings,
+            updated_at: new Date().toISOString(),
+            updated_by: "wa_service"
+          }, { onConflict: "key" });
+          console.log("[waService] Berhasil menyimpan AI settings ke Supabase app_settings.");
+        } catch (dbErr) {
+          console.warn("[waService] Supabase app_settings sync skipped:", dbErr);
+        }
+      }
     } catch (e) {
       console.error("[waService] Error saving WA AI settings:", e);
     }
