@@ -547,12 +547,13 @@ class WAService {
 
       const pino = (await import("pino")).default;
       const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
+      const Browsers = baileys.Browsers || (baileys as any).default?.Browsers;
 
       this.socket = makeWASocket({
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: "silent" }) as any,
-        browser: ["MyPanca CRM WA", "Chrome", "1.0.0"],
+        browser: Browsers ? Browsers.ubuntu("Chrome") : ["Ubuntu", "Chrome", "20.0.04"],
         keepAliveIntervalMs: 25000,
         markOnlineOnConnect: true,
         syncFullHistory: false,
@@ -568,7 +569,7 @@ class WAService {
 
         if (qr) {
           this.qrCodeBase64 = await QRCode.toDataURL(qr);
-          this.connectionState = "disconnected";
+          this.connectionState = "connecting";
         }
 
         if (connection === "close") {
@@ -579,6 +580,7 @@ class WAService {
             setTimeout(() => this.initBaileys(), 3000);
           } else {
             this.connectionState = "disconnected";
+            this.qrCodeBase64 = null;
             try {
               fs.rmSync(SESSION_DIR, { recursive: true, force: true });
             } catch (err) {}

@@ -447,6 +447,19 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     }
   };
 
+  const handleResetSession = async () => {
+    setIsLoadingStatus(true);
+    try {
+      await fetch(getApiUrl('/api/wa/logout'), { method: 'POST' });
+      await new Promise(r => setTimeout(r, 1000));
+      await handleInitConnection();
+    } catch (err) {
+      console.error('Error resetting WA session:', err);
+    } finally {
+      setIsLoadingStatus(false);
+    }
+  };
+
   const handleLogoutWA = async () => {
     if (!confirm('Logout WA?')) return;
     try {
@@ -1044,13 +1057,22 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       </button>
                     </div>
                   ) : connectionStatus.qrCodeBase64 ? (
-                    <div className="space-y-5">
+                    <div className="space-y-4">
                       <div className="p-4 bg-white rounded-2xl shadow-xl inline-block border border-zinc-100 dark:border-zinc-800">
-                        <img src={connectionStatus.qrCodeBase64} alt="QR" className="w-52 h-52" />
+                        <img src={connectionStatus.qrCodeBase64} alt="QR" className="w-52 h-52 mx-auto" />
                       </div>
-                      <p className="text-[10px] font-black text-zinc-400 animate-pulse tracking-widest uppercase">
+                      <p className="text-[10px] font-black text-zinc-500 animate-pulse tracking-widest uppercase">
                         Scan via Perangkat Tertaut di WhatsApp HP
                       </p>
+                      <button
+                        type="button"
+                        onClick={handleResetSession}
+                        disabled={isLoadingStatus}
+                        className="w-full py-2.5 px-4 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <RefreshCw size={14} className={isLoadingStatus ? 'animate-spin' : ''} />
+                        <span>Reset & Buat Barcode Baru</span>
+                      </button>
                     </div>
                   ) : (
                     <button 
