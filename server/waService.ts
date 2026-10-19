@@ -438,30 +438,28 @@ class WAService {
   public getKnownNumbers(): { phone: string; active: boolean; chatCount: number; assignedUser?: string; lastActive?: number }[] {
     const activeClean = this.userPhone ? this.getConnectedPhoneKey(this.userPhone) : null;
     const allPhones = new Set<string>(this.knownConnectedPhones);
-    if (activeClean && activeClean !== "default") allPhones.add(activeClean);
-    allPhones.delete("default");
+    if (activeClean) allPhones.add(activeClean);
+    allPhones.add("default");
 
-    return Array.from(allPhones)
-      .filter(phone => phone && phone !== "default")
-      .map(phone => {
-        const map = this.chatsByPhone.get(phone);
-        const chatCount = map ? map.size : 0;
-        let assignedUser = "";
-        let lastActive = 0;
-        if (map && map.size > 0) {
-          const firstChat = Array.from(map.values())[0];
-          assignedUser = (firstChat as any).assignedUser || "";
-          lastActive = Math.max(...Array.from(map.values()).map(c => c.lastMessageTime || 0));
-        }
+    return Array.from(allPhones).map(phone => {
+      const map = this.chatsByPhone.get(phone);
+      const chatCount = map ? map.size : 0;
+      let assignedUser = "";
+      let lastActive = 0;
+      if (map && map.size > 0) {
+        const firstChat = Array.from(map.values())[0];
+        assignedUser = (firstChat as any).assignedUser || "";
+        lastActive = Math.max(...Array.from(map.values()).map(c => c.lastMessageTime || 0));
+      }
 
-        return {
-          phone,
-          active: Boolean(activeClean && phone === activeClean),
-          chatCount,
-          assignedUser: assignedUser || (phone === activeClean ? (this.userName || "User WA") : ""),
-          lastActive: lastActive || Date.now()
-        };
-      });
+      return {
+        phone,
+        active: Boolean(activeClean && phone === activeClean),
+        chatCount,
+        assignedUser: assignedUser || (phone === activeClean ? (this.userName || "User WA") : ""),
+        lastActive: lastActive || Date.now()
+      };
+    });
   }
 
   /**
@@ -547,13 +545,12 @@ class WAService {
 
       const pino = (await import("pino")).default;
       const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
-      const Browsers = baileys.Browsers || (baileys as any).default?.Browsers;
 
       this.socket = makeWASocket({
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: "silent" }) as any,
-        browser: Browsers ? Browsers.ubuntu("Chrome") : ["Ubuntu", "Chrome", "20.0.04"],
+        browser: ["MyPanca CRM WA", "Chrome", "1.0.0"],
         keepAliveIntervalMs: 25000,
         markOnlineOnConnect: true,
         syncFullHistory: false,
@@ -569,7 +566,7 @@ class WAService {
 
         if (qr) {
           this.qrCodeBase64 = await QRCode.toDataURL(qr);
-          this.connectionState = "connecting";
+          this.connectionState = "disconnected";
         }
 
         if (connection === "close") {
@@ -580,7 +577,6 @@ class WAService {
             setTimeout(() => this.initBaileys(), 3000);
           } else {
             this.connectionState = "disconnected";
-            this.qrCodeBase64 = null;
             try {
               fs.rmSync(SESSION_DIR, { recursive: true, force: true });
             } catch (err) {}

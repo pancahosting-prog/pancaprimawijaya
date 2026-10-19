@@ -230,11 +230,11 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
           userName: data.userName,
         });
         if (Array.isArray(data.knownNumbers)) {
-          const numbers = data.knownNumbers.filter((n: any) => n.phone && n.phone !== 'default');
+          const numbers = [...data.knownNumbers];
           try {
             const cloudPhones = await loadKnownConnectedNumbersFromSupabase();
             cloudPhones.forEach(cp => {
-              if (cp && cp !== 'default' && !numbers.some(n => n.phone === cp)) {
+              if (cp && !numbers.some(n => n.phone === cp)) {
                 numbers.push({ phone: cp, active: cp === data.userPhone, chatCount: 0 });
               }
             });
@@ -442,19 +442,6 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       }
     } catch (err) {
       console.error('Error connecting WA:', err);
-    } finally {
-      setIsLoadingStatus(false);
-    }
-  };
-
-  const handleResetSession = async () => {
-    setIsLoadingStatus(true);
-    try {
-      await fetch(getApiUrl('/api/wa/logout'), { method: 'POST' });
-      await new Promise(r => setTimeout(r, 1000));
-      await handleInitConnection();
-    } catch (err) {
-      console.error('Error resetting WA session:', err);
     } finally {
       setIsLoadingStatus(false);
     }
@@ -696,7 +683,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       >
                         <option value="active">Nomor Aktif Saat Ini</option>
                         <option value="all">Semua Riwayat Nomor</option>
-                        {knownNumbers.filter(n => n.phone && n.phone !== 'default').map(n => (
+                        {knownNumbers.map(n => (
                           <option key={n.phone} value={n.phone}>
                             +{n.phone} ({n.chatCount} chat) {n.active ? '★' : ''}
                           </option>
@@ -1057,22 +1044,13 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       </button>
                     </div>
                   ) : connectionStatus.qrCodeBase64 ? (
-                    <div className="space-y-4">
+                    <div className="space-y-5">
                       <div className="p-4 bg-white rounded-2xl shadow-xl inline-block border border-zinc-100 dark:border-zinc-800">
-                        <img src={connectionStatus.qrCodeBase64} alt="QR" className="w-52 h-52 mx-auto" />
+                        <img src={connectionStatus.qrCodeBase64} alt="QR" className="w-52 h-52" />
                       </div>
-                      <p className="text-[10px] font-black text-zinc-500 animate-pulse tracking-widest uppercase">
+                      <p className="text-[10px] font-black text-zinc-400 animate-pulse tracking-widest uppercase">
                         Scan via Perangkat Tertaut di WhatsApp HP
                       </p>
-                      <button
-                        type="button"
-                        onClick={handleResetSession}
-                        disabled={isLoadingStatus}
-                        className="w-full py-2.5 px-4 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <RefreshCw size={14} className={isLoadingStatus ? 'animate-spin' : ''} />
-                        <span>Reset & Buat Barcode Baru</span>
-                      </button>
                     </div>
                   ) : (
                     <button 
@@ -1128,9 +1106,9 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
                 {/* Quick Info list of registered numbers */}
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-3">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400">Nomor Terdaftar di Sistem ({knownNumbers.filter(n => n.phone && n.phone !== 'default').length})</h4>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400">Nomor Terdaftar di Sistem ({knownNumbers.length})</h4>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {knownNumbers.filter(n => n.phone && n.phone !== 'default').map((num, i) => (
+                    {knownNumbers.map((num, i) => (
                       <div key={i} className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
                           <span className={`w-2 h-2 rounded-full ${num.active ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-300'}`}></span>
@@ -1170,7 +1148,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     </div>
                   </div>
                   <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 shrink-0">
-                    {knownNumbers.filter(n => n.phone && n.phone !== 'default' && n.active).length} Aktif Online
+                    {knownNumbers.filter(n => n.active).length} Aktif Online
                   </span>
                 </div>
 
@@ -1186,7 +1164,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
-                      {knownNumbers.filter(n => n.phone && n.phone !== 'default').map((num, idx) => (
+                      {knownNumbers.map((num, idx) => (
                         <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
                           <td className="py-3.5 px-4 font-mono font-bold text-zinc-900 dark:text-zinc-100">
                             +{num.phone}
