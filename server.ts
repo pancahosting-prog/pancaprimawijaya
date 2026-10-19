@@ -143,6 +143,23 @@ async function startServer() {
     res.json({ success: true, settings: waService.aiSettings });
   });
 
+  // Test / Simulate AI Auto-Reply without sending real WhatsApp message
+  app.post("/api/wa/test-ai-reply", async (req, res) => {
+    try {
+      const { message, senderName = "Calon Pelanggan" } = req.body;
+      if (!message || !message.trim()) {
+        return res.status(400).json({ success: false, error: "Pesan uji tidak boleh kosong." });
+      }
+      const result = await waService.simulateAIAutoReply(message, senderName);
+      res.json({
+        success: true,
+        ...result
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || "Gagal menguji balasan AI." });
+    }
+  });
+
   app.post("/api/wa/delete-chat", async (req, res) => {
     const { jid, connectedPhone } = req.body;
     if (!jid) {

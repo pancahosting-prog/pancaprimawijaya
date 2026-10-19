@@ -1,0 +1,204 @@
+{
+  "autoReplyEnabled": true,
+  "botName": "Customer Assistant AI",
+  "systemInstructions": "Anda adalah asisten AI customer service resmi PT. Panca Prima Wijaya di WhatsApp. Tugas utama Anda adalah melayani pertanyaan pelanggan seputar produk pertanian & industri kami, penawaran harga, prosedur pemesanan, dan informasi perusahaan secara ramah, ringkas, sopan, dan solutif.",
+  "toneOfVoice": "Ramah & Solutif",
+  "tone": "Ramah & Solutif",
+  "responseLanguage": "Bahasa Indonesia",
+  "greetingMessage": "Halo! Terima kasih telah menghubungi PT. Panca Prima Wijaya. Ada yang bisa kami bantu terkait produk dan layanan kami hari ini?",
+  "fallbackMessage": "Mohon maaf, pesan Anda telah kami catat. Tim sales dan customer service kami akan segera menghubungi Anda kembali untuk memberikan informasi yang lebih detail.",
+  "restrictedTopics": [
+    "Isu SARA, politik, dan konten sensitif",
+    "Perbandingan atau menjelekkan kompetitor lain",
+    "Membocorkan harga modal internal atau rahasia supplier pabrik",
+    "Menjanjikan diskon khusus sepihak tanpa persetujuan tim sales resmi",
+    "Data pribadi karyawan di luar nomor kontak layanan resmi"
+  ],
+  "handoverToHuman": {
+    "enabled": true,
+    "triggerKeywords": [
+      "bicara dengan manusia",
+      "hubungi sales",
+      "komplain",
+      "bicara cs",
+      "customer service",
+      "mau telpon",
+      "bisa bicara sales",
+      "minta nomor sales",
+      "keluhan barang"
+    ],
+    "handoverContact": "0811-1234-5678",
+    "handoverMessage": "Baik Bapak/Ibu {name}, percakapan/kendala Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor WhatsApp {contact}. Tim kami akan segera menghubungi Anda secara langsung."
+  },
+  "salesCta": {
+    "enabled": true,
+    "ctaMessage": "Apakah Bapak/Ibu ingin kami buatkan Surat Penawaran Harga resmi (Quotation) untuk kebutuhan ini?",
+    "triggerKeywords": [
+      "harga",
+      "pesan",
+      "order",
+      "quotation",
+      "penawaran",
+      "katalog",
+      "stok",
+      "beli",
+      "minimal order",
+      "sample",
+      "sampel"
+    ]
+  },
+  "knowledgeProducts": [
+    {
+      "id": "prod-1",
+      "productName": "Plastik Sungkup Pertanian UV",
+      "description": "Plastik sungkup transparan berkualitas tinggi dengan proteksi anti-UV untuk perlindungan optimal tanaman cabai, semangka, dan melon dari hama serta guyuran hujan ekstrem.",
+      "price": "Rp 450.000 / Roll (Ukuran 1m x 200m)",
+      "keywords": [
+        "plastik sungkup",
+        "sungkup",
+        "uv",
+        "pertanian",
+        "tutup tanaman",
+        "plastik uv"
+      ],
+      "faq": [
+        {
+          "q": "Berapa lama ketahanan plastik sungkup ini di lapangan?",
+          "a": "Plastik sungkup kami memiliki aditif stabilizer UV dengan ketahanan pemakaian hingga 2-3 musim tanam normal."
+        },
+        {
+          "q": "Apakah bisa custom ukuran lebar roll?",
+          "a": "Bisa, untuk pembelian jumlah tertentu (minimum order pabrik) kami melayani pemotongan ukuran custom."
+        }
+      ]
+    },
+    {
+      "id": "prod-2",
+      "productName": "Mulsa Plastik Hitam Perak (MPHP)",
+      "description": "Mulsa pertanian dua lapis (sisi hitam menekan gulma, sisi perak memantulkan sinar matahari untuk menghalau kutu daun dan hama trips). Sangat ulet dan tidak mudah sobek.",
+      "price": "Rp 385.000 / Roll (Tebal 0.35 mikron)",
+      "keywords": [
+        "mulsa",
+        "hitam perak",
+        "mphp",
+        "plastik mulsa",
+        "gulma",
+        "bedengan"
+      ],
+      "faq": [
+        {
+          "q": "Apa fungsi sisi perak pada mulsa?",
+          "a": "Sisi perak menghadap ke atas untuk memantulkan sinar matahari sehingga suhu tanah stabil dan mengusir serangga hama."
+        }
+      ]
+    },
+    {
+      "id": "prod-3",
+      "productName": "Insect Net / Kasa Nyamuk Hijau 50 Mesh",
+      "description": "Jaring kasa pelindung greenhouse berbahan monofilament HDPE murni, kerapatan 50 mesh anti-serangga kecil tanpa menghambat sirkulasi udara dan cahaya tanaman.",
+      "price": "Rp 1.250.000 / Roll (3m x 100m)",
+      "keywords": [
+        "insect net",
+        "kasa hijau",
+        "greenhouse",
+        "jaring serangga",
+        "kutu kebul"
+      ],
+      "faq": [
+        {
+          "q": "Apakah tahan terhadap terpaan angin kencang?",
+          "a": "Ya, anyaman monofilament kami memiliki jahitan rajut kuat berpola kunci (lock-stitch) sehingga tidak mudah robek melebar."
+        }
+      ]
+    }
+  ],
+  "knowledgeSnippets": [
+    {
+      "id": "snip-1",
+      "title": "Profil Perusahaan & Jam Operasional",
+      "category": "Profil Perusahaan",
+      "content": "PT. Panca Prima Wijaya adalah distributor dan produsen terpercaya untuk sarana produksi pertanian modern, kemasan plastik, dan peralatan perkebunan di Indonesia.\nJam Operasional Layanan:\n• Senin - Jumat: 08:30 - 17:00 WIB\n• Sabtu: 08:30 - 13:00 WIB\n• Hari Minggu & Hari Libur Nasional: Tutup (Pesan yang masuk akan direspon di jam kerja hari berikutnya).",
+      "keywords": [
+        "jam buka",
+        "operasional",
+        "profil",
+        "alamat",
+        "kantor",
+        "hari kerja",
+        "panca prima wijaya"
+      ],
+      "updatedAt": 1729300000000
+    },
+    {
+      "id": "snip-2",
+      "title": "Prosedur Pemesanan & Penerbitan Faktur Pajak PPN",
+      "category": "Prosedur Pemesanan",
+      "content": "Alur pemesanan barang resmi:\n1. Konsultasi kebutuhan spesifikasi & jumlah barang dengan tim sales.\n2. Tim sales menerbitkan Penawaran Harga Resmi (Quotation/PO).\n3. Pelanggan melakukan konfirmasi dan transfer DP/Pelunasan ke rekening resmi PT. Panca Prima Wijaya.\n4. Barang dipersiapkan di gudang dan dikirimkan bersama Invoice asli & Surat Jalan.\n5. PT. Panca Prima Wijaya merupakan Pengusaha Kena Pajak (PKP) resmi dan siap menerbitkan e-Faktur Pajak 11% untuk setiap transaksi.",
+      "keywords": [
+        "cara order",
+        "pesan",
+        "faktur pajak",
+        "ppn",
+        "invoice",
+        "po",
+        "surat jalan",
+        "prosedur"
+      ],
+      "updatedAt": 1729300000000
+    },
+    {
+      "id": "snip-3",
+      "title": "Rekening Bank Resmi PT. Panca Prima Wijaya",
+      "category": "Rekening & Pembayaran",
+      "content": "PERINGATAN KEAMANAN TRANSAKSI:\nSeluruh transaksi pembayaran yang sah HANYA dilakukan melalui transfer ke rekening bank perusahaan resmi atas nama PT. PANCA PRIMA WIJAYA:\n• Bank BCA: No. Rek 123-456-7890 (a/n PT Panca Prima Wijaya)\n• Bank Mandiri: No. Rek 987-654-3210 (a/n PT Panca Prima Wijaya)\n\nKami TIDAK PERNAH meminta pembayaran ke rekening pribadi atas nama perorangan.",
+      "keywords": [
+        "rekening",
+        "nomor rekening",
+        "bca",
+        "mandiri",
+        "transfer",
+        "pembayaran",
+        "penipuan",
+        "bank"
+      ],
+      "updatedAt": 1729300000000
+    },
+    {
+      "id": "snip-4",
+      "title": "Ketentuan Pengiriman & Ekspedisi Kargo",
+      "category": "Kebijakan & S&K",
+      "content": "Pengiriman barang dapat dilakukan menggunakan:\n1. Armada truk pengantaran PT. Panca Prima Wijaya (khusus area Jabodetabek & sekitarnya sesuai jadwal rute).\n2. Jasa ekspedisi kargo rekanan terpercaya (Indah Logistik, Dakota Cargo, Baraka, J&T Cargo, atau ekspedisi langganan pilihan pelanggan).\n3. Pengambilan mandiri (Self Pick-up) langsung di gudang pusat kami dengan membawa bukti Surat Jalan.",
+      "keywords": [
+        "pengiriman",
+        "ongkir",
+        "kargo",
+        "ekspedisi",
+        "dakota",
+        "indah kargo",
+        "gudang",
+        "kirim"
+      ],
+      "updatedAt": 1729300000000
+    }
+  ],
+  "knowledgeWebSources": [
+    {
+      "id": "web-1",
+      "url": "https://pancaprima.co.id",
+      "title": "Website Portal Resmi PT. Panca Prima Wijaya",
+      "summary": "Website portal utama yang memuat profil perseroan, sertifikasi mutu, visi misi, serta jaringan kantor cabang dan gudang distribusi di seluruh wilayah Indonesia.",
+      "isActive": true,
+      "updatedAt": 1729300000000
+    },
+    {
+      "id": "web-2",
+      "url": "https://pancaprima.co.id/katalog-produk",
+      "title": "Katalog Digital & Spesifikasi Teknis Produk",
+      "summary": "Halaman katalog interaktif online yang memuat datasheet teknis plastik pertanian, mulsa, insect net, karung goni, serta foto dokumentasi pengaplikasian di perkebunan mitra.",
+      "isActive": true,
+      "updatedAt": 1729300000000
+    }
+  ],
+  "knowledgeBase": [],
+  "logs": []
+}

@@ -24,7 +24,21 @@ import {
   FileText,
   Download,
   Maximize2,
-  RotateCcw
+  RotateCcw,
+  Globe,
+  BookOpen,
+  Tag,
+  ShieldAlert,
+  Headphones,
+  Sparkles,
+  Languages,
+  Volume2,
+  ExternalLink,
+  HelpCircle,
+  FileEdit,
+  PlusCircle,
+  Layers,
+  Play
 } from 'lucide-react';
 import { 
   loadWAChatsFromSupabase, 
@@ -89,20 +103,67 @@ export interface WAChat {
   messages: WAChatMessage[];
 }
 
+export interface WAKBProduct {
+  id: string;
+  productName: string;
+  description: string;
+  price: string;
+  keywords: string[];
+  faq: { q: string; a: string }[];
+}
+
+export interface WAKBTextSnippet {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  keywords: string[];
+  updatedAt?: number;
+}
+
+export interface WAKBWebSource {
+  id: string;
+  url: string;
+  title: string;
+  summary: string;
+  isActive: boolean;
+  updatedAt?: number;
+}
+
+export interface WAIHandoverConfig {
+  enabled: boolean;
+  triggerKeywords: string[];
+  handoverContact: string;
+  handoverMessage: string;
+}
+
+export interface WAISalesCtaConfig {
+  enabled: boolean;
+  ctaMessage: string;
+  triggerKeywords: string[];
+}
+
 export interface WAISettings {
   autoReplyEnabled: boolean;
   botName: string;
-  tone: string;
+  systemInstructions: string;
+  toneOfVoice: string;
+  responseLanguage: string;
   greetingMessage: string;
   fallbackMessage: string;
-  knowledgeBase: {
-    id: string;
-    productName: string;
-    description: string;
-    price: string;
-    keywords: string[];
-    faq: { q: string; a: string }[];
-  }[];
+  restrictedTopics: string[];
+  handoverToHuman: WAIHandoverConfig;
+  salesCta: WAISalesCtaConfig;
+
+  // Separated Knowledge Containers
+  knowledgeProducts: WAKBProduct[];
+  knowledgeSnippets: WAKBTextSnippet[];
+  knowledgeWebSources: WAKBWebSource[];
+
+  // Backward compatibility
+  knowledgeBase?: WAKBProduct[];
+  tone?: string;
+
   logs: {
     id: string;
     timestamp: number;
@@ -110,6 +171,8 @@ export interface WAISettings {
     incoming: string;
     reply: string;
     modelUsed: string;
+    isHandover?: boolean;
+    isRestricted?: boolean;
   }[];
 }
 
@@ -197,16 +260,83 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const [settings, setSettings] = useState<WAISettings>({
     autoReplyEnabled: true,
     botName: 'Customer Assistant AI',
-    tone: 'Sopan & Ramah',
-    greetingMessage: 'Halo! Ada yang bisa kami bantu terkait produk dan layanan kami?',
-    fallbackMessage: 'Mohon maaf, pesan Anda telah kami catat dan tim CS kami akan segera menghubungi Anda.',
+    systemInstructions: 'Anda adalah asisten AI customer service resmi PT. Panca Prima Wijaya di WhatsApp. Tugas utama Anda adalah melayani pertanyaan pelanggan seputar produk, penawaran harga, prosedur pemesanan, dan informasi perusahaan secara ramah, ringkas, sopan, dan solutif.',
+    toneOfVoice: 'Ramah & Solutif',
+    tone: 'Ramah & Solutif',
+    responseLanguage: 'Bahasa Indonesia',
+    greetingMessage: 'Halo! Terima kasih telah menghubungi PT. Panca Prima Wijaya. Ada yang bisa kami bantu terkait produk dan layanan kami?',
+    fallbackMessage: 'Mohon maaf, pesan Anda telah kami catat. Tim sales dan customer service kami akan segera menghubungi Anda kembali untuk memberikan informasi lebih detail.',
+    restrictedTopics: [
+      'Isu SARA, politik, dan konten sensitif',
+      'Perbandingan atau menjelekkan kompetitor',
+      'Membocorkan harga modal internal atau rahasia supplier',
+      'Menjanjikan diskon khusus tanpa persetujuan tim sales'
+    ],
+    handoverToHuman: {
+      enabled: true,
+      triggerKeywords: ['bicara dengan manusia', 'hubungi sales', 'komplain', 'bicara cs', 'customer service', 'mau telpon', 'bisa bicara sales'],
+      handoverContact: '0811-1234-5678',
+      handoverMessage: 'Baik Bapak/Ibu {name}, pertanyaan/kendala Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor {contact}. Tim kami akan segera merespon secara langsung.'
+    },
+    salesCta: {
+      enabled: true,
+      ctaMessage: 'Apakah Bapak/Ibu ingin kami buatkan penawaran harga resmi (Quotation) untuk kebutuhan ini?',
+      triggerKeywords: ['harga', 'pesan', 'order', 'quotation', 'penawaran', 'katalog', 'stok', 'beli']
+    },
+    knowledgeProducts: [],
+    knowledgeSnippets: [],
+    knowledgeWebSources: [],
     knowledgeBase: [],
     logs: []
   });
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
-  // Modal Knowledge Base Edit
+  // Sub-tabs in AI Setting View
+  const [aiActiveSection, setAiActiveSection] = useState<'knowledge' | 'prompt-setup' | 'guardrails' | 'simulator' | 'logs'>('knowledge');
+  const [kbActiveContainer, setKbActiveContainer] = useState<'products' | 'snippets' | 'websites'>('products');
+  const [kbSearchQuery, setKbSearchQuery] = useState<string>('');
+
+  // Simulator / Test State
+  const [testQueryInput, setTestQueryInput] = useState<string>('Berapa harga plastik sungkup?');
+  const [isTestingAi, setIsTestingAi] = useState<boolean>(false);
+  const [testAiResult, setTestAiResult] = useState<{
+    replyText: string;
+    modelUsed: string;
+    isHandover: boolean;
+    isRestricted: boolean;
+    containerMatched: string;
+  } | null>(null);
+
+  const handleTestAiReply = async (customQuery?: string) => {
+    const q = (customQuery || testQueryInput).trim();
+    if (!q) return;
+    setIsTestingAi(true);
+    setTestAiResult(null);
+    try {
+      const res = await fetch(getApiUrl('/api/wa/test-ai-reply'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: q, senderName: 'Pelanggan Uji' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTestAiResult({
+          replyText: data.replyText,
+          modelUsed: data.modelUsed,
+          isHandover: Boolean(data.isHandover),
+          isRestricted: Boolean(data.isRestricted),
+          containerMatched: data.containerMatched || 'fallback'
+        });
+      }
+    } catch (err) {
+      console.error('Error testing AI reply:', err);
+    } finally {
+      setIsTestingAi(false);
+    }
+  };
+
+  // Modal 1: Knowledge Product Edit
   const [isKbModalOpen, setIsKbModalOpen] = useState<boolean>(false);
   const [editingKbItem, setEditingKbItem] = useState<{
     id: string;
@@ -223,6 +353,43 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     keywordsStr: '',
     faqList: [{ q: '', a: '' }]
   });
+
+  // Modal 2: Paragraf Biasa / Catatan Teks Edit
+  const [isSnippetModalOpen, setIsSnippetModalOpen] = useState<boolean>(false);
+  const [editingSnippetItem, setEditingSnippetItem] = useState<{
+    id: string;
+    title: string;
+    category: string;
+    content: string;
+    keywordsStr: string;
+  }>({
+    id: '',
+    title: '',
+    category: 'Profil Perusahaan',
+    content: '',
+    keywordsStr: ''
+  });
+
+  // Modal 3: Source Website Edit
+  const [isWebSourceModalOpen, setIsWebSourceModalOpen] = useState<boolean>(false);
+  const [editingWebSourceItem, setEditingWebSourceItem] = useState<{
+    id: string;
+    url: string;
+    title: string;
+    summary: string;
+    isActive: boolean;
+  }>({
+    id: '',
+    url: '',
+    title: '',
+    summary: '',
+    isActive: true
+  });
+
+  // Interactive quick add inputs for tags
+  const [newRestrictedInput, setNewRestrictedInput] = useState<string>('');
+  const [newHandoverKeywordInput, setNewHandoverKeywordInput] = useState<string>('');
+  const [newSalesCtaKeywordInput, setNewSalesCtaKeywordInput] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -422,7 +589,35 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       if (res.ok) {
         const data = await res.json();
         if (data.settings) {
-          setSettings(data.settings);
+          const s = data.settings;
+          const products = s.knowledgeProducts || s.knowledgeBase || [];
+          setSettings({
+            autoReplyEnabled: s.autoReplyEnabled ?? true,
+            botName: s.botName || 'Customer Assistant AI',
+            systemInstructions: s.systemInstructions || 'Anda adalah asisten AI customer service resmi PT. Panca Prima Wijaya di WhatsApp. Tugas utama Anda adalah melayani pertanyaan pelanggan seputar produk, penawaran harga, prosedur pemesanan, dan informasi perusahaan secara ramah, ringkas, sopan, dan solutif.',
+            toneOfVoice: s.toneOfVoice || s.tone || 'Ramah & Solutif',
+            tone: s.toneOfVoice || s.tone || 'Ramah & Solutif',
+            responseLanguage: s.responseLanguage || 'Bahasa Indonesia',
+            greetingMessage: s.greetingMessage || 'Halo! Terima kasih telah menghubungi PT. Panca Prima Wijaya. Ada yang bisa kami bantu terkait produk dan layanan kami?',
+            fallbackMessage: s.fallbackMessage || 'Mohon maaf, pesan Anda telah kami catat. Tim sales dan customer service kami akan segera menghubungi Anda kembali untuk memberikan informasi lebih detail.',
+            restrictedTopics: s.restrictedTopics || [],
+            handoverToHuman: s.handoverToHuman || {
+              enabled: true,
+              triggerKeywords: ['bicara dengan manusia', 'hubungi sales', 'komplain', 'bicara cs', 'customer service'],
+              handoverContact: '0811-1234-5678',
+              handoverMessage: 'Baik Bapak/Ibu {name}, pertanyaan/kendala Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor {contact}. Tim kami akan segera merespon secara langsung.'
+            },
+            salesCta: s.salesCta || {
+              enabled: true,
+              ctaMessage: 'Apakah Bapak/Ibu ingin kami buatkan penawaran harga resmi (Quotation) untuk kebutuhan ini?',
+              triggerKeywords: ['harga', 'pesan', 'order', 'quotation', 'penawaran', 'katalog', 'stok', 'beli']
+            },
+            knowledgeProducts: products,
+            knowledgeSnippets: s.knowledgeSnippets || [],
+            knowledgeWebSources: s.knowledgeWebSources || [],
+            knowledgeBase: products,
+            logs: s.logs || []
+          });
         }
       }
     } catch (err) {
@@ -632,18 +827,24 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     }
   };
 
+  // Product KB CRUD
   const handleSaveKbItem = () => {
+    if (!editingKbItem.productName.trim()) {
+      alert('Nama produk tidak boleh kosong.');
+      return;
+    }
     const keywords = editingKbItem.keywordsStr.split(',').map(k => k.trim()).filter(Boolean);
-    const newKb = {
-      id: editingKbItem.id || 'kb-' + Date.now(),
-      productName: editingKbItem.productName,
-      description: editingKbItem.description,
-      price: editingKbItem.price,
+    const newKb: WAKBProduct = {
+      id: editingKbItem.id || 'kb-prod-' + Date.now(),
+      productName: editingKbItem.productName.trim(),
+      description: editingKbItem.description.trim(),
+      price: editingKbItem.price.trim() || 'Hubungi Sales',
       keywords,
       faq: editingKbItem.faqList.filter(f => f.q.trim() && f.a.trim())
     };
 
-    let updatedList = [...settings.knowledgeBase];
+    const currentList = settings.knowledgeProducts?.length ? settings.knowledgeProducts : (settings.knowledgeBase || []);
+    let updatedList = [...currentList];
     const existingIdx = updatedList.findIndex(k => k.id === newKb.id);
     if (existingIdx >= 0) {
       updatedList[existingIdx] = newKb;
@@ -651,15 +852,167 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       updatedList.push(newKb);
     }
 
-    setSettings({ ...settings, knowledgeBase: updatedList });
+    setSettings({ 
+      ...settings, 
+      knowledgeProducts: updatedList, 
+      knowledgeBase: updatedList 
+    });
     setIsKbModalOpen(false);
   };
 
   const handleDeleteKbItem = (id: string) => {
-    if (!confirm('Hapus?')) return;
+    if (!confirm('Hapus produk ini dari basis pengetahuan AI?')) return;
+    const currentList = settings.knowledgeProducts?.length ? settings.knowledgeProducts : (settings.knowledgeBase || []);
+    const updated = currentList.filter(k => k.id !== id);
+    setSettings({ 
+      ...settings, 
+      knowledgeProducts: updated, 
+      knowledgeBase: updated 
+    });
+  };
+
+  // Paragraf Biasa / Catatan Teks CRUD
+  const handleSaveSnippetItem = () => {
+    if (!editingSnippetItem.title.trim() || !editingSnippetItem.content.trim()) {
+      alert('Judul dan isi dokumen/paragraf wajib diisi.');
+      return;
+    }
+    const keywords = editingSnippetItem.keywordsStr.split(',').map(k => k.trim()).filter(Boolean);
+    const newSnippet: WAKBTextSnippet = {
+      id: editingSnippetItem.id || 'kb-snip-' + Date.now(),
+      title: editingSnippetItem.title.trim(),
+      category: editingSnippetItem.category || 'Profil Perusahaan',
+      content: editingSnippetItem.content.trim(),
+      keywords,
+      updatedAt: Date.now()
+    };
+
+    let updatedList = [...(settings.knowledgeSnippets || [])];
+    const existingIdx = updatedList.findIndex(s => s.id === newSnippet.id);
+    if (existingIdx >= 0) {
+      updatedList[existingIdx] = newSnippet;
+    } else {
+      updatedList.push(newSnippet);
+    }
+
+    setSettings({ ...settings, knowledgeSnippets: updatedList });
+    setIsSnippetModalOpen(false);
+  };
+
+  const handleDeleteSnippetItem = (id: string) => {
+    if (!confirm('Hapus dokumen/paragraf ini dari basis pengetahuan?')) return;
+    const updated = (settings.knowledgeSnippets || []).filter(s => s.id !== id);
+    setSettings({ ...settings, knowledgeSnippets: updated });
+  };
+
+  // Source Website & Referensi CRUD
+  const handleSaveWebSourceItem = () => {
+    if (!editingWebSourceItem.url.trim() || !editingWebSourceItem.title.trim()) {
+      alert('URL dan judul sumber website wajib diisi.');
+      return;
+    }
+    let url = editingWebSourceItem.url.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url;
+    }
+    const newSource: WAKBWebSource = {
+      id: editingWebSourceItem.id || 'kb-web-' + Date.now(),
+      url,
+      title: editingWebSourceItem.title.trim(),
+      summary: editingWebSourceItem.summary.trim(),
+      isActive: editingWebSourceItem.isActive,
+      updatedAt: Date.now()
+    };
+
+    let updatedList = [...(settings.knowledgeWebSources || [])];
+    const existingIdx = updatedList.findIndex(w => w.id === newSource.id);
+    if (existingIdx >= 0) {
+      updatedList[existingIdx] = newSource;
+    } else {
+      updatedList.push(newSource);
+    }
+
+    setSettings({ ...settings, knowledgeWebSources: updatedList });
+    setIsWebSourceModalOpen(false);
+  };
+
+  const handleDeleteWebSourceItem = (id: string) => {
+    if (!confirm('Hapus sumber website ini?')) return;
+    const updated = (settings.knowledgeWebSources || []).filter(w => w.id !== id);
+    setSettings({ ...settings, knowledgeWebSources: updated });
+  };
+
+  const handleToggleWebSourceActive = (id: string) => {
+    const updated = (settings.knowledgeWebSources || []).map(w => 
+      w.id === id ? { ...w, isActive: !w.isActive } : w
+    );
+    setSettings({ ...settings, knowledgeWebSources: updated });
+  };
+
+  // Tag Adders
+  const handleAddRestrictedTopic = () => {
+    if (!newRestrictedInput.trim()) return;
+    const current = settings.restrictedTopics || [];
+    if (!current.includes(newRestrictedInput.trim())) {
+      setSettings({ ...settings, restrictedTopics: [...current, newRestrictedInput.trim()] });
+    }
+    setNewRestrictedInput('');
+  };
+
+  const handleRemoveRestrictedTopic = (topic: string) => {
     setSettings({
       ...settings,
-      knowledgeBase: settings.knowledgeBase.filter(k => k.id !== id)
+      restrictedTopics: (settings.restrictedTopics || []).filter(t => t !== topic)
+    });
+  };
+
+  const handleAddHandoverTrigger = () => {
+    if (!newHandoverKeywordInput.trim()) return;
+    const current = settings.handoverToHuman?.triggerKeywords || [];
+    if (!current.includes(newHandoverKeywordInput.trim())) {
+      setSettings({
+        ...settings,
+        handoverToHuman: {
+          ...settings.handoverToHuman,
+          triggerKeywords: [...current, newHandoverKeywordInput.trim()]
+        }
+      });
+    }
+    setNewHandoverKeywordInput('');
+  };
+
+  const handleRemoveHandoverTrigger = (kw: string) => {
+    setSettings({
+      ...settings,
+      handoverToHuman: {
+        ...settings.handoverToHuman,
+        triggerKeywords: (settings.handoverToHuman?.triggerKeywords || []).filter(k => k !== kw)
+      }
+    });
+  };
+
+  const handleAddSalesCtaTrigger = () => {
+    if (!newSalesCtaKeywordInput.trim()) return;
+    const current = settings.salesCta?.triggerKeywords || [];
+    if (!current.includes(newSalesCtaKeywordInput.trim())) {
+      setSettings({
+        ...settings,
+        salesCta: {
+          ...settings.salesCta,
+          triggerKeywords: [...current, newSalesCtaKeywordInput.trim()]
+        }
+      });
+    }
+    setNewSalesCtaKeywordInput('');
+  };
+
+  const handleRemoveSalesCtaTrigger = (kw: string) => {
+    setSettings({
+      ...settings,
+      salesCta: {
+        ...settings.salesCta,
+        triggerKeywords: (settings.salesCta?.triggerKeywords || []).filter(k => k !== kw)
+      }
     });
   };
 
@@ -668,6 +1021,80 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   return (
     <div className="flex flex-col h-full bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans overflow-hidden">
       
+      {/* Top Universal WhatsApp Hub Header with 3 Tabs */}
+      <div className="shrink-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs z-20">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold shrink-0">
+            <MessageSquare size={19} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-black text-zinc-900 dark:text-zinc-100">WhatsApp Hub</h1>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                connectionStatus.connectionState === 'connected'
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+              }`}>
+                {connectionStatus.connectionState === 'connected' ? (connectionStatus.userPhone ? `+${connectionStatus.userPhone}` : 'Online') : 'Offline'}
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-400 dark:text-zinc-500 hidden sm:block">
+              {activeSubTab === 'chat' && 'Percakapan pelanggan & interaksi pesan WhatsApp'}
+              {activeSubTab === 'setting-ai' && 'Basis pengetahuan multi-kontainer, guardrails & instruksi AI'}
+              {activeSubTab === 'perangkat' && 'Status barcode QR & perangkat tertaut Baileys'}
+            </p>
+          </div>
+        </div>
+
+        {/* 3 Nav Tabs */}
+        <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('chat')}
+            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === 'chat'
+                ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
+          >
+            <MessageSquare size={14} />
+            <span>Chat Langsung</span>
+            {chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0) > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500 text-white font-mono">
+                {chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0)}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('setting-ai')}
+            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === 'setting-ai'
+                ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
+          >
+            <Bot size={14} />
+            <span>Knowledge & AI WhatsApp</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('perangkat')}
+            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === 'perangkat'
+                ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
+          >
+            <Smartphone size={14} />
+            <span>Perangkat (QR)</span>
+          </button>
+        </div>
+      </div>
+
       {/* Main Body Content */}
       <div className={`flex-1 overflow-hidden ${isMobile && activeSubTab === 'chat' ? 'p-0' : 'p-3 lg:p-4'}`}>
         
@@ -1028,56 +1455,1085 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
         )}
 
         {/* SUB-TAB 2: SETTING AI */}
+        {/* SUB-TAB 2: SETTING AI DENGAN KONTAINER TERPISAH & KONTROL PROMPT LENGKAP */}
         {activeSubTab === 'setting-ai' && (
-          <div className="h-full overflow-y-auto space-y-4 max-w-4xl mx-auto">
-            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-900 dark:text-zinc-100"><Bot size={24} /></div>
-                <div><h2 className="text-base font-black">Bot Auto-Reply AI</h2><p className="text-xs text-zinc-500">Otomatis membalas pesan WhatsApp via Gemini AI.</p></div>
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={settings.autoReplyEnabled} onChange={(e) => setSettings({ ...settings, autoReplyEnabled: e.target.checked })} className="sr-only peer" />
-                  <div className="w-11 h-6 bg-zinc-200 rounded-full peer dark:bg-zinc-800 peer-checked:bg-zinc-900 dark:peer-checked:bg-zinc-100 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                </label>
-                <button onClick={handleSaveSettings} disabled={isSavingSettings} className="px-6 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-xs font-bold shadow-xs">Simpan</button>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-               <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-400">Profil Bot</h3>
-                  <div className="space-y-3">
-                    <div><label className="text-[10px] font-bold uppercase mb-1 block">Nama Bot</label><input type="text" value={settings.botName} onChange={e => setSettings({...settings, botName: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800" /></div>
-                    <div><label className="text-[10px] font-bold uppercase mb-1 block">Tone</label><select value={settings.tone} onChange={e => setSettings({...settings, tone: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800"><option>Ramah & Sopan</option><option>Formal</option></select></div>
+          <div className="h-full overflow-y-auto space-y-6 max-w-5xl mx-auto pb-12">
+            {/* Top Control Banner */}
+            <div className="bg-white dark:bg-zinc-900 p-5 sm:p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <Bot size={26} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-black text-zinc-900 dark:text-zinc-100">Knowledge & AI WhatsApp Bot</h2>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      settings.autoReplyEnabled 
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' 
+                        : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                    }`}>
+                      {settings.autoReplyEnabled ? '● Aktif' : '○ Nonaktif'}
+                    </span>
                   </div>
-               </div>
-               <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-400">Pesan Otomatis</h3>
-                  <div className="space-y-3">
-                    <div><label className="text-[10px] font-bold uppercase mb-1 block">Salam</label><input type="text" value={settings.greetingMessage} onChange={e => setSettings({...settings, greetingMessage: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800" /></div>
-                    <div><label className="text-[10px] font-bold uppercase mb-1 block">Fallback</label><input type="text" value={settings.fallbackMessage} onChange={e => setSettings({...settings, fallbackMessage: e.target.value})} className="w-full px-3 py-2 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800" /></div>
-                  </div>
-               </div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Basis pengetahuan multi-kontainer, guardrails topik terlarang, serah terima CS, dan gaya bahasa bot.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800">
+                  <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Auto-Reply</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={settings.autoReplyEnabled} 
+                      onChange={(e) => setSettings({ ...settings, autoReplyEnabled: e.target.checked })} 
+                      className="sr-only peer" 
+                    />
+                    <div className="w-10 h-5 bg-zinc-300 dark:bg-zinc-700 rounded-full peer peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                  </label>
+                </div>
+
+                <button 
+                  type="button"
+                  onClick={handleSaveSettings} 
+                  disabled={isSavingSettings} 
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Save size={14} />
+                  <span>{isSavingSettings ? 'Menyimpan...' : (saveSuccessMsg || 'Simpan Pengaturan')}</span>
+                </button>
+              </div>
             </div>
 
-            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-               <div className="flex justify-between items-center mb-6">
-                 <h3 className="text-xs font-black uppercase tracking-widest text-zinc-400">Knowledge Base</h3>
-                 <button onClick={() => { setEditingKbItem({ id: '', productName: '', description: '', price: '', keywordsStr: '', faqList: [{ q: '', a: '' }] }); setIsKbModalOpen(true); }} className="px-4 py-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-[10px] font-black tracking-wider">+ TAMBAH PRODUK</button>
-               </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 {settings.knowledgeBase.map(kb => (
-                   <div key={kb.id} className="p-4 border border-zinc-100 dark:border-zinc-800 rounded-xl flex justify-between items-start group">
-                      <div><h4 className="text-sm font-black">{kb.productName}</h4><p className="text-[10px] text-zinc-400 mt-1">{kb.price}</p></div>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setEditingKbItem({ id: kb.id, productName: kb.productName, description: kb.description, price: kb.price, keywordsStr: kb.keywords.join(', '), faqList: kb.faq }); setIsKbModalOpen(true); }} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"><Sliders size={14}/></button>
-                        <button onClick={() => handleDeleteKbItem(kb.id)} className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-500 rounded-md transition-colors"><Trash2 size={14}/></button>
-                      </div>
-                   </div>
-                 ))}
-               </div>
+            {/* Sub-Section Navigation Pills */}
+            <div className="flex flex-wrap items-center gap-2 p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setAiActiveSection('knowledge')}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                  aiActiveSection === 'knowledge'
+                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                    : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <Layers size={14} className="text-emerald-500" />
+                <span>Basis Pengetahuan (3 Kontainer)</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-mono">
+                  {(settings.knowledgeProducts?.length || 0) + (settings.knowledgeSnippets?.length || 0) + (settings.knowledgeWebSources?.length || 0)}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAiActiveSection('prompt-setup')}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                  aiActiveSection === 'prompt-setup'
+                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                    : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <Sparkles size={14} className="text-amber-500" />
+                <span>Instruksi & Persona AI</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAiActiveSection('guardrails')}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                  aiActiveSection === 'guardrails'
+                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                    : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <ShieldAlert size={14} className="text-rose-500" />
+                <span>Guardrails, Handover & CTA</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAiActiveSection('simulator')}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                  aiActiveSection === 'simulator'
+                    ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                    : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <Play size={14} className="text-emerald-500 fill-emerald-500" />
+                <span>Uji / Simulator Respon</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAiActiveSection('logs')}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                  aiActiveSection === 'logs'
+                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                    : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <MessageSquare size={14} />
+                <span>Log Aktivitas Bot ({settings.logs?.length || 0})</span>
+              </button>
             </div>
+
+            {/* SECTION 1: BASIS PENGETAHUAN (3 KONTAINER TERPISAH) */}
+            {aiActiveSection === 'knowledge' && (
+              <div className="space-y-6">
+                {/* Switcher Kontainer Pengetahuan */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Container 1 Tab */}
+                  <div 
+                    onClick={() => setKbActiveContainer('products')}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                      kbActiveContainer === 'products'
+                        ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-500 shadow-xs'
+                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        kbActiveContainer === 'products' ? 'bg-emerald-500 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600'
+                      }`}>
+                        <Tag size={18} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Katalog Produk</h4>
+                        <p className="text-[10px] text-zinc-500">Harga, deskripsi, FAQ</p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                      {settings.knowledgeProducts?.length || 0}
+                    </span>
+                  </div>
+
+                  {/* Container 2 Tab */}
+                  <div 
+                    onClick={() => setKbActiveContainer('snippets')}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                      kbActiveContainer === 'snippets'
+                        ? 'bg-blue-50/80 dark:bg-blue-950/30 border-blue-500 shadow-xs'
+                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        kbActiveContainer === 'snippets' ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600'
+                      }`}>
+                        <BookOpen size={18} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Paragraf & Dokumen</h4>
+                        <p className="text-[10px] text-zinc-500">SOP, rekening, profil</p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                      {settings.knowledgeSnippets?.length || 0}
+                    </span>
+                  </div>
+
+                  {/* Container 3 Tab */}
+                  <div 
+                    onClick={() => setKbActiveContainer('websites')}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                      kbActiveContainer === 'websites'
+                        ? 'bg-violet-50/80 dark:bg-violet-950/30 border-violet-500 shadow-xs'
+                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        kbActiveContainer === 'websites' ? 'bg-violet-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600'
+                      }`}>
+                        <Globe size={18} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Source Website</h4>
+                        <p className="text-[10px] text-zinc-500">Tautan & ringkasan web</p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                      {settings.knowledgeWebSources?.length || 0}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Search Bar & Add Button */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                  <input
+                    type="text"
+                    placeholder={`Cari dalam kontainer ${kbActiveContainer === 'products' ? 'produk' : kbActiveContainer === 'snippets' ? 'paragraf' : 'website'}...`}
+                    value={kbSearchQuery}
+                    onChange={(e) => setKbSearchQuery(e.target.value)}
+                    className="w-full sm:w-80 px-3.5 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+
+                  {kbActiveContainer === 'products' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingKbItem({
+                          id: '',
+                          productName: '',
+                          description: '',
+                          price: '',
+                          keywordsStr: '',
+                          faqList: [{ q: '', a: '' }]
+                        });
+                        setIsKbModalOpen(true);
+                      }}
+                      className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
+                    >
+                      <Plus size={14} />
+                      <span>Tambah Produk Baru</span>
+                    </button>
+                  )}
+
+                  {kbActiveContainer === 'snippets' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingSnippetItem({
+                          id: '',
+                          title: '',
+                          category: 'Profil Perusahaan',
+                          content: '',
+                          keywordsStr: ''
+                        });
+                        setIsSnippetModalOpen(true);
+                      }}
+                      className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
+                    >
+                      <Plus size={14} />
+                      <span>Tambah Dokumen / Paragraf</span>
+                    </button>
+                  )}
+
+                  {kbActiveContainer === 'websites' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingWebSourceItem({
+                          id: '',
+                          url: '',
+                          title: '',
+                          summary: '',
+                          isActive: true
+                        });
+                        setIsWebSourceModalOpen(true);
+                      }}
+                      className="w-full sm:w-auto px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
+                    >
+                      <Plus size={14} />
+                      <span>Tambah Tautan Website</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* CONTENT CONTAINER 1: PRODUK & LAYANAN */}
+                {kbActiveContainer === 'products' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(settings.knowledgeProducts?.length ? settings.knowledgeProducts : (settings.knowledgeBase || []))
+                        .filter(p => !kbSearchQuery || p.productName.toLowerCase().includes(kbSearchQuery.toLowerCase()) || p.description.toLowerCase().includes(kbSearchQuery.toLowerCase()))
+                        .map(item => (
+                          <div 
+                            key={item.id} 
+                            className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 shadow-xs hover:border-emerald-300 dark:hover:border-emerald-800 transition flex flex-col justify-between space-y-4"
+                          >
+                            <div className="space-y-2.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md">
+                                    Kategori Produk
+                                  </span>
+                                  <h4 className="text-sm font-black text-zinc-900 dark:text-zinc-100 mt-1">{item.productName}</h4>
+                                </div>
+                                <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 shrink-0">
+                                  {item.price}
+                                </span>
+                              </div>
+
+                              <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed line-clamp-3">
+                                {item.description}
+                              </p>
+
+                              {/* Keywords */}
+                              {item.keywords && item.keywords.length > 0 && (
+                                <div className="flex flex-wrap gap-1 pt-1">
+                                  {item.keywords.map((kw, i) => (
+                                    <span key={i} className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/80 px-2 py-0.5 rounded-md">
+                                      #{kw}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* FAQ List Preview */}
+                              {item.faq && item.faq.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-1.5">
+                                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                                    <HelpCircle size={11} /> {item.faq.length} Tanya Jawab (FAQ)
+                                  </span>
+                                  {item.faq.slice(0, 2).map((f, fi) => (
+                                    <div key={fi} className="text-[11px] bg-zinc-50 dark:bg-zinc-950 p-2 rounded-lg border border-zinc-100 dark:border-zinc-800/60">
+                                      <p className="font-bold text-zinc-800 dark:text-zinc-200">Q: {f.q}</p>
+                                      <p className="text-zinc-500 dark:text-zinc-400 text-[10px] mt-0.5">A: {f.a}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingKbItem({
+                                    id: item.id,
+                                    productName: item.productName,
+                                    description: item.description,
+                                    price: item.price,
+                                    keywordsStr: (item.keywords || []).join(', '),
+                                    faqList: item.faq?.length ? item.faq : [{ q: '', a: '' }]
+                                  });
+                                  setIsKbModalOpen(true);
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <FileEdit size={13} />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteKbItem(item.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                                <span>Hapus</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+
+                    {(!settings.knowledgeProducts?.length && !settings.knowledgeBase?.length) && (
+                      <div className="p-10 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-dashed border-zinc-300 dark:border-zinc-800 space-y-3">
+                        <Tag className="mx-auto text-zinc-400" size={32} />
+                        <h4 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Belum Ada Produk Terdaftar</h4>
+                        <p className="text-xs text-zinc-500 max-w-sm mx-auto">Tambahkan produk agar bot WhatsApp dapat memberikan penawaran harga, spesifikasi, dan FAQ otomatis kepada pelanggan.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* CONTENT CONTAINER 2: PARAGRAF BIASA / CATATAN BEBAS */}
+                {kbActiveContainer === 'snippets' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(settings.knowledgeSnippets || [])
+                        .filter(s => !kbSearchQuery || s.title.toLowerCase().includes(kbSearchQuery.toLowerCase()) || s.content.toLowerCase().includes(kbSearchQuery.toLowerCase()))
+                        .map(item => (
+                          <div 
+                            key={item.id} 
+                            className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 shadow-xs hover:border-blue-300 dark:hover:border-blue-800 transition flex flex-col justify-between space-y-4"
+                          >
+                            <div className="space-y-2.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-md">
+                                    {item.category || 'Paragraf Pengetahuan'}
+                                  </span>
+                                  <h4 className="text-sm font-black text-zinc-900 dark:text-zinc-100 mt-1">{item.title}</h4>
+                                </div>
+                              </div>
+
+                              <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto pr-1">
+                                {item.content}
+                              </p>
+
+                              {/* Keywords */}
+                              {item.keywords && item.keywords.length > 0 && (
+                                <div className="flex flex-wrap gap-1 pt-1">
+                                  {item.keywords.map((kw, i) => (
+                                    <span key={i} className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-md">
+                                      #{kw}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSnippetItem({
+                                    id: item.id,
+                                    title: item.title,
+                                    category: item.category || 'Profil Perusahaan',
+                                    content: item.content,
+                                    keywordsStr: (item.keywords || []).join(', ')
+                                  });
+                                  setIsSnippetModalOpen(true);
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <FileEdit size={13} />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSnippetItem(item.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                                <span>Hapus</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+
+                    {(!settings.knowledgeSnippets || settings.knowledgeSnippets.length === 0) && (
+                      <div className="p-10 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-dashed border-zinc-300 dark:border-zinc-800 space-y-3">
+                        <BookOpen className="mx-auto text-zinc-400" size={32} />
+                        <h4 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Belum Ada Paragraf / Catatan Bebas</h4>
+                        <p className="text-xs text-zinc-500 max-w-sm mx-auto">Input teks bebas seperti profil perusahaan, SOP pengiriman, garansi retur, atau nomor rekening resmi agar bot dapat menjawab dengan tepat.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* CONTENT CONTAINER 3: SOURCE WEBSITE & LINK */}
+                {kbActiveContainer === 'websites' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(settings.knowledgeWebSources || [])
+                        .filter(w => !kbSearchQuery || w.title.toLowerCase().includes(kbSearchQuery.toLowerCase()) || w.url.toLowerCase().includes(kbSearchQuery.toLowerCase()))
+                        .map(item => (
+                          <div 
+                            key={item.id} 
+                            className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 shadow-xs hover:border-violet-300 dark:hover:border-violet-800 transition flex flex-col justify-between space-y-4"
+                          >
+                            <div className="space-y-2.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40 px-2 py-0.5 rounded-md">
+                                    Sumber Website
+                                  </span>
+                                  <h4 className="text-sm font-black text-zinc-900 dark:text-zinc-100 mt-1">{item.title}</h4>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleWebSourceActive(item.id)}
+                                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition cursor-pointer ${
+                                    item.isActive 
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' 
+                                      : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-800'
+                                  }`}
+                                >
+                                  {item.isActive ? '● Dipelajari Bot' : '○ Nonaktif'}
+                                </button>
+                              </div>
+
+                              <a 
+                                href={item.url} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="text-xs text-violet-600 dark:text-violet-400 hover:underline flex items-center gap-1 truncate"
+                              >
+                                <ExternalLink size={12} className="shrink-0" />
+                                <span className="truncate">{item.url}</span>
+                              </a>
+
+                              <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-100 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                                <p className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Ringkasan Materi yang Diserap Bot:</p>
+                                <p className="line-clamp-4">{item.summary}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingWebSourceItem({
+                                    id: item.id,
+                                    url: item.url,
+                                    title: item.title,
+                                    summary: item.summary,
+                                    isActive: item.isActive
+                                  });
+                                  setIsWebSourceModalOpen(true);
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <FileEdit size={13} />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteWebSourceItem(item.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                                <span>Hapus</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+
+                    {(!settings.knowledgeWebSources || settings.knowledgeWebSources.length === 0) && (
+                      <div className="p-10 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-dashed border-zinc-300 dark:border-zinc-800 space-y-3">
+                        <Globe className="mx-auto text-zinc-400" size={32} />
+                        <h4 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Belum Ada Tautan Website Referensi</h4>
+                        <p className="text-xs text-zinc-500 max-w-sm mx-auto">Cantumkan URL website perusahaan dan rangkuman poin-poin utamanya agar bot dapat mereferensikan sumber resmi kepada pelanggan.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SECTION 2: SETUP PROMPT, PERSONA & GUARDRAILS */}
+            {aiActiveSection === 'prompt-setup' && (
+              <div className="space-y-6">
+                {/* 1. Core System Instructions */}
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2.5 text-zinc-900 dark:text-zinc-100">
+                    <Sparkles className="text-amber-500" size={20} />
+                    <h3 className="text-sm font-black">1. System Instructions (Core Prompt AI)</h3>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    Instruksi sistem utama yang mendikte peran, identitas, wewenang, dan kepribadian bot saat melayani chat pelanggan.
+                  </p>
+
+                  <textarea
+                    rows={4}
+                    value={settings.systemInstructions}
+                    onChange={(e) => setSettings({ ...settings, systemInstructions: e.target.value })}
+                    className="w-full px-4 py-3 rounded-2xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed font-mono"
+                    placeholder="Tuliskan instruksi sistem persona AI di sini..."
+                  />
+
+                  {/* Quick Presets */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Pilihan Cepat:</span>
+                    <button
+                      type="button"
+                      onClick={() => setSettings({
+                        ...settings,
+                        systemInstructions: "Anda adalah asisten AI customer service resmi PT. Panca Prima Wijaya di WhatsApp. Tugas utama Anda adalah melayani pertanyaan pelanggan seputar produk, penawaran harga, prosedur pemesanan, dan informasi perusahaan secara ramah, ringkas, sopan, dan solutif."
+                      })}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition cursor-pointer"
+                    >
+                      Customer Service Resmi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettings({
+                        ...settings,
+                        systemInstructions: "Anda adalah Sales Specialist AI PT. Panca Prima Wijaya yang berorientasi pada transaksi. Berikan penjelasan keunggulan produk secara antusias, berikan perkiraan harga, dan dorong pelanggan untuk membuat quotation resmi."
+                      })}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition cursor-pointer"
+                    >
+                      Sales Specialist Aktif
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettings({
+                        ...settings,
+                        systemInstructions: "Anda adalah Technical Support AI PT. Panca Prima Wijaya. Jawab pertanyaan teknis, sertifikasi standar barang, dan prosedur garansi dengan data akurat dan bahasa baku profesional."
+                      })}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition cursor-pointer"
+                    >
+                      Technical Support Formal
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Tone of Voice & Response Language */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Tone of Voice */}
+                  <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                      <Volume2 className="text-emerald-500" size={18} />
+                      <h3 className="text-sm font-black">2. Tone of Voice (Gaya Bahasa)</h3>
+                    </div>
+                    <p className="text-xs text-zinc-500">Pilih intonasi bicara bot yang mewakili identitas brand Anda:</p>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { title: 'Ramah & Solutif', desc: 'Hangat, sopan, emotikon natural' },
+                        { title: 'Formal & Profesional', desc: 'Resmi, baku, cocok corporate' },
+                        { title: 'Kasual & Santai', desc: 'Akrab, luwes seperti teman' },
+                        { title: 'Tegas & Informatif', desc: 'To-the-point, fokus data' },
+                        { title: 'Luxury & Elegan', desc: 'Prestisius, bahasa berkelas' }
+                      ].map((item, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => setSettings({ ...settings, toneOfVoice: item.title, tone: item.title })}
+                          className={`p-3 rounded-xl border text-left cursor-pointer transition ${
+                            (settings.toneOfVoice || settings.tone) === item.title
+                              ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30'
+                              : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
+                          }`}
+                        >
+                          <p className="text-xs font-black text-zinc-900 dark:text-zinc-100">{item.title}</p>
+                          <p className="text-[10px] text-zinc-500 mt-0.5">{item.desc}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Response Language */}
+                  <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                      <Languages className="text-blue-500" size={18} />
+                      <h3 className="text-sm font-black">3. Response Language (Bahasa Respon)</h3>
+                    </div>
+                    <p className="text-xs text-zinc-500">Bahasa utama yang digunakan bot saat menyusun jawaban:</p>
+
+                    <div className="space-y-2">
+                      {[
+                        { title: 'Bahasa Indonesia', desc: 'Standar komunikasi bisnis di Indonesia' },
+                        { title: 'Bilingual (Indonesia & English)', desc: 'Menyesuaikan otomatis dengan bahasa pelanggan' },
+                        { title: 'English Only', desc: 'Komunikasi internasional dalam bahasa Inggris' },
+                        { title: 'Bahasa Jawa Sopan (Krama Inggil)', desc: 'Layanan lokal ramah untuk area Jawa Tengah & Timur' }
+                      ].map((item, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => setSettings({ ...settings, responseLanguage: item.title })}
+                          className={`p-3 rounded-xl border text-left cursor-pointer transition flex items-center justify-between ${
+                            settings.responseLanguage === item.title
+                              ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/30'
+                              : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
+                          }`}
+                        >
+                          <div>
+                            <p className="text-xs font-black text-zinc-900 dark:text-zinc-100">{item.title}</p>
+                            <p className="text-[10px] text-zinc-500">{item.desc}</p>
+                          </div>
+                          {settings.responseLanguage === item.title && (
+                            <CheckCircle2 size={16} className="text-blue-600" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Pesan Otomatis (Greeting & Fallback) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-3">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">Pesan Salam Pembuka (Greeting)</h3>
+                    <p className="text-xs text-zinc-500">Pesan otomatis saat pelanggan menyapa pertama kali (halo, pagi, salam):</p>
+                    <textarea
+                      rows={3}
+                      value={settings.greetingMessage}
+                      onChange={(e) => setSettings({ ...settings, greetingMessage: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-3">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">Pesan Fallback (Saat Tidak Tahu)</h3>
+                    <p className="text-xs text-zinc-500">Pesan cadangan jika pertanyaan pelanggan di luar basis pengetahuan:</p>
+                    <textarea
+                      rows={3}
+                      value={settings.fallbackMessage}
+                      onChange={(e) => setSettings({ ...settings, fallbackMessage: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SECTION: GUARDRAILS, HANDOVER & SALES CTA */}
+            {aiActiveSection === 'guardrails' && (
+              <div className="space-y-6">
+                {/* 1. Guardrails: Restricted Topics (Topik Terlarang) */}
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                      <ShieldAlert className="text-rose-500" size={20} />
+                      <div>
+                        <h3 className="text-sm font-black">1. Restricted Topics (Topik Terlarang & Batasan Layanan)</h3>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          Topik yang otomatis ditolak secara sopan oleh bot agar tidak membocorkan rahasia bisnis atau melanggar etika.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const presets = [
+                          'Isu SARA, politik, dan konten sensitif',
+                          'Perbandingan atau menjelekkan kompetitor lain',
+                          'Membocorkan harga modal internal atau rahasia supplier pabrik',
+                          'Menjanjikan diskon khusus sepihak tanpa persetujuan tim sales resmi',
+                          'Data pribadi karyawan di luar nomor kontak layanan resmi'
+                        ];
+                        setSettings(prev => ({
+                          ...prev,
+                          restrictedTopics: Array.from(new Set([...(prev.restrictedTopics || []), ...presets]))
+                        }));
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/40 text-xs font-bold hover:bg-rose-100 transition cursor-pointer shrink-0"
+                    >
+                      + Pasang Rekomendasi Guardrail
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {(settings.restrictedTopics || []).map((topic, idx) => (
+                      <span 
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50"
+                      >
+                        <span>{topic}</span>
+                        <button 
+                          type="button" 
+                          onClick={() => handleRemoveRestrictedTopic(topic)}
+                          className="hover:text-rose-900 dark:hover:text-white cursor-pointer"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                    {(!settings.restrictedTopics || settings.restrictedTopics.length === 0) && (
+                      <p className="text-xs text-zinc-400 italic">Belum ada topik terlarang yang didaftarkan.</p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <input
+                      type="text"
+                      placeholder="Tambah topik terlarang (cth: Bocoran Modal, Politik, Kompetitor)..."
+                      value={newRestrictedInput}
+                      onChange={(e) => setNewRestrictedInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddRestrictedTopic(); } }}
+                      className="flex-1 px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddRestrictedTopic}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                    >
+                      + Tambah Topik
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Handover to Human (Serah Terima CS) */}
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                      <Headphones className="text-violet-500" size={20} />
+                      <div>
+                        <h3 className="text-sm font-black">2. Handover to Human (Pengalihan ke Tim CS / Sales Manusia)</h3>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          Otomatis mengalihkan percakapan ke nomor WhatsApp tim manusia saat pelanggan komplain atau meminta berbicara langsung.
+                        </p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={settings.handoverToHuman?.enabled ?? true} 
+                        onChange={(e) => setSettings({
+                          ...settings,
+                          handoverToHuman: { ...settings.handoverToHuman, enabled: e.target.checked }
+                        })}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-10 h-5 bg-zinc-300 dark:bg-zinc-700 rounded-full peer peer-checked:bg-violet-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1">Nomor WhatsApp CS / Sales Tujuan</label>
+                      <input
+                        type="text"
+                        value={settings.handoverToHuman?.handoverContact || ''}
+                        onChange={(e) => setSettings({
+                          ...settings,
+                          handoverToHuman: { ...settings.handoverToHuman, handoverContact: e.target.value }
+                        })}
+                        placeholder="Contoh: 0811-1234-5678"
+                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1">Pesan Serah Terima ke Pelanggan</label>
+                      <input
+                        type="text"
+                        value={settings.handoverToHuman?.handoverMessage || ''}
+                        onChange={(e) => setSettings({
+                          ...settings,
+                          handoverToHuman: { ...settings.handoverToHuman, handoverMessage: e.target.value }
+                        })}
+                        placeholder="Gunakan {contact} dan {name} sebagai placeholder"
+                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1.5">Kata Kunci Pemicu Handover</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {(settings.handoverToHuman?.triggerKeywords || []).map((kw, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-900/40">
+                          <span>{kw}</span>
+                          <button type="button" onClick={() => handleRemoveHandoverTrigger(kw)} className="cursor-pointer hover:text-rose-500"><X size={11} /></button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Tambah kata kunci pemicu (cth: mau telpon, komplain, bicara sales)..."
+                        value={newHandoverKeywordInput}
+                        onChange={(e) => setNewHandoverKeywordInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddHandoverTrigger(); } }}
+                        className="flex-1 px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                      />
+                      <button type="button" onClick={handleAddHandoverTrigger} className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition cursor-pointer">+ Tambah</button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Sales CTA (Call to Action Otomatis) */}
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                      <Sparkles className="text-amber-500" size={20} />
+                      <div>
+                        <h3 className="text-sm font-black">3. Sales CTA (Ajakan Aksi Penutupan Penjualan Otomatis)</h3>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          Menyematkan ajakan bertindak (Quotation, cek stok, atau sampel) saat pelanggan menanyakan harga atau berminat dengan produk.
+                        </p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={settings.salesCta?.enabled ?? true} 
+                        onChange={(e) => setSettings({
+                          ...settings,
+                          salesCta: { ...settings.salesCta, enabled: e.target.checked }
+                        })}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-10 h-5 bg-zinc-300 dark:bg-zinc-700 rounded-full peer peer-checked:bg-amber-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1">Teks Pesan Call to Action (CTA)</label>
+                    <input
+                      type="text"
+                      value={settings.salesCta?.ctaMessage || ''}
+                      onChange={(e) => setSettings({
+                        ...settings,
+                        salesCta: { ...settings.salesCta, ctaMessage: e.target.value }
+                      })}
+                      placeholder="Contoh: Apakah Bapak/Ibu ingin kami buatkan penawaran harga resmi (Quotation) untuk kebutuhan ini?"
+                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1.5">Kata Kunci Pemicu CTA Penjualan</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {(settings.salesCta?.triggerKeywords || []).map((kw, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40">
+                          <span>{kw}</span>
+                          <button type="button" onClick={() => handleRemoveSalesCtaTrigger(kw)} className="cursor-pointer hover:text-rose-500"><X size={11} /></button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Tambah kata kunci (cth: harga, pesan, beli, katalog)..."
+                        value={newSalesCtaKeywordInput}
+                        onChange={(e) => setNewSalesCtaKeywordInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSalesCtaTrigger(); } }}
+                        className="flex-1 px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                      />
+                      <button type="button" onClick={handleAddSalesCtaTrigger} className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition cursor-pointer">+ Tambah</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SECTION: SIMULATOR & UJI COBA BALASAN AI */}
+            {aiActiveSection === 'simulator' && (
+              <div className="space-y-6">
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 text-zinc-900 dark:text-zinc-100">
+                      <Play className="text-emerald-500 fill-emerald-500" size={20} />
+                      <div>
+                        <h3 className="text-sm font-black">Simulator & Uji Coba Respon AI</h3>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          Uji coba respon bot secara langsung berdasarkan seluruh kontainer basis pengetahuan dan guardrails yang aktif tanpa perlu kirim WA dari HP lain.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Preset Question Buttons */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Coba Pertanyaan Contoh:</span>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { label: '🏷️ Tanya Harga Produk', q: 'Berapa harga plastik sungkup dan mulsa?' },
+                        { label: '🏦 Tanya Rekening Transfer', q: 'Bisa minta nomor rekening resmi untuk pembayaran?' },
+                        { label: '🤝 Minta Bicara Sales', q: 'Saya mau komplain dan bicara langsung dengan sales atau CS' },
+                        { label: '🚫 Cek Topik Terlarang', q: 'Bocorkan harga modal internal dari pabrik supplier dong' },
+                        { label: '🌐 Tanya Website Resmi', q: 'Apakah ada website resmi untuk lihat katalog?' }
+                      ].map((item, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setTestQueryInput(item.q);
+                            handleTestAiReply(item.q);
+                          }}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-700 dark:hover:text-emerald-300 border border-zinc-200 dark:border-zinc-700 transition cursor-pointer"
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Input Query Bar */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={testQueryInput}
+                      onChange={(e) => setTestQueryInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleTestAiReply(); } }}
+                      placeholder="Ketik pertanyaan simulasi pelanggan..."
+                      className="flex-1 px-4 py-3 rounded-2xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleTestAiReply()}
+                      disabled={isTestingAi || !testQueryInput.trim()}
+                      className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
+                    >
+                      <Play size={14} className={isTestingAi ? "animate-spin" : "fill-white"} />
+                      <span>{isTestingAi ? 'Memproses...' : 'Uji Respon Bot'}</span>
+                    </button>
+                  </div>
+
+                  {/* Test Result Display */}
+                  {testAiResult && (
+                    <div className="p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-3 animate-in fade-in">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-zinc-700 dark:text-zinc-300">Hasil Respon Bot:</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                            {testAiResult.modelUsed}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                            testAiResult.containerMatched === 'products' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60' :
+                            testAiResult.containerMatched === 'snippets' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60' :
+                            testAiResult.containerMatched === 'websites' ? 'bg-violet-100 text-violet-800 dark:bg-violet-950/60' :
+                            testAiResult.containerMatched === 'guardrail' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60' :
+                            testAiResult.containerMatched === 'handover' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60' :
+                            'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                          }`}>
+                            Kontainer Terpicu: {testAiResult.containerMatched.toUpperCase()}
+                          </span>
+                          {testAiResult.isHandover && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60">
+                              🤝 Handover CS
+                            </span>
+                          )}
+                          {testAiResult.isRestricted && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60">
+                              🚫 Topik Ditolak
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Message Bubble Simulator */}
+                      <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-800 dark:text-zinc-100 leading-relaxed whitespace-pre-wrap font-sans">
+                        {testAiResult.replyText}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* SECTION: LOG AKTIVITAS BOT */}
+            {aiActiveSection === 'logs' && (
+              <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                    <MessageSquare className="text-emerald-500" size={18} />
+                    <h3 className="text-sm font-black">Riwayat Log Interaksi Bot WhatsApp</h3>
+                  </div>
+                  <span className="text-xs text-zinc-400">{settings.logs?.length || 0} aktivitas tercatat</span>
+                </div>
+
+                <div className="space-y-3">
+                  {settings.logs && settings.logs.length > 0 ? (
+                    settings.logs.map((log) => (
+                      <div 
+                        key={log.id} 
+                        className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800/80 space-y-2"
+                      >
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-zinc-800 dark:text-zinc-200">{log.sender}</span>
+                            {log.isHandover && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300">
+                                Handover CS
+                              </span>
+                            )}
+                            {log.isRestricted && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                                Topik Ditolak
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-zinc-400 font-mono">
+                            {new Date(log.timestamp).toLocaleString()} • {log.modelUsed}
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-900 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                          <span className="font-bold text-zinc-400 text-[10px] block uppercase">Pesan Pelanggan:</span>
+                          {log.incoming}
+                        </p>
+                        <p className="text-xs text-emerald-800 dark:text-emerald-300 bg-emerald-50/60 dark:bg-emerald-950/30 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40">
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400 text-[10px] block uppercase">Balasan Otomatis:</span>
+                          {log.reply}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-12 text-center text-zinc-400 text-xs">
+                      Belum ada riwayat pesan yang dibalas bot secara otomatis.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1351,22 +2807,350 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
         )}
       </div>
 
-      {/* Modal Knowledge Base */}
+      {/* Modal 1: Knowledge Product with Dynamic FAQ Editor */}
       {isKbModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] w-full max-w-md p-8 space-y-6 shadow-2xl">
-            <h3 className="text-lg font-black">{editingKbItem.id ? 'Edit Produk' : 'Tambah Produk'}</h3>
-            <div className="space-y-4">
-               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-zinc-400 ml-1">Nama</label><input type="text" value={editingKbItem.productName} onChange={e => setEditingKbItem({...editingKbItem, productName: e.target.value})} className="w-full px-4 py-3 border rounded-xl text-sm bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800" /></div>
-               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-zinc-400 ml-1">Deskripsi</label><textarea value={editingKbItem.description} onChange={e => setEditingKbItem({...editingKbItem, description: e.target.value})} className="w-full px-4 py-3 border rounded-xl text-sm bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800" rows={3} /></div>
-               <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1"><label className="text-[10px] font-black uppercase text-zinc-400 ml-1">Harga</label><input type="text" value={editingKbItem.price} onChange={e => setEditingKbItem({...editingKbItem, price: e.target.value})} className="w-full px-4 py-3 border rounded-xl text-sm bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800" /></div>
-                  <div className="space-y-1"><label className="text-[10px] font-black uppercase text-zinc-400 ml-1">Keywords</label><input type="text" value={editingKbItem.keywordsStr} onChange={e => setEditingKbItem({...editingKbItem, keywordsStr: e.target.value})} className="w-full px-4 py-3 border rounded-xl text-sm bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800" /></div>
-               </div>
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-lg p-6 sm:p-7 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Tag size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900 dark:text-zinc-100">
+                    {editingKbItem.id ? 'Edit Katalog Produk' : 'Tambah Produk Baru'}
+                  </h3>
+                  <p className="text-[11px] text-zinc-400">Kontainer 1: Informasi produk, harga & FAQ untuk AI</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsKbModalOpen(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
             </div>
-            <div className="flex gap-3 pt-2">
-               <button onClick={() => setIsKbModalOpen(false)} className="flex-1 py-3 text-xs font-black text-zinc-400">BATAL</button>
-               <button onClick={handleSaveKbItem} className="flex-[2] py-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-xs font-black shadow-lg shadow-zinc-900/20">SIMPAN PERUBAHAN</button>
+
+            <div className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Nama Produk / Layanan</label>
+                <input 
+                  type="text" 
+                  placeholder="Contoh: Plastik Sungkup Pertanian UV"
+                  value={editingKbItem.productName} 
+                  onChange={e => setEditingKbItem({ ...editingKbItem, productName: e.target.value })} 
+                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Harga / Satuan</label>
+                  <input 
+                    type="text" 
+                    placeholder="Contoh: Rp 450.000 / Roll"
+                    value={editingKbItem.price} 
+                    onChange={e => setEditingKbItem({ ...editingKbItem, price: e.target.value })} 
+                    className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Kata Kunci (Koma)</label>
+                  <input 
+                    type="text" 
+                    placeholder="sungkup, uv, penutup bedengan"
+                    value={editingKbItem.keywordsStr} 
+                    onChange={e => setEditingKbItem({ ...editingKbItem, keywordsStr: e.target.value })} 
+                    className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Deskripsi Spesifikasi & Keunggulan</label>
+                <textarea 
+                  rows={3}
+                  placeholder="Jelaskan spesifikasi, bahan, ukuran roll, dan fungsi produk..."
+                  value={editingKbItem.description} 
+                  onChange={e => setEditingKbItem({ ...editingKbItem, description: e.target.value })} 
+                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                />
+              </div>
+
+              {/* Dynamic FAQ List per Product */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 flex items-center gap-1">
+                    <HelpCircle size={12} /> Tanya Jawab Khas Produk Ini (FAQ)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditingKbItem({
+                      ...editingKbItem,
+                      faqList: [...editingKbItem.faqList, { q: '', a: '' }]
+                    })}
+                    className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                  >
+                    + Tambah FAQ
+                  </button>
+                </div>
+
+                <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+                  {editingKbItem.faqList.map((faq, fIdx) => (
+                    <div key={fIdx} className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5 relative group">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-zinc-400">FAQ #{fIdx + 1}</span>
+                        {editingKbItem.faqList.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = editingKbItem.faqList.filter((_, i) => i !== fIdx);
+                              setEditingKbItem({ ...editingKbItem, faqList: updated });
+                            }}
+                            className="text-rose-500 hover:text-rose-700 cursor-pointer p-0.5"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Pertanyaan (Q): cth. Berapa lama ketahanan di lapangan?"
+                        value={faq.q}
+                        onChange={e => {
+                          const updated = [...editingKbItem.faqList];
+                          updated[fIdx].q = e.target.value;
+                          setEditingKbItem({ ...editingKbItem, faqList: updated });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Jawaban (A): cth. Kuat hingga 2-3 musim tanam."
+                        value={faq.a}
+                        onChange={e => {
+                          const updated = [...editingKbItem.faqList];
+                          updated[fIdx].a = e.target.value;
+                          setEditingKbItem({ ...editingKbItem, faqList: updated });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border text-xs bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button 
+                type="button"
+                onClick={() => setIsKbModalOpen(false)} 
+                className="flex-1 py-2.5 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button 
+                type="button"
+                onClick={handleSaveKbItem} 
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition cursor-pointer"
+              >
+                Simpan Produk
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Paragraf Biasa / Catatan Dokumen User */}
+      {isSnippetModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-lg p-6 sm:p-7 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                  <BookOpen size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900 dark:text-zinc-100">
+                    {editingSnippetItem.id ? 'Edit Paragraf Dokumen' : 'Tambah Paragraf Dokumen Baru'}
+                  </h3>
+                  <p className="text-[11px] text-zinc-400">Kontainer 2: Teks bebas seperti profil, SOP, rekening, dsb.</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsSnippetModalOpen(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Judul Dokumen / Topik</label>
+                <input 
+                  type="text" 
+                  placeholder="Contoh: Rekening Bank Resmi & Prosedur Pembayaran"
+                  value={editingSnippetItem.title} 
+                  onChange={e => setEditingSnippetItem({ ...editingSnippetItem, title: e.target.value })} 
+                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Kategori Dokumen</label>
+                  <select 
+                    value={editingSnippetItem.category} 
+                    onChange={e => setEditingSnippetItem({ ...editingSnippetItem, category: e.target.value })} 
+                    className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="Profil Perusahaan">Profil Perusahaan</option>
+                    <option value="Prosedur Pemesanan">Prosedur Pemesanan</option>
+                    <option value="Rekening & Pembayaran">Rekening & Pembayaran</option>
+                    <option value="Kebijakan & S&K">Kebijakan & S&K</option>
+                    <option value="Garansi & Retur">Garansi & Retur</option>
+                    <option value="Ekspedisi & Pengiriman">Ekspedisi & Pengiriman</option>
+                    <option value="Catatan Bebas Lainnya">Catatan Bebas Lainnya</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Kata Kunci Terkait (Koma)</label>
+                  <input 
+                    type="text" 
+                    placeholder="rekening, bca, transfer, invoice"
+                    value={editingSnippetItem.keywordsStr} 
+                    onChange={e => setEditingSnippetItem({ ...editingSnippetItem, keywordsStr: e.target.value })} 
+                    className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Isi Paragraf Lengkap (Input Bebas User)</label>
+                <textarea 
+                  rows={6}
+                  placeholder="Tuliskan paragraf informasi secara lengkap di sini. Bot AI akan membaca dan merangkum isi paragraf ini saat menjawab pertanyaan pengguna..."
+                  value={editingSnippetItem.content} 
+                  onChange={e => setEditingSnippetItem({ ...editingSnippetItem, content: e.target.value })} 
+                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500 leading-relaxed font-mono" 
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button 
+                type="button"
+                onClick={() => setIsSnippetModalOpen(false)} 
+                className="flex-1 py-2.5 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button 
+                type="button"
+                onClick={handleSaveSnippetItem} 
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition cursor-pointer"
+              >
+                Simpan Paragraf
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Source Website & Tautan Resmi */}
+      {isWebSourceModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-lg p-6 sm:p-7 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+                  <Globe size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900 dark:text-zinc-100">
+                    {editingWebSourceItem.id ? 'Edit Sumber Website' : 'Tambah Sumber Website Baru'}
+                  </h3>
+                  <p className="text-[11px] text-zinc-400">Kontainer 3: Tautan dan ringkasan website resmi</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsWebSourceModalOpen(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">URL Website Resmi</label>
+                <input 
+                  type="text" 
+                  placeholder="https://pancaprima.co.id/katalog"
+                  value={editingWebSourceItem.url} 
+                  onChange={e => setEditingWebSourceItem({ ...editingWebSourceItem, url: e.target.value })} 
+                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-violet-500" 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Judul Halaman / Portal</label>
+                <input 
+                  type="text" 
+                  placeholder="Contoh: Katalog Digital Resmi & Portofolio Produk"
+                  value={editingWebSourceItem.title} 
+                  onChange={e => setEditingWebSourceItem({ ...editingWebSourceItem, title: e.target.value })} 
+                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-violet-500" 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-zinc-400 ml-1">Ringkasan Materi yang Diserap Bot</label>
+                <textarea 
+                  rows={4}
+                  placeholder="Tuliskan rangkuman poin-poin yang ada di website ini agar bot dapat mereferensikannya secara akurat kepada pelanggan..."
+                  value={editingWebSourceItem.summary} 
+                  onChange={e => setEditingWebSourceItem({ ...editingWebSourceItem, summary: e.target.value })} 
+                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-violet-500 leading-relaxed" 
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800">
+                <div>
+                  <span className="font-bold text-zinc-800 dark:text-zinc-200 block text-xs">Status Penyerapan Materi</span>
+                  <span className="text-[10px] text-zinc-400">Aktifkan agar bot mempelajari dan merujuk link ini di chat</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={editingWebSourceItem.isActive} 
+                    onChange={e => setEditingWebSourceItem({ ...editingWebSourceItem, isActive: e.target.checked })} 
+                    className="sr-only peer" 
+                  />
+                  <div className="w-10 h-5 bg-zinc-300 dark:bg-zinc-700 rounded-full peer peer-checked:bg-violet-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button 
+                type="button"
+                onClick={() => setIsWebSourceModalOpen(false)} 
+                className="flex-1 py-2.5 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button 
+                type="button"
+                onClick={handleSaveWebSourceItem} 
+                className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-600/20 transition cursor-pointer"
+              >
+                Simpan Sumber Web
+              </button>
             </div>
           </div>
         </div>

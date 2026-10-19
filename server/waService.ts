@@ -42,20 +42,67 @@ export interface WAChat {
   connectedPhone?: string; // Nomor terhubung pemilik sesi chat
 }
 
+export interface WAKBProduct {
+  id: string;
+  productName: string;
+  description: string;
+  price: string;
+  keywords: string[];
+  faq: { q: string; a: string }[];
+}
+
+export interface WAKBTextSnippet {
+  id: string;
+  title: string;
+  category: string; // "Profil Perusahaan" | "Kebijakan & S&K" | "Prosedur Pemesanan" | "Rekening & Pembayaran" | "Garansi & Retur" | "Lainnya"
+  content: string;
+  keywords: string[];
+  updatedAt?: number;
+}
+
+export interface WAKBWebSource {
+  id: string;
+  url: string;
+  title: string;
+  summary: string;
+  isActive: boolean;
+  updatedAt?: number;
+}
+
+export interface WAIHandoverConfig {
+  enabled: boolean;
+  triggerKeywords: string[];
+  handoverContact: string;
+  handoverMessage: string;
+}
+
+export interface WAISalesCtaConfig {
+  enabled: boolean;
+  ctaMessage: string;
+  triggerKeywords: string[];
+}
+
 export interface WAISettings {
   autoReplyEnabled: boolean;
   botName: string;
-  tone: string;
+  systemInstructions: string;
+  toneOfVoice: string;
+  responseLanguage: string;
   greetingMessage: string;
   fallbackMessage: string;
-  knowledgeBase: {
-    id: string;
-    productName: string;
-    description: string;
-    price: string;
-    keywords: string[];
-    faq: { q: string; a: string }[];
-  }[];
+  restrictedTopics: string[];
+  handoverToHuman: WAIHandoverConfig;
+  salesCta: WAISalesCtaConfig;
+
+  // Separated Knowledge Containers
+  knowledgeProducts: WAKBProduct[];
+  knowledgeSnippets: WAKBTextSnippet[]; // Paragraf biasa yang diinput user
+  knowledgeWebSources: WAKBWebSource[]; // Source website
+
+  // Backward compatibility
+  knowledgeBase?: WAKBProduct[];
+  tone?: string;
+
   logs: {
     id: string;
     timestamp: number;
@@ -63,6 +110,8 @@ export interface WAISettings {
     incoming: string;
     reply: string;
     modelUsed: string;
+    isHandover?: boolean;
+    isRestricted?: boolean;
   }[];
 }
 
@@ -91,12 +140,32 @@ class WAService {
   public aiSettings: WAISettings = {
     autoReplyEnabled: true,
     botName: "Customer Assistant AI",
+    systemInstructions: "Anda adalah asisten AI customer service resmi PT. Panca Prima Wijaya di WhatsApp. Tugas utama Anda adalah melayani pertanyaan pelanggan seputar produk, penawaran harga, prosedur pemesanan, dan informasi perusahaan secara ramah, ringkas, sopan, dan solutif.",
+    toneOfVoice: "Ramah & Solutif",
     tone: "Ramah & Solutif",
-    greetingMessage: "Halo! Terima kasih telah menghubungi kami. Ada yang bisa saya bantu terkait produk & layanan kami?",
-    fallbackMessage: "Mohon maaf, pesan Anda telah kami catat. Tim customer service kami akan segera menghubungi Anda kembali.",
-    knowledgeBase: [
+    responseLanguage: "Bahasa Indonesia",
+    greetingMessage: "Halo! Terima kasih telah menghubungi PT. Panca Prima Wijaya. Ada yang bisa kami bantu terkait produk dan layanan kami?",
+    fallbackMessage: "Mohon maaf, pesan Anda telah kami catat. Tim sales dan customer service kami akan segera menghubungi Anda kembali untuk memberikan informasi lebih detail.",
+    restrictedTopics: [
+      "Isu SARA, politik, dan konten sensitif",
+      "Perbandingan atau menjelekkan kompetitor",
+      "Membocorkan harga modal internal atau rahasia supplier",
+      "Menjanjikan diskon khusus tanpa persetujuan tim sales"
+    ],
+    handoverToHuman: {
+      enabled: true,
+      triggerKeywords: ["bicara dengan manusia", "hubungi sales", "komplain", "bicara cs", "customer service", "mau telpon", "bisa bicara sales"],
+      handoverContact: "0811-1234-5678",
+      handoverMessage: "Baik Bapak/Ibu, pertanyaan/kendala Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor {contact}. Tim kami akan segera merespon secara langsung."
+    },
+    salesCta: {
+      enabled: true,
+      ctaMessage: "Apakah Bapak/Ibu ingin kami buatkan penawaran harga resmi (Quotation) untuk kebutuhan ini?",
+      triggerKeywords: ["harga", "pesan", "order", "quotation", "penawaran", "katalog", "stok", "beli"]
+    },
+    knowledgeProducts: [
       {
-        id: "kb-1",
+        id: "kb-prod-1",
         productName: "Layanan Produk & Transaksi Panca",
         description: "Layanan pengadaan produk, penawaran harga, dan pemesanan barang resmi PT. Panca Prima Wijaya.",
         price: "Hubungi Sales",
@@ -107,6 +176,33 @@ class WAService {
         ]
       }
     ],
+    knowledgeSnippets: [
+      {
+        id: "kb-snip-1",
+        title: "Profil & Jam Operasional Perusahaan",
+        category: "Profil Perusahaan",
+        content: "PT. Panca Prima Wijaya beroperasi setiap hari Senin hingga Jumat pukul 08:30 - 17:00 WIB, dan Sabtu pukul 08:30 - 13:00 WIB. Hari Minggu dan libur nasional operasional kantor tutup, namun pesan yang masuk akan segera diproses di hari kerja berikutnya.",
+        keywords: ["jam kerja", "operasional", "buka", "tutup", "profil", "alamat", "kantor"]
+      },
+      {
+        id: "kb-snip-2",
+        title: "Prosedur Pembayaran & Rekening Bank Resmi",
+        category: "Rekening & Pembayaran",
+        content: "Seluruh pembayaran transaksi resmi PT. Panca Prima Wijaya hanya dilakukan melalui transfer rekening bank perusahaan resmi atas nama PT. Panca Prima Wijaya (BCA / Mandiri). Kami tidak pernah meminta transfer ke rekening atas nama perorangan/pribadi.",
+        keywords: ["rekening", "transfer", "pembayaran", "bca", "mandiri", "bank"]
+      }
+    ],
+    knowledgeWebSources: [
+      {
+        id: "kb-web-1",
+        url: "https://pancaprima.co.id",
+        title: "Website Resmi PT. Panca Prima Wijaya",
+        summary: "Situs web portal resmi untuk melihat portofolio solusi, sertifikasi resmi, layanan konsultasi teknis, dan informasi kontak kantor pusat serta cabang di Indonesia.",
+        isActive: true,
+        updatedAt: Date.now()
+      }
+    ],
+    knowledgeBase: [],
     logs: []
   };
 
@@ -159,7 +255,22 @@ class WAService {
     try {
       if (fs.existsSync(SETTINGS_FILE)) {
         const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
-        this.aiSettings = { ...this.aiSettings, ...JSON.parse(raw) };
+        const parsed = JSON.parse(raw);
+        const products = parsed.knowledgeProducts || parsed.knowledgeBase || this.aiSettings.knowledgeProducts;
+        this.aiSettings = {
+          ...this.aiSettings,
+          ...parsed,
+          knowledgeProducts: products,
+          knowledgeBase: products,
+          knowledgeSnippets: parsed.knowledgeSnippets || this.aiSettings.knowledgeSnippets,
+          knowledgeWebSources: parsed.knowledgeWebSources || this.aiSettings.knowledgeWebSources,
+          restrictedTopics: parsed.restrictedTopics || this.aiSettings.restrictedTopics,
+          handoverToHuman: { ...this.aiSettings.handoverToHuman, ...(parsed.handoverToHuman || {}) },
+          salesCta: { ...this.aiSettings.salesCta, ...(parsed.salesCta || {}) },
+          toneOfVoice: parsed.toneOfVoice || parsed.tone || this.aiSettings.toneOfVoice,
+          responseLanguage: parsed.responseLanguage || this.aiSettings.responseLanguage,
+          systemInstructions: parsed.systemInstructions || this.aiSettings.systemInstructions
+        };
       }
     } catch (e) {
       console.error("[waService] Error loading WA AI settings:", e);
@@ -169,6 +280,12 @@ class WAService {
   public saveSettings(newSettings: Partial<WAISettings>) {
     try {
       this.aiSettings = { ...this.aiSettings, ...newSettings };
+      if (newSettings.knowledgeProducts) {
+        this.aiSettings.knowledgeBase = newSettings.knowledgeProducts;
+      }
+      if (newSettings.toneOfVoice) {
+        this.aiSettings.tone = newSettings.toneOfVoice;
+      }
       fs.writeFileSync(SETTINGS_FILE, JSON.stringify(this.aiSettings, null, 2), "utf-8");
     } catch (e) {
       console.error("[waService] Error saving WA AI settings:", e);
@@ -817,80 +934,262 @@ class WAService {
     }
   }
 
-  public async handleAIAutoReply(jid: string, senderName: string, userMessage: string) {
-    try {
-      const kbText = this.aiSettings.knowledgeBase
-        .map(k => `Produk: ${k.productName}\nDeskripsi: ${k.description}\nHarga: ${k.price}\nFAQ:\n` + k.faq.map(f => `- Q: ${f.q}\n  A: ${f.a}`).join("\n"))
-        .join("\n\n");
+  public async generateAIResponse(senderName: string, userMessage: string): Promise<{
+    replyText: string;
+    modelUsed: string;
+    isHandover: boolean;
+    isRestricted: boolean;
+    containerMatched: 'products' | 'snippets' | 'websites' | 'guardrail' | 'handover' | 'greeting' | 'fallback';
+  }> {
+    const msgLower = userMessage.toLowerCase().trim();
+    let replyText = "";
+    let modelUsed = "Basis Pengetahuan & Aturan Cerdas";
+    let isHandover = false;
+    let isRestricted = false;
+    let containerMatched: 'products' | 'snippets' | 'websites' | 'guardrail' | 'handover' | 'greeting' | 'fallback' = 'fallback';
 
-      const systemPrompt = `Anda adalah Customer Service AI bernama "${this.aiSettings.botName}".
-Gaya Bahasa: ${this.aiSettings.tone}.
-Pesan Salam default jika sesuai: "${this.aiSettings.greetingMessage}".
-Pesan Fallback jika tidak yakin: "${this.aiSettings.fallbackMessage}".
+    // 1. CEK TOPIK TERLARANG (RESTRICTED TOPICS)
+    const restrictedList = this.aiSettings.restrictedTopics || [];
+    for (const topic of restrictedList) {
+      if (!topic.trim()) continue;
+      const topicLower = topic.toLowerCase();
+      const topicTerms = topicLower
+        .split(/[,|;/]+|\b(?:atau|dan)\b/)
+        .map(t => t.trim().replace(/^(?:isu|membocorkan|menjanjikan|perbandingan|konten|rahasia)\s+/i, '').trim())
+        .filter(t => t.length >= 3);
 
-Basis Pengetahuan Produk:
-${kbText}
+      const hit = topicTerms.some(term => msgLower.includes(term)) ||
+        (topicLower.includes("modal") && (msgLower.includes("modal") || msgLower.includes("harga modal"))) ||
+        (topicLower.includes("sara") && msgLower.includes("sara")) ||
+        (topicLower.includes("politik") && msgLower.includes("politik")) ||
+        (topicLower.includes("kompetitor") && (msgLower.includes("kompetitor") || msgLower.includes("pesaing")));
 
-Instruksi:
-Jawablah pertanyaan pelanggan (${senderName}) dengan sopan, ringkas, profesional, dan akurat berdasarkan basis pengetahuan produk di atas.
-Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permintaan maaf dan catat bahwa tim customer service akan segera menghubungi mereka.`;
+      if (hit) {
+        isRestricted = true;
+        modelUsed = "Guardrail (Topik Terlarang)";
+        containerMatched = 'guardrail';
+        replyText = `Mohon maaf ${senderName}, kami tidak dapat memberikan tanggapan terkait topik tersebut demi mematuhi kebijakan dan etika layanan resmi kami. Silakan tanyakan hal lain seputar informasi produk, penawaran harga, atau layanan PT. Panca Prima Wijaya.`;
+        break;
+      }
+    }
+
+    // 2. CEK PENGALIHAN KE AGEN MANUSIA (HANDOVER TO HUMAN)
+    if (!replyText && this.aiSettings.handoverToHuman?.enabled) {
+      const triggers = this.aiSettings.handoverToHuman.triggerKeywords || [];
+      const isHandoverTriggered = triggers.some(trg => trg.trim() && msgLower.includes(trg.trim().toLowerCase()));
+      if (isHandoverTriggered) {
+        isHandover = true;
+        modelUsed = "Handover CS / Sales Manusia";
+        containerMatched = 'handover';
+        const contact = this.aiSettings.handoverToHuman.handoverContact || "0811-1234-5678";
+        const template = this.aiSettings.handoverToHuman.handoverMessage || 
+          "Baik Bapak/Ibu {name}, percakapan Anda kami teruskan langsung ke Sales & CS Specialist kami di nomor {contact}. Tim kami akan segera merespon secara langsung.";
+        replyText = template
+          .replace(/{contact}/g, contact)
+          .replace(/{name}/g, senderName);
+      }
+    }
+
+    // 3. JIKA BUKAN TOPIK TERLARANG & BUKAN HANDOVER, RANGKAI SEMUA KONTEN KNOWLEDGE BASE (3 KONTAINER)
+    if (!replyText) {
+      // Kontainer 1: Produk & Layanan
+      const products = this.aiSettings.knowledgeProducts?.length 
+        ? this.aiSettings.knowledgeProducts 
+        : (this.aiSettings.knowledgeBase || []);
+      
+      const productsText = products.map((p, idx) => {
+        let str = `[PRODUK #${idx + 1}] ${p.productName}\nHarga: ${p.price}\nDeskripsi: ${p.description}\nKata Kunci: ${(p.keywords || []).join(', ')}`;
+        if (p.faq && p.faq.length > 0) {
+          str += `\nFAQ Produk:\n` + p.faq.map(f => `  • Tanya: ${f.q}\n    Jawab: ${f.a}`).join('\n');
+        }
+        return str;
+      }).join('\n\n');
+
+      // Kontainer 2: Paragraf Biasa / Catatan Dokumen Bebas yang Diinput User
+      const snippets = this.aiSettings.knowledgeSnippets || [];
+      const snippetsText = snippets.map((s, idx) => 
+        `[DOKUMEN/CATATAN #${idx + 1}: ${s.title} (Kategori: ${s.category || 'Umum'})]\n${s.content}\nKata Kunci Terkait: ${(s.keywords || []).join(', ')}`
+      ).join('\n\n');
+
+      // Kontainer 3: Sumber Website Resmi
+      const webSources = (this.aiSettings.knowledgeWebSources || []).filter(w => w.isActive);
+      const webText = webSources.map((w, idx) => 
+        `[SUMBER WEBSITE #${idx + 1}: ${w.title} (${w.url})]\nRingkasan Informasi: ${w.summary}`
+      ).join('\n\n');
+
+      // Setup Prompt & AI Instructions
+      const tone = this.aiSettings.toneOfVoice || this.aiSettings.tone || "Ramah & Solutif";
+      const lang = this.aiSettings.responseLanguage || "Bahasa Indonesia";
+      const sysInstructions = this.aiSettings.systemInstructions || 
+        "Anda adalah asisten AI customer service resmi PT. Panca Prima Wijaya di WhatsApp. Jawablah pertanyaan pelanggan secara ramah, ringkas, sopan, dan akurat.";
+      const ctaRule = this.aiSettings.salesCta?.enabled 
+        ? `\nSALES CALL-TO-ACTION (CTA):\nJika pelanggan menanyakan harga, pemesanan, atau berminat dengan produk, sertakan ajakan bertindak yang halus di akhir jawaban: "${this.aiSettings.salesCta.ctaMessage}"` 
+        : "";
+
+      const fullSystemPrompt = `${sysInstructions}
+
+PANDUAN GAYA BAHASA & RESPON:
+- Gaya Bahasa / Tone of Voice: ${tone}
+- Bahasa Respon: ${lang}
+- Pesan Fallback jika tidak yakin: "${this.aiSettings.fallbackMessage}"${ctaRule}
+
+=== KONTAINER BASIS PENGETAHUAN PERUSAHAAN ===
+--- 1. KATEGORI PRODUK & LAYANAN ---
+${productsText || "Belum ada produk yang didaftarkan."}
+
+--- 2. DOKUMEN & PARAGRAF PERUSAHAAN (SOP, ALAMAT, REKENING, PROSEDUR) ---
+${snippetsText || "Belum ada dokumen teks tambahan."}
+
+--- 3. SUMBER RESMI WEBSITE ---
+${webText || "Belum ada tautan website resmi."}
+
+=== ATURAN KERJA ===
+1. Jawab pertanyaan pelanggan (${senderName}) hanya berdasarkan fakta di atas.
+2. Jangan pernah mengarang data teknis, harga, atau nomor rekening di luar dokumen resmi.
+3. Buat jawaban padat, nyaman dibaca di layar chat WhatsApp (gunakan bullet point bila ada beberapa poin).`;
 
       const apiKey = process.env.GEMINI_API_KEY;
-      let replyText = "";
-      let modelUsed = "Basis Pengetahuan & Aturan Cerdas";
-
       if (apiKey) {
-        try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: userMessage }] }],
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              generationConfig: { temperature: 0.3, maxOutputTokens: 300 }
-            })
-          });
+        // Coba model resmi gemini-3.8-flash, lalu fallback ke gemini-2.5-flash
+        const modelCandidates = ["gemini-3.8-flash", "gemini-2.5-flash"];
+        for (const candidate of modelCandidates) {
+          try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${candidate}:generateContent?key=${apiKey}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ role: "user", parts: [{ text: userMessage }] }],
+                systemInstruction: { parts: [{ text: fullSystemPrompt }] },
+                generationConfig: { temperature: 0.3, maxOutputTokens: 350 }
+              })
+            });
 
-          if (res.ok) {
-            const data = await res.json();
-            const genText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (genText) {
-              replyText = genText;
-              modelUsed = "Gemini AI (gemini-2.5-flash)";
+            if (res.ok) {
+              const data = await res.json();
+              const genText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (genText) {
+                replyText = genText.trim();
+                modelUsed = `Gemini AI (${candidate})`;
+                // Determine container matched based on content keywords
+                if (products.some(p => msgLower.includes(p.productName.toLowerCase()) || (p.keywords || []).some(k => k && msgLower.includes(k.toLowerCase())))) {
+                  containerMatched = 'products';
+                } else if (snippets.some(s => msgLower.includes(s.title.toLowerCase()) || (s.keywords || []).some(k => k && msgLower.includes(k.toLowerCase())))) {
+                  containerMatched = 'snippets';
+                } else if (webSources.some(w => msgLower.includes(w.title.toLowerCase()) || msgLower.includes('web') || msgLower.includes('situs'))) {
+                  containerMatched = 'websites';
+                }
+                break;
+              }
+            } else {
+              console.warn(`[waService] Gemini API (${candidate}) returned status ${res.status}`);
             }
-          } else {
-            console.warn(`[waService] Gemini API returned status ${res.status}, using Knowledge Base fallback.`);
+          } catch (genErr) {
+            console.warn(`[waService] Gemini API (${candidate}) call error:`, genErr);
           }
-        } catch (genErr) {
-          console.warn("[waService] Gemini API call error, using Knowledge Base fallback:", genErr);
         }
       }
 
-      // Fallback cerdas berbasis Knowledge Base & Kata Kunci jika Gemini quota habis (429) atau error
+      // 4. ATURAN CERDAS LOKAL (FALLBACK JIKA GEMINI LIMIT 429 ATAU OFFLINE)
       if (!replyText) {
-        const msgLower = userMessage.toLowerCase().trim();
         let matched = false;
-        for (const kb of this.aiSettings.knowledgeBase) {
-          if (kb.keywords.some(kw => msgLower.includes(kw.toLowerCase()))) {
-            replyText = `Halo ${senderName}! Terkait ${kb.productName}: ${kb.description}. Informasi harga: ${kb.price}.`;
-            if (kb.faq && kb.faq.length > 0) {
-              replyText += `\n\nFAQ:\n` + kb.faq.map(f => `• ${f.q}\n  ${f.a}`).join("\n");
+
+        // Cek Pencocokan Produk
+        for (const p of products) {
+          const keywords = (p.keywords || []).map(k => k.toLowerCase());
+          if (keywords.some(kw => kw && msgLower.includes(kw)) || msgLower.includes(p.productName.toLowerCase())) {
+            replyText = `Halo ${senderName}! Terkait *${p.productName}*:\n${p.description}\n\n💰 *Harga:* ${p.price}`;
+            if (p.faq && p.faq.length > 0) {
+              replyText += `\n\n*FAQ Terkait:*\n` + p.faq.slice(0, 2).map(f => `• _${f.q}_\n  ${f.a}`).join('\n');
             }
             matched = true;
+            containerMatched = 'products';
             break;
           }
         }
+
+        // Cek Pencocokan Paragraf Biasa / Catatan Teks (SOP, Alamat, Rekening, dll)
         if (!matched) {
-          if (/halo|hai|hi|pagi|siang|sore|malam|assalam|permisi/i.test(msgLower)) {
+          for (const s of snippets) {
+            const keywords = (s.keywords || []).map(k => k.toLowerCase());
+            const titleLower = s.title.toLowerCase();
+            const catLower = (s.category || '').toLowerCase();
+            if (
+              keywords.some(kw => kw && msgLower.includes(kw)) || 
+              msgLower.includes(titleLower) ||
+              (catLower && msgLower.includes(catLower)) ||
+              (titleLower.includes("rekening") && (msgLower.includes("rekening") || msgLower.includes("transfer") || msgLower.includes("bank") || msgLower.includes("bca") || msgLower.includes("mandiri"))) ||
+              (titleLower.includes("operasional") && (msgLower.includes("jam") || msgLower.includes("buka") || msgLower.includes("tutup") || msgLower.includes("operasional") || msgLower.includes("libur"))) ||
+              (titleLower.includes("pemesanan") && (msgLower.includes("faktur") || msgLower.includes("ppn") || msgLower.includes("pajak") || msgLower.includes("surat jalan")))
+            ) {
+              replyText = `Halo ${senderName}! Terkait *${s.title}*:\n\n${s.content}`;
+              matched = true;
+              containerMatched = 'snippets';
+              break;
+            }
+          }
+        }
+
+        // Cek Pencocokan Sumber Website
+        if (!matched) {
+          for (const w of webSources) {
+            const titleLower = w.title.toLowerCase();
+            if (
+              msgLower.includes("website") || msgLower.includes("link") || 
+              msgLower.includes("situs") || msgLower.includes("web") || 
+              msgLower.includes("portal") || msgLower.includes("katalog") ||
+              msgLower.includes(titleLower)
+            ) {
+              replyText = `Halo ${senderName}! Informasi resmi dapat Anda lihat melalui website kami:\n🔗 *${w.title}*\n${w.url}\n\n${w.summary}`;
+              matched = true;
+              containerMatched = 'websites';
+              break;
+            }
+          }
+        }
+
+        // Tambahkan Sales CTA jika berkaitan dengan pembelian/harga
+        if (matched && this.aiSettings.salesCta?.enabled) {
+          const ctaKeywords = (this.aiSettings.salesCta.triggerKeywords || ["harga", "pesan", "order", "beli"]).map(k => k.toLowerCase());
+          if (ctaKeywords.some(kw => msgLower.includes(kw))) {
+            replyText += `\n\n📌 _${this.aiSettings.salesCta.ctaMessage}_`;
+          }
+        }
+
+        // Respon Salam
+        if (!matched) {
+          if (/halo|hai|hi|pagi|siang|sore|malam|assalam|permisi|selamat/i.test(msgLower)) {
             replyText = `Halo ${senderName}! ` + this.aiSettings.greetingMessage;
+            containerMatched = 'greeting';
           } else {
-            replyText = this.aiSettings.fallbackMessage || `Halo ${senderName}! Pesan Anda telah kami terima. Tim customer service kami akan segera menghubungi Anda kembali.`;
+            replyText = this.aiSettings.fallbackMessage || 
+              `Halo ${senderName}! Terima kasih telah menghubungi PT. Panca Prima Wijaya. Pesan Anda telah kami terima dan tim kami akan segera menghubungi Anda kembali.`;
+            containerMatched = 'fallback';
           }
         }
       }
+    }
+
+    return {
+      replyText,
+      modelUsed,
+      isHandover,
+      isRestricted,
+      containerMatched
+    };
+  }
+
+  public async simulateAIAutoReply(userMessage: string, senderName: string = "Calon Pelanggan") {
+    return this.generateAIResponse(senderName, userMessage);
+  }
+
+  public async handleAIAutoReply(jid: string, senderName: string, userMessage: string) {
+    try {
+      const result = await this.generateAIResponse(senderName, userMessage);
+      const { replyText, modelUsed, isHandover, isRestricted } = result;
 
       console.log(`[waService] Menyiapkan auto-reply untuk ${jid} via model [${modelUsed}]: "${replyText}"`);
 
+      // 5. KIRIM PESAN KE WHATSAPP JIKA SOKET TERHUBUNG
       if (this.socket && this.connectionState === "connected") {
         await this.socket.sendMessage(jid, { text: replyText });
         console.log(`[waService] Berhasil mengirim auto-reply ke WhatsApp ${jid}`);
@@ -898,6 +1197,7 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
         console.warn(`[waService] Soket WhatsApp tidak dalam status connected, tidak dapat mengirim auto-reply`);
       }
 
+      // 6. SIMPAN BALASAN KE RIWAYAT CHAT LOKAL & SUPABASE
       const connectedPhone = this.getConnectedPhoneKey();
       let phoneMap = this.chatsByPhone.get(connectedPhone);
       if (phoneMap) {
@@ -921,13 +1221,16 @@ Jika pelanggan menanyakan informasi di luar basis pengetahuan, sampaikan permint
         }
       }
 
+      // 7. SIMPAN LOG AKTIVITAS BOT
       this.aiSettings.logs.unshift({
         id: "log-" + Date.now(),
         timestamp: Date.now(),
         sender: senderName + " (" + jid.split("@")[0] + ")",
         incoming: userMessage,
         reply: replyText,
-        modelUsed
+        modelUsed,
+        isHandover,
+        isRestricted
       });
       if (this.aiSettings.logs.length > 50) this.aiSettings.logs.pop();
       this.saveSettings({});
