@@ -525,7 +525,7 @@ export const loadKnownConnectedNumbersFromSupabase = async (): Promise<string[]>
     try {
         const { data, error } = await withRetry(() => supabase.from('wa_chats').select('connected_phone'));
         if (error || !data) return [];
-        const unique = Array.from(new Set(data.map((r: any) => r.connected_phone).filter(Boolean)));
+        const unique = Array.from(new Set(data.map((r: any) => r.connected_phone).filter(p => p && p !== 'default' && /^[0-9]+$/.test(p))));
         return unique as string[];
     } catch {
         return [];
@@ -542,6 +542,15 @@ export const deleteWAChatFromSupabase = async (jid: string, connectedPhone?: str
         return await withRetry(() => query);
     } catch (err: any) {
         console.warn('[SupabaseSync] Error deleting wa_chat:', err.message);
+        return null;
+    }
+};
+
+export const clearWAChatsFromSupabase = async () => {
+    try {
+        return await withRetry(() => supabase.from('wa_chats').delete().neq('id', 'none'));
+    } catch (err: any) {
+        console.warn('[SupabaseSync] Error clearing wa_chats from Supabase:', err.message);
         return null;
     }
 };

@@ -45,3 +45,21 @@ export const safeGetLocalStorage = <T = any>(key: string, fallback: T): T => {
   }
 };
 
+export const safeFetchJson = async <T = any>(path: string, options?: RequestInit): Promise<T | null> => {
+  try {
+    const url = getApiUrl(path);
+    const res = await fetch(url, options);
+    const contentType = res.headers.get("content-type") || "";
+    if (!res.ok || !contentType.includes("application/json")) {
+      return null;
+    }
+    const text = await res.text();
+    if (!text || text.trim().startsWith("<")) {
+      return null;
+    }
+    return JSON.parse(text) as T;
+  } catch (err) {
+    return null;
+  }
+};
+

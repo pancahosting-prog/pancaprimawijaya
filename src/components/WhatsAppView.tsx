@@ -23,17 +23,40 @@ import {
   Image as ImageIcon,
   FileText,
   Download,
-  Maximize2
+  Maximize2,
+  RotateCcw
 } from 'lucide-react';
 import { 
   loadWAChatsFromSupabase, 
   saveWAChatToSupabase, 
   deleteWAChatFromSupabase,
+  clearWAChatsFromSupabase,
   loadKnownConnectedNumbersFromSupabase,
   checkSupabaseTableStatus 
 } from '../lib/supabaseSync';
 import { SUPABASE_MIGRATION_SQL } from '../lib/supabaseMigrationSql';
 import { getApiUrl } from '../lib/apiUtils';
+
+export const formatDisplayPhone = (rawPhoneOrJid?: string, name?: string): { phone: string; name: string } => {
+  if (!rawPhoneOrJid) return { phone: name || "Pengguna WA", name: name || "Pengguna WA" };
+
+  let val = rawPhoneOrJid.split("@")[0].split(":")[0];
+  const digits = val.replace(/[^0-9]/g, "");
+
+  if (digits && digits.length >= 8 && digits.length <= 15 && !val.includes("lid")) {
+    let formatted = digits;
+    if (formatted.startsWith("62")) {
+      formatted = "0" + formatted.slice(2);
+    } else if (!formatted.startsWith("0")) {
+      formatted = "0" + formatted;
+    }
+    const displayName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net")) ? name : formatted;
+    return { phone: formatted, name: displayName };
+  }
+
+  const cleanName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net")) ? name : "Pengguna WA";
+  return { phone: cleanName, name: cleanName };
+};
 
 export interface WAChatMedia {
   type: 'image' | 'document' | 'video' | 'audio';
@@ -119,15 +142,24 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const [connectionStatus, setConnectionStatus] = useState<{
     connectionState: 'disconnected' | 'connecting' | 'connected';
     qrCodeBase64: string | null;
+    rawQrCodeBase64?: string | null;
+    qrTimestamp?: number;
+    qrVersion?: number;
+    qrExpired?: boolean;
     userPhone: string | null;
     userName: string | null;
   }>({
     connectionState: 'disconnected',
     qrCodeBase64: null,
+    rawQrCodeBase64: null,
+    qrTimestamp: 0,
+    qrVersion: 0,
+    qrExpired: false,
     userPhone: null,
     userName: null,
   });
 
+  const [qrCountdown, setQrCountdown] = useState<number>(25);
   const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(false);
 
   // Connected Phone Partitioning & Multi-SIM History
@@ -201,18 +233,29 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       const res = await fetch(getApiUrl('/api/wa/status'));
       if (res.ok) {
         const data = await res.json();
-        setConnectionStatus({
-          connectionState: data.connectionState,
-          qrCodeBase64: data.qrCodeBase64,
-          userPhone: data.userPhone,
-          userName: data.userName,
+        setConnectionStatus(prev => {
+          if (data.qrVersion && data.qrVersion !== prev.qrVersion) {
+            setQrCountdown(25);
+          } else if (data.qrExpired) {
+            setQrCountdown(0);
+          }
+          return {
+            connectionState: data.connectionState,
+            qrCodeBase64: data.qrCodeBase64,
+            rawQrCodeBase64: data.rawQrCodeBase64,
+            qrTimestamp: data.qrTimestamp,
+            qrVersion: data.qrVersion,
+            qrExpired: data.qrExpired,
+            userPhone: data.userPhone,
+            userName: data.userName,
+          };
         });
         if (Array.isArray(data.knownNumbers)) {
-          const numbers = [...data.knownNumbers];
+          const numbers = data.knownNumbers.filter((n: any) => n.phone && n.phone !== 'default');
           try {
             const cloudPhones = await loadKnownConnectedNumbersFromSupabase();
             cloudPhones.forEach(cp => {
-              if (cp && !numbers.some(n => n.phone === cp)) {
+              if (cp && cp !== 'default' && !numbers.some(n => n.phone === cp)) {
                 numbers.push({ phone: cp, active: cp === data.userPhone, chatCount: 0 });
               }
             });
@@ -246,6 +289,12 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
             const cleanJid = chat.jid || chat.id;
             if (cleanJid && !seenJids.has(cleanJid)) {
               seenJids.add(cleanJid);
+
+              // Format display phone & name cleanly (08... format, no @lid/@s.whatsapp.net)
+              const cleanInfo = formatDisplayPhone(chat.phone || chat.jid || chat.id, chat.name);
+              chat.phone = cleanInfo.phone;
+              chat.name = cleanInfo.name;
+
               uniqueChats.push(chat);
             }
           });
@@ -282,20 +331,51 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
       if (srvRes.ok) {
         const srvData = await srvRes.json();
         if (srvData.chats) {
-          setChats(srvData.chats);
+          const cleaned = srvData.chats.map((c: WAChat) => {
+            const info = formatDisplayPhone(c.phone || c.jid || c.id, c.name);
+            return { ...c, phone: info.phone, name: info.name };
+          });
+          setChats(cleaned);
         }
       }
 
       // 2. Direct client fallback from Supabase
       const cloudChats = await loadWAChatsFromSupabase(target);
       if (cloudChats && cloudChats.length > 0) {
-        setChats(cloudChats);
+        const cleaned = cloudChats.map((c: any) => {
+          const info = formatDisplayPhone(c.phone || c.jid || c.id, c.name);
+          return { ...c, phone: info.phone, name: info.name };
+        });
+        setChats(cleaned);
       }
 
       setSyncToast('Riwayat chat berhasil disinkronkan dari Supabase!');
       setTimeout(() => setSyncToast(null), 3000);
     } catch (err: any) {
       console.error('Error syncing WA with Supabase:', err);
+    } finally {
+      setIsSyncingSupabase(false);
+    }
+  };
+
+  // Clear ALL Chat History and Connected Numbers
+  const handleClearAllData = async () => {
+    if (!confirm('Apakah Anda yakin ingin bersihkan SELURUH data percakapan WhatsApp & nomor terhubung? Tindakan ini tidak dapat dibatalkan.')) return;
+
+    setIsSyncingSupabase(true);
+    try {
+      await fetch(getApiUrl('/api/wa/clear-all-data'), { method: 'POST' });
+      await clearWAChatsFromSupabase();
+
+      setChats([]);
+      setKnownNumbers([]);
+      setSelectedChatJid(null);
+      setSyncToast('Seluruh data percakapan WhatsApp berhasil dibersihkan!');
+      setTimeout(() => setSyncToast(null), 4000);
+      fetchStatus();
+    } catch (err) {
+      console.error('Error clearing all WA data:', err);
+      alert('Gagal bersihkan data WhatsApp.');
     } finally {
       setIsSyncingSupabase(false);
     }
@@ -350,18 +430,40 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     }
   };
 
+  // QR Countdown timer like WhatsApp Web (auto-refresh / expiration indicator)
+  useEffect(() => {
+    if (connectionStatus.connectionState === 'connected' || !connectionStatus.qrCodeBase64 || connectionStatus.qrExpired) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setQrCountdown(prev => {
+        if (prev <= 1) {
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [connectionStatus.connectionState, connectionStatus.qrCodeBase64, connectionStatus.qrExpired, connectionStatus.qrVersion]);
+
   useEffect(() => {
     fetchStatus();
     fetchChats();
     fetchSettings();
 
+    // Poll status faster (every 2.5s) when on 'perangkat' tab waiting for QR scan, otherwise every 6s
+    const pollInterval = activeSubTab === 'perangkat' && connectionStatus.connectionState !== 'connected' ? 2500 : 6000;
     const interval = setInterval(() => {
       fetchStatus();
-      fetchChats();
-    }, 5000);
+      if (activeSubTab === 'chat') {
+        fetchChats();
+      }
+    }, pollInterval);
 
     return () => clearInterval(interval);
-  }, [selectedConnectedPhone]);
+  }, [selectedConnectedPhone, activeSubTab, connectionStatus.connectionState]);
 
   useEffect(() => {
     if (selectedChatJid) {
@@ -369,20 +471,42 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     }
   }, [chats, selectedChatJid]);
 
-  const handleInitConnection = async () => {
+  const handleInitConnection = async (force = false) => {
     setIsLoadingStatus(true);
     try {
-      const res = await fetch(getApiUrl('/api/wa/connect'), { method: 'POST' });
+      const res = await fetch(getApiUrl(`/api/wa/connect?force=${force ? 'true' : 'false'}`), { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force })
+      });
       if (res.ok) {
         const data = await res.json();
         setConnectionStatus(prev => ({
           ...prev,
           connectionState: data.connectionState,
-          qrCodeBase64: data.qrCodeBase64
+          qrCodeBase64: data.qrCodeBase64,
+          rawQrCodeBase64: data.rawQrCodeBase64 || data.qrCodeBase64,
+          qrVersion: data.qrVersion,
+          qrExpired: data.qrExpired,
+          qrTimestamp: data.qrTimestamp
         }));
+        setQrCountdown(25);
       }
     } catch (err) {
       console.error('Error connecting WA:', err);
+    } finally {
+      setIsLoadingStatus(false);
+    }
+  };
+
+  const handleResetSession = async () => {
+    setIsLoadingStatus(true);
+    try {
+      await fetch(getApiUrl('/api/wa/logout'), { method: 'POST' });
+      await new Promise(r => setTimeout(r, 800));
+      await handleInitConnection(true);
+    } catch (err) {
+      console.error('Error resetting WA session:', err);
     } finally {
       setIsLoadingStatus(false);
     }
@@ -586,6 +710,15 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     >
                       <Code size={13} />
                     </button>
+                    <button
+                      type="button"
+                      onClick={handleClearAllData}
+                      disabled={isSyncingSupabase}
+                      className="p-1.5 rounded-md hover:bg-rose-100 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 transition cursor-pointer"
+                      title="Bersihkan Seluruh Data Percakapan & Perangkat WhatsApp"
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </div>
                 </div>
 
@@ -615,7 +748,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       >
                         <option value="active">Nomor Aktif Saat Ini</option>
                         <option value="all">Semua Riwayat Nomor</option>
-                        {knownNumbers.map(n => (
+                        {knownNumbers.filter(n => n.phone && n.phone !== 'default').map(n => (
                           <option key={n.phone} value={n.phone}>
                             +{n.phone} ({n.chatCount} chat) {n.active ? '★' : ''}
                           </option>
@@ -645,7 +778,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       <div
                         key={`${c.jid || c.id}_${idx}`}
                         onClick={() => setSelectedChatJid(c.jid || c.id)}
-                        className={`p-4 cursor-pointer transition-all flex items-start gap-3 select-none ${
+                        className={`p-4 cursor-pointer transition-all flex items-start gap-3 select-none group relative ${
                           isSelected && !isMobile
                             ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold'
                             : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40 active:bg-zinc-100 dark:active:bg-zinc-800'
@@ -667,6 +800,17 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                             {c.lastMessage}
                           </p>
                         </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteChat(c);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 rounded transition absolute right-2 bottom-2"
+                          title="Hapus Obrolan Ini"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                         {c.unreadCount > 0 && (
                           <span className="mt-1 w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center shrink-0">
                             {c.unreadCount}
@@ -706,6 +850,15 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                         </span>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteChat(selectedChat)}
+                      className="p-2 hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 rounded-xl transition flex items-center gap-1 text-xs font-bold"
+                      title="Hapus Obrolan"
+                    >
+                      <Trash2 size={16} />
+                      <span className="hidden sm:inline">Hapus Obrolan</span>
+                    </button>
                   </div>
 
                   {/* Messages Scroll Area */}
@@ -955,18 +1108,89 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                         LOGOUT PERANGKAT INI
                       </button>
                     </div>
-                  ) : connectionStatus.qrCodeBase64 ? (
-                    <div className="space-y-5">
-                      <div className="p-4 bg-white rounded-2xl shadow-xl inline-block border border-zinc-100 dark:border-zinc-800">
-                        <img src={connectionStatus.qrCodeBase64} alt="QR" className="w-52 h-52" />
+                  ) : (connectionStatus.qrCodeBase64 || connectionStatus.rawQrCodeBase64) ? (
+                    <div className="space-y-4">
+                      {/* WhatsApp Web Style QR Card with Expired Overlay */}
+                      <div className="relative p-4 bg-white rounded-2xl shadow-xl inline-block border border-zinc-100 dark:border-zinc-800 overflow-hidden group">
+                        <img 
+                          src={connectionStatus.qrCodeBase64 || connectionStatus.rawQrCodeBase64!} 
+                          alt="WhatsApp QR Code" 
+                          className={`w-56 h-56 mx-auto transition-all duration-300 ${
+                            (connectionStatus.qrExpired || qrCountdown === 0 || !connectionStatus.qrCodeBase64) 
+                              ? 'filter blur-sm brightness-75 scale-95 opacity-40' 
+                              : 'opacity-100'
+                          }`} 
+                        />
+
+                        {/* WhatsApp Web Expired Overlay */}
+                        {(connectionStatus.qrExpired || qrCountdown === 0 || !connectionStatus.qrCodeBase64) && (
+                          <div 
+                            onClick={() => handleInitConnection(true)}
+                            className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-[2px] p-4 text-center cursor-pointer transition-all duration-200"
+                            title="Klik untuk memuat ulang barcode baru"
+                          >
+                            <div className="w-14 h-14 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-xl shadow-emerald-500/40 mb-2.5 transition-transform transform active:scale-90 hover:scale-110">
+                              <RefreshCw size={26} className={isLoadingStatus ? 'animate-spin' : ''} />
+                            </div>
+                            <p className="text-white text-xs font-black tracking-wide drop-shadow-sm">
+                              Kode QR telah kedaluwarsa
+                            </p>
+                            <p className="text-emerald-300 text-[11px] font-semibold mt-1 underline hover:text-emerald-200">
+                              Klik di sini untuk memuat ulang kode QR
+                            </p>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-[10px] font-black text-zinc-400 animate-pulse tracking-widest uppercase">
-                        Scan via Perangkat Tertaut di WhatsApp HP
-                      </p>
+
+                      {/* Status info bar & countdown like WhatsApp Web */}
+                      {!(connectionStatus.qrExpired || qrCountdown === 0 || !connectionStatus.qrCodeBase64) ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-center gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                            <span className="text-[11px]">Barcode aktif • Berganti dalam <span className="font-mono text-emerald-600 dark:text-emerald-400 font-black">{qrCountdown}s</span></span>
+                          </div>
+                          <div className="w-48 mx-auto bg-zinc-200 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-emerald-500 h-full transition-all duration-1000 ease-linear"
+                              style={{ width: `${(qrCountdown / 25) * 100}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] font-black text-zinc-400 tracking-wider uppercase">
+                            Scan via Perangkat Tertaut di WhatsApp HP
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] font-semibold text-rose-500">
+                          Barcode telah kedaluwarsa demi keamanan. Silakan klik gambar untuk memuat ulang.
+                        </p>
+                      )}
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleInitConnection(true)}
+                          disabled={isLoadingStatus}
+                          className="flex-1 py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                        >
+                          <RefreshCw size={13} className={isLoadingStatus ? 'animate-spin' : ''} />
+                          <span>Ganti Barcode Sekarang</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleResetSession}
+                          disabled={isLoadingStatus}
+                          className="py-2.5 px-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          title="Reset Sesi Bersih & Hapus Cache"
+                        >
+                          <RotateCcw size={13} />
+                          <span>Reset Sesi</span>
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <button 
-                      onClick={handleInitConnection} 
+                      onClick={() => handleInitConnection(true)} 
                       disabled={isLoadingStatus} 
                       className="w-full py-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-xl transition cursor-pointer"
                     >
@@ -1018,9 +1242,9 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
                 {/* Quick Info list of registered numbers */}
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-3">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400">Nomor Terdaftar di Sistem ({knownNumbers.length})</h4>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400">Nomor Terdaftar di Sistem ({knownNumbers.filter(n => n.phone && n.phone !== 'default').length})</h4>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {knownNumbers.map((num, i) => (
+                    {knownNumbers.filter(n => n.phone && n.phone !== 'default').map((num, i) => (
                       <div key={i} className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
                           <span className={`w-2 h-2 rounded-full ${num.active ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-300'}`}></span>
@@ -1060,7 +1284,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     </div>
                   </div>
                   <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 shrink-0">
-                    {knownNumbers.filter(n => n.active).length} Aktif Online
+                    {knownNumbers.filter(n => n.phone && n.phone !== 'default' && n.active).length} Aktif Online
                   </span>
                 </div>
 
@@ -1076,7 +1300,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
-                      {knownNumbers.map((num, idx) => (
+                      {knownNumbers.filter(n => n.phone && n.phone !== 'default').map((num, idx) => (
                         <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
                           <td className="py-3.5 px-4 font-mono font-bold text-zinc-900 dark:text-zinc-100">
                             +{num.phone}

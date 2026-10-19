@@ -61,10 +61,15 @@ async function startServer() {
   waService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp failed:", err));
 
   app.get("/api/wa/status", (_req, res) => {
+    const isExpired = waService.isQRExpired() || waService.qrExpired;
     res.json({
       success: true,
       connectionState: waService.connectionState,
-      qrCodeBase64: waService.qrCodeBase64,
+      qrCodeBase64: isExpired && waService.connectionState !== "connected" ? null : waService.qrCodeBase64,
+      rawQrCodeBase64: waService.qrCodeBase64,
+      qrTimestamp: waService.qrTimestamp,
+      qrVersion: waService.qrVersion,
+      qrExpired: isExpired && waService.connectionState !== "connected",
       userJid: waService.userJid,
       userPhone: waService.userPhone,
       userName: waService.userName,
@@ -72,13 +77,18 @@ async function startServer() {
     });
   });
 
-  app.post("/api/wa/connect", async (_req, res) => {
-    await waService.initBaileys();
+  app.post("/api/wa/connect", async (req, res) => {
+    const force = req.query.force === "true" || req.body?.force === true;
+    await waService.initBaileys(force);
+    const isExpired = waService.isQRExpired() || waService.qrExpired;
     res.json({
       success: true,
       message: "Proses inisialisasi Baileys WhatsApp dimulai.",
       connectionState: waService.connectionState,
       qrCodeBase64: waService.qrCodeBase64,
+      qrVersion: waService.qrVersion,
+      qrTimestamp: waService.qrTimestamp,
+      qrExpired: isExpired && waService.connectionState !== "connected",
       userPhone: waService.userPhone
     });
   });
@@ -158,6 +168,11 @@ async function startServer() {
       message: "Obrolan berhasil dihapus.",
       chats: waService.getChats(connectedPhone)
     });
+  });
+
+  app.post("/api/wa/clear-all-data", async (_req, res) => {
+    await waService.clearAllData();
+    res.json({ success: true, message: "Seluruh data percakapan WhatsApp dan nomor terhubung berhasil dibersihkan." });
   });
 
   app.post("/api/wa/logout", async (_req, res) => {
