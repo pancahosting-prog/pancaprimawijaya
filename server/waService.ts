@@ -80,8 +80,8 @@ class WAService {
   public isQRExpired(): boolean {
     if (this.connectionState === "connected") return false;
     if (!this.qrCodeBase64) return true;
-    // QR codes in WhatsApp Web rotate or expire every 20-25 seconds
-    return (Date.now() - this.qrTimestamp) > 25000;
+    // Beri batas waktu realistis 60 detik bagi pengguna untuk membuka WA HP, membuka Perangkat Tertaut, dan men-scan barcode
+    return (Date.now() - this.qrTimestamp) > 60000;
   }
 
   // Chats organized by connected phone number: Map<connectedPhone, Map<jid, WAChat>>
@@ -603,6 +603,9 @@ class WAService {
         if (connection === "close") {
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+          const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+
+          console.log(`[waService] Koneksi tertutup. Status: ${statusCode}, isLoggedOut: ${isLoggedOut}, isRestartRequired: ${isRestartRequired}`);
 
           try {
             this.socket?.ev?.removeAllListeners?.();
@@ -610,6 +613,7 @@ class WAService {
           this.socket = null;
 
           if (isLoggedOut) {
+            console.log("[waService] Sesi WhatsApp logout (401). Menghapus kredensial sesi.");
             this.connectionState = "disconnected";
             this.qrCodeBase64 = null;
             this.qrExpired = true;
@@ -618,15 +622,29 @@ class WAService {
             try {
               fs.rmSync(SESSION_DIR, { recursive: true, force: true });
             } catch (err) {}
-          } else if (!this.userPhone) {
-            // Pairing phase closed / timed out: mark QR as expired like WhatsApp Web
-            this.qrExpired = true;
-            this.connectionState = "disconnected";
-            console.log(`[waService] QR code session closed (status: ${statusCode}). Awaiting user refresh.`);
-          } else {
-            // Active session disconnected temporarily -> auto reconnect
+          } else if (isRestartRequired || statusCode === 428 || (statusCode && statusCode !== 408 && statusCode !== 401 && !this.userPhone)) {
+            // KRUSIAL: Saat HP melakukan scan QR barcode, WhatsApp mengirim sinyal restartRequired (515)
+            // untuk beralih dari soket QR sementara ke soket terotentikasi penuh.
+            // JANGAN DITANDAI EXPIRED! Harus segera initBaileys(false) agar proses masuk (login) selesai!
+            console.log(`[waService] Scan handshake berhasil diterima (status: ${statusCode}). Melanjutkan proses masuk...`);
             this.connectionState = "connecting";
-            setTimeout(() => this.initBaileys(true), 3000);
+            this.qrExpired = false;
+            setTimeout(() => this.initBaileys(false), 1000);
+          } else if (statusCode === DisconnectReason.timedOut || statusCode === 408) {
+            if (!this.userPhone) {
+              // Server WhatsApp menutup soket karena barcode tidak di-scan setelah beberapa putaran
+              this.qrExpired = true;
+              this.connectionState = "disconnected";
+              console.log(`[waService] Barcode tidak di-scan sampai timeout (${statusCode}). Meminta muat ulang.`);
+            } else {
+              this.connectionState = "connecting";
+              setTimeout(() => this.initBaileys(false), 3000);
+            }
+          } else {
+            // Putus koneksi sementara -> auto reconnect
+            console.log(`[waService] Putus koneksi sementara (status: ${statusCode}). Menyambungkan kembali...`);
+            this.connectionState = "connecting";
+            setTimeout(() => this.initBaileys(false), 2000);
           }
         } else if (connection === "open") {
           this.connectionState = "connected";

@@ -159,7 +159,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     userName: null,
   });
 
-  const [qrCountdown, setQrCountdown] = useState<number>(25);
+  const [qrCountdown, setQrCountdown] = useState<number>(60);
   const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(false);
 
   // Connected Phone Partitioning & Multi-SIM History
@@ -235,7 +235,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
         const data = await res.json();
         setConnectionStatus(prev => {
           if (data.qrVersion && data.qrVersion !== prev.qrVersion) {
-            setQrCountdown(25);
+            setQrCountdown(60);
           } else if (data.qrExpired) {
             setQrCountdown(0);
           }
@@ -439,6 +439,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     const timer = setInterval(() => {
       setQrCountdown(prev => {
         if (prev <= 1) {
+          fetchStatus();
           return 0;
         }
         return prev - 1;
@@ -490,7 +491,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
           qrExpired: data.qrExpired,
           qrTimestamp: data.qrTimestamp
         }));
-        setQrCountdown(25);
+        setQrCountdown(60);
       }
     } catch (err) {
       console.error('Error connecting WA:', err);
@@ -1116,17 +1117,17 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                           src={connectionStatus.qrCodeBase64 || connectionStatus.rawQrCodeBase64!} 
                           alt="WhatsApp QR Code" 
                           className={`w-56 h-56 mx-auto transition-all duration-300 ${
-                            (connectionStatus.qrExpired || qrCountdown === 0 || !connectionStatus.qrCodeBase64) 
+                            (connectionStatus.qrExpired || (qrCountdown === 0 && connectionStatus.connectionState === 'disconnected'))
                               ? 'filter blur-sm brightness-75 scale-95 opacity-40' 
                               : 'opacity-100'
                           }`} 
                         />
 
-                        {/* WhatsApp Web Expired Overlay */}
-                        {(connectionStatus.qrExpired || qrCountdown === 0 || !connectionStatus.qrCodeBase64) && (
+                        {/* WhatsApp Web Expired Overlay (hanya muncul jika benar-benar expired/timeout) */}
+                        {(connectionStatus.qrExpired || (qrCountdown === 0 && connectionStatus.connectionState === 'disconnected')) && (
                           <div 
                             onClick={() => handleInitConnection(true)}
-                            className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-[2px] p-4 text-center cursor-pointer transition-all duration-200"
+                            className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-[2px] p-4 text-center cursor-pointer transition-all duration-200"
                             title="Klik untuk memuat ulang barcode baru"
                           >
                             <div className="w-14 h-14 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-xl shadow-emerald-500/40 mb-2.5 transition-transform transform active:scale-90 hover:scale-110">
@@ -1143,16 +1144,20 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       </div>
 
                       {/* Status info bar & countdown like WhatsApp Web */}
-                      {!(connectionStatus.qrExpired || qrCountdown === 0 || !connectionStatus.qrCodeBase64) ? (
+                      {!(connectionStatus.qrExpired || (qrCountdown === 0 && connectionStatus.connectionState === 'disconnected')) ? (
                         <div className="space-y-2">
                           <div className="flex items-center justify-center gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-300">
                             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                            <span className="text-[11px]">Barcode aktif • Berganti dalam <span className="font-mono text-emerald-600 dark:text-emerald-400 font-black">{qrCountdown}s</span></span>
+                            <span className="text-[11px]">
+                              {connectionStatus.connectionState === 'connecting' && qrCountdown === 0
+                                ? 'Sedang menyinkronkan barcode...'
+                                : <span>Barcode aktif • Berganti dalam <span className="font-mono text-emerald-600 dark:text-emerald-400 font-black">{qrCountdown}s</span></span>}
+                            </span>
                           </div>
                           <div className="w-48 mx-auto bg-zinc-200 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
                             <div 
                               className="bg-emerald-500 h-full transition-all duration-1000 ease-linear"
-                              style={{ width: `${(qrCountdown / 25) * 100}%` }}
+                              style={{ width: `${Math.min(100, Math.max(0, (qrCountdown / 60) * 100))}%` }}
                             />
                           </div>
                           <p className="text-[10px] font-black text-zinc-400 tracking-wider uppercase">

@@ -61,11 +61,11 @@ async function startServer() {
   waService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp failed:", err));
 
   app.get("/api/wa/status", (_req, res) => {
-    const isExpired = waService.isQRExpired() || waService.qrExpired;
+    const isExpired = waService.qrExpired || (waService.connectionState === "disconnected" && waService.isQRExpired());
     res.json({
       success: true,
       connectionState: waService.connectionState,
-      qrCodeBase64: isExpired && waService.connectionState !== "connected" ? null : waService.qrCodeBase64,
+      qrCodeBase64: waService.qrCodeBase64,
       rawQrCodeBase64: waService.qrCodeBase64,
       qrTimestamp: waService.qrTimestamp,
       qrVersion: waService.qrVersion,
@@ -80,7 +80,7 @@ async function startServer() {
   app.post("/api/wa/connect", async (req, res) => {
     const force = req.query.force === "true" || req.body?.force === true;
     await waService.initBaileys(force);
-    const isExpired = waService.isQRExpired() || waService.qrExpired;
+    const isExpired = waService.qrExpired || (waService.connectionState === "disconnected" && waService.isQRExpired());
     res.json({
       success: true,
       message: "Proses inisialisasi Baileys WhatsApp dimulai.",
