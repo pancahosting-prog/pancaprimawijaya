@@ -253,18 +253,21 @@ class WANotifService {
       if (supabaseServer) {
         try {
           const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({ data: [] }), 2000));
-          const [cRes, eRes, uRes, usersRes, ctRes] = await Promise.all([
+          const [cRes, eRes, uRes, usersRes, ctRes, uaRes] = await Promise.all([
             Promise.race([Promise.resolve(supabaseServer.from("customers").select("nama, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] })),
             Promise.race([Promise.resolve(supabaseServer.from("employees").select("nama, username, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] })),
             Promise.race([Promise.resolve(supabaseServer.from("app_users").select("nama, username, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] })),
             Promise.race([Promise.resolve(supabaseServer.from("users").select("nama, username, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] })),
-            Promise.race([Promise.resolve(supabaseServer.from("contacts").select("nama, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] }))
+            Promise.race([Promise.resolve(supabaseServer.from("contacts").select("nama, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] })),
+            Promise.race([Promise.resolve(supabaseServer.from("user_accounts").select("nama, username, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] }))
           ]);
           customers = (cRes as any)?.data || [];
           employees = (eRes as any)?.data || [];
           appUsers = (uRes as any)?.data || [];
           usersList = (usersRes as any)?.data || [];
           contactsList = (ctRes as any)?.data || [];
+          const userAccounts = (uaRes as any)?.data || [];
+          userAccounts.forEach(u => addRecord(u, "UserAccount"));
         } catch (dbErr) {
           console.warn("[waNotifService] Supabase load error:", dbErr);
         }
@@ -289,7 +292,7 @@ class WANotifService {
         providedContacts.forEach(c => addRecord(c, "Client State"));
       }
 
-      // Ingest users from Menu Users (app_users, users)
+      // Ingest users from Menu Users (app_users, users, user_accounts)
       appUsers.forEach(u => addRecord(u, "User"));
       usersList.forEach(u => addRecord(u, "User"));
 
@@ -297,6 +300,21 @@ class WANotifService {
       employees.forEach(e => addRecord(e, "Karyawan"));
       customers.forEach(c => addRecord(c, "Pelanggan"));
       contactsList.forEach(c => addRecord(c, "Kontak"));
+
+      // Ingest default system accounts if not already loaded from DB/client
+      const DEFAULT_SYSTEM_ACCOUNTS = [
+        { nama: "Maria", username: "maria1", whatsapp: "628000000003", role: "admin" },
+        { nama: "Super Admin", username: "superadmin", whatsapp: "6285313200188", role: "superadmin" }
+      ];
+      DEFAULT_SYSTEM_ACCOUNTS.forEach(acc => {
+        const exists = allContactRecords.some(r => 
+          (r.username && r.username.toLowerCase() === acc.username.toLowerCase()) || 
+          r.name.toLowerCase() === acc.nama.toLowerCase()
+        );
+        if (!exists) {
+          addRecord(acc, "Default");
+        }
+      });
 
       // Extract target name/phone and message from command
       // Strip outer quotes (both standard " / ' and Unicode smart quotes “ ” ‘ ’), backticks, brackets

@@ -12,7 +12,7 @@ import { supabaseService } from '../../task/services/supabaseService';
 import { Task, Project, DrivePost } from '../../task/types';
 import { detectLackingContext, isConversationalGreeting, getConversationalGreetingResponse } from '../services/pancaAIService';
 import { callGeminiWithKeyRotation, getStoredGeminiSettings } from '../services/geminiKeyService';
-import { safeSetLocalStorage } from '../lib/apiUtils';
+import { safeSetLocalStorage, getApiUrl } from '../lib/apiUtils';
 
 interface UserAccount {
   id: string;
@@ -2727,14 +2727,35 @@ AI telah mengekstrak parameter data sesuai Form Asli MyPanca:
     if (isRemoteWaCmd) {
       setIsLoading(true);
       try {
+        let cachedUsers: any[] = [];
+        try {
+          const raw = localStorage.getItem('mypanca_db_app_users');
+          if (raw) cachedUsers = JSON.parse(raw);
+        } catch {}
+
         const cleanContacts = [
-          ...(appUsers || []).map((u: any) => ({ name: u.nama || u.username, phone: u.whatsapp || u.phone || u.no_hp || u.noWa })),
-          ...(employees || []).map((e: any) => ({ name: e.nama || e.username || e.name, phone: e.whatsapp || e.phone || e.no_hp || e.noWa })),
-          ...(customers || []).map((c: any) => ({ name: c.nama || c.perusahaan || c.pic, phone: c.whatsapp || c.phone || c.no_hp })),
-          ...(currentUser ? [{ name: currentUser.nama || currentUser.username, phone: (currentUser as any).whatsapp || '' }] : [])
+          ...(appUsers || []).map((u: any) => ({ name: u.nama || u.username, username: u.username, phone: u.whatsapp || u.phone || u.no_hp || u.noWa })),
+          ...(cachedUsers || []).map((u: any) => ({ name: u.nama || u.username, username: u.username, phone: u.whatsapp || u.phone || u.no_hp || u.noWa })),
+          ...(employees || []).map((e: any) => ({ name: e.nama || e.username || e.name, username: e.username, phone: e.whatsapp || e.phone || e.no_hp || e.noWa })),
+          ...(customers || []).map((c: any) => ({ name: c.nama || c.perusahaan || c.pic, username: '', phone: c.whatsapp || c.phone || c.no_hp })),
+          ...(currentUser ? [{ name: currentUser.nama || currentUser.username, username: currentUser.username, phone: (currentUser as any).whatsapp || '' }] : [])
         ].filter(c => c.name && c.phone);
 
-        const res = await fetch('/api/wa-notif/execute-command', {
+        // Pre-parse intent on client side for resilient error reporting
+        const delimiterMatch = userText.trim().match(/(?:kirim(?:kan)?\s+(?:pesan|wa|whatsapp|notifikasi)?|wa|pesan)?\s*(?:ke|kepada|untuk)\s+([^:,\n-]+?)\s*[:,\-]\s*(.+)$/i);
+        const withoutDelimiterMatch = userText.trim().match(/(?:kirim(?:kan)?\s+(?:pesan|wa|whatsapp|notifikasi)?|wa|pesan)?\s*(?:ke|kepada|untuk)\s+([a-zA-Z0-9\+._]+)\s+(.+)$/i);
+        
+        const clientTarget = delimiterMatch ? delimiterMatch[1].trim() : (withoutDelimiterMatch ? withoutDelimiterMatch[1].trim() : '');
+        const clientMsg = delimiterMatch ? delimiterMatch[2].trim() : (withoutDelimiterMatch ? withoutDelimiterMatch[2].trim() : userText.trim());
+        const matchedContact = cleanContacts.find((c: any) => 
+          c.name?.toLowerCase() === clientTarget.toLowerCase() || 
+          (c.username && c.username.toLowerCase() === clientTarget.toLowerCase()) ||
+          c.name?.toLowerCase().includes(clientTarget.toLowerCase())
+        );
+
+        const apiUrl = getApiUrl('/api/wa-notif/execute-command');
+
+        const res = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2755,8 +2776,11 @@ AI telah mengekstrak parameter data sesuai Form Asli MyPanca:
         if (!data) {
           data = {
             success: false,
+            targetName: matchedContact?.name || clientTarget || 'Penerima',
+            targetPhone: matchedContact?.phone || '-',
+            messageSent: clientMsg,
             error: res.status !== 200 
-              ? `Server merespons status ${res.status}. Pastikan server backend sedang aktif.`
+              ? `Server backend (${apiUrl}) merespons status ${res.status}. Pastikan server backend sedang aktif.`
               : 'Respon server kosong atau tidak dapat dibaca sebagai JSON.'
           };
         }
@@ -2765,7 +2789,7 @@ AI telah mengekstrak parameter data sesuai Form Asli MyPanca:
         if (data.success) {
           contentText = `### 📱 Eksekusi Perintah Remote Command Gateway\n\nPerintah WhatsApp instan Anda berhasil dieksekusi oleh AI Assistant:\n\n| Parameter Eksekusi | Detail Terbaca |\n|---|---|\n| **📱 Perangkat Eksekutor** | **WhatsApp Notifikasi (Perangkat 2)** |\n| **👤 Penerima Pesan** | **${data.targetName}** (\`${data.targetPhone}\`) |\n| **💬 Isi Pesan Dikirim** | "${data.messageSent}" |\n| **⚡ Status Pengiriman** | ✅ **BERHASIL TERKIRIM** |\n\n---\n✅ Pesan telah dikirimkan secara langsung dari nomor WhatsApp Notifikasi sistem.`;
         } else {
-          contentText = `### ⚠️ Eksekusi Remote Command Gateway Terkendala\n\nPerintah pengiriman WhatsApp belum dapat diselesaikan:\n\n- **Tujuan Kontak**: **${data.targetName || 'Penerima'}** (${data.targetPhone || '-'})\n- **Pesan yang Dicoba**: "${data.messageSent || userText}"\n- **Penyebab Kendala**: ${data.error || 'Perangkat 2 (WhatsApp Notifikasi) belum terhubung atau nomor kontak tidak ditemukan.'}\n\n---\n💡 **Petunjuk**: Pastikan nomor HP kontak terdaftar di database sistem dan status WhatsApp Notifikasi (Perangkat 2) dalam posisi **Online/Connected** pada menu Pengaturan Aplikasi & Notifikasi.`;
+          contentText = `### ⚠️ Eksekusi Remote Command Gateway Terkendala\n\nPerintah pengiriman WhatsApp belum dapat diselesaikan:\n\n- **Tujuan Kontak**: **${data.targetName || matchedContact?.name || clientTarget || 'Penerima'}** (${data.targetPhone || matchedContact?.phone || '-'})\n- **Pesan yang Dicoba**: "${data.messageSent || clientMsg || userText}"\n- **Penyebab Kendala**: ${data.error || 'Perangkat 2 (WhatsApp Notifikasi) belum terhubung atau nomor kontak tidak ditemukan.'}\n\n---\n💡 **Petunjuk**: Pastikan nomor HP kontak terdaftar di database sistem dan status WhatsApp Notifikasi (Perangkat 2) dalam posisi **Online/Connected** pada menu Pengaturan Aplikasi & Notifikasi.`;
         }
 
         const aiMsg: ChatMessage = {

@@ -1,12 +1,22 @@
 export const getApiUrl = (path: string): string => {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  const envUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || '';
 
-  if (!envUrl) {
-    return cleanPath;
+  // 1. Check custom configured backend URL in localStorage if available
+  if (typeof window !== 'undefined') {
+    try {
+      const customUrl = localStorage.getItem('mypanca_backend_url') || localStorage.getItem('backend_url');
+      if (customUrl && customUrl.trim()) {
+        return `${customUrl.trim().replace(/\/+$/, '')}${cleanPath}`;
+      }
+    } catch {
+      // ignore
+    }
   }
 
-  // In AI Studio preview or local dev, prefer relative path so Vite/Express server handles API directly
+  // 2. Check environment variables
+  const envUrl = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || '').trim();
+
+  // 3. In AI Studio dev/preview environment (.run.app) or localhost, prefer relative path
   if (typeof window !== 'undefined') {
     const origin = window.location.origin;
     if (origin.includes('.run.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
@@ -14,7 +24,13 @@ export const getApiUrl = (path: string): string => {
     }
   }
 
-  return `${envUrl}${cleanPath}`;
+  // 4. If environment URL is defined, use it
+  if (envUrl) {
+    return `${envUrl.replace(/\/+$/, '')}${cleanPath}`;
+  }
+
+  // 5. Default fallback for production deployments (e.g. Vercel)
+  return `https://pancaprima.my.id${cleanPath}`;
 };
 
 export const safeSetLocalStorage = (key: string, value: any): boolean => {
