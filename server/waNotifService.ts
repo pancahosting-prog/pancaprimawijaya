@@ -194,8 +194,10 @@ class WANotifService {
     let clean = phone.replace(/[^0-9]/g, "");
     if (clean.startsWith("0")) {
       clean = "62" + clean.slice(1);
+    } else if (clean.startsWith("8")) {
+      clean = "62" + clean;
     }
-    if (!clean.includes("@s.whatsapp.net")) {
+    if (!clean.endsWith("@s.whatsapp.net")) {
       clean = clean + "@s.whatsapp.net";
     }
     return clean;
@@ -203,7 +205,7 @@ class WANotifService {
 
   public async sendMessage(targetPhoneOrJid: string, text: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
     if (this.connectionState !== "connected" || !this.socket) {
-      return { success: false, error: "Perangkat WhatsApp Notifikasi belum terhubung (Scan QR terlebih dahulu)." };
+      return { success: false, error: "Perangkat WhatsApp Notifikasi (Perangkat 2) belum terhubung. Silakan scan QR code di menu Pengaturan Aplikasi & Notifikasi terlebih dahulu." };
     }
 
     try {
@@ -231,7 +233,7 @@ class WANotifService {
   }
 
   // Execute Remote Command from Superadmin via AI Chat (/app)
-  public async executeRemoteCommand(command: string, superadminName: string = "Superadmin"): Promise<{
+  public async executeRemoteCommand(command: string, superadminName: string = "Superadmin", providedContacts: any[] = []): Promise<{
     success: boolean;
     targetName: string;
     targetPhone: string;
@@ -241,41 +243,45 @@ class WANotifService {
     try {
       console.log(`[waNotifService] Remote command from ${superadminName}: "${command}"`);
 
-      // 1. Fetch potential targets from Supabase Cloud / local DB
+      // 1. Fetch potential targets from Supabase Cloud
       let customers: any[] = [];
       let employees: any[] = [];
       let appUsers: any[] = [];
+      let usersList: any[] = [];
+      let contactsList: any[] = [];
 
       if (supabaseServer) {
         try {
-          const [cRes, eRes, uRes] = await Promise.all([
-            supabaseServer.from("customers").select("*"),
-            supabaseServer.from("employees").select("*"),
-            supabaseServer.from("app_users").select("*")
+          const [cRes, eRes, uRes, usersRes, ctRes] = await Promise.all([
+            supabaseServer.from("customers").select("*").catch(() => ({ data: [] })),
+            supabaseServer.from("employees").select("*").catch(() => ({ data: [] })),
+            supabaseServer.from("app_users").select("*").catch(() => ({ data: [] })),
+            supabaseServer.from("users").select("*").catch(() => ({ data: [] })),
+            supabaseServer.from("contacts").select("*").catch(() => ({ data: [] }))
           ]);
-          customers = cRes.data || [];
-          employees = eRes.data || [];
-          appUsers = uRes.data || [];
+          customers = (cRes as any)?.data || [];
+          employees = (eRes as any)?.data || [];
+          appUsers = (uRes as any)?.data || [];
+          usersList = (usersRes as any)?.data || [];
+          contactsList = (ctRes as any)?.data || [];
         } catch (dbErr) {
           console.warn("[waNotifService] Supabase load error:", dbErr);
         }
       }
 
       // Extract target name/phone and message from command
-      // Examples: "kirim pesan ke maria: tolong followup cust A", "kirim wa ke 08123456789: halo maria"
       const cleanCmd = command.trim();
       let targetName = "";
       let targetPhone = "";
       let messageContent = "";
 
-      // Check if command specifies target explicitly after "ke "
-      const matchWithColon = cleanCmd.match(/kirim\s+(?:pesan|wa|whatsapp|notifikasi)?\s*ke\s+([^:]+):\s*(.+)/i);
+      // Check if command specifies target explicitly after "ke " or "kepada " or "untuk "
+      const matchWithColon = cleanCmd.match(/kirim\s+(?:pesan|wa|whatsapp|notifikasi)?\s*(?:ke|kepada|untuk)\s+([^:]+):\s*(.+)/i);
       
       if (matchWithColon) {
         const rawTarget = matchWithColon[1].trim();
         messageContent = matchWithColon[2].trim();
 
-        // Check if rawTarget is a direct phone number
         if (/^[0-9+]+$/.test(rawTarget.replace(/\s/g, ""))) {
           targetPhone = rawTarget.replace(/[^0-9]/g, "");
           targetName = targetPhone;
@@ -283,44 +289,54 @@ class WANotifService {
           targetName = rawTarget;
         }
       } else {
-        // Fallback pattern matching
-        const words = cleanCmd.split(/\s+/);
         messageContent = cleanCmd;
-
-        // Find any contact name mentioned
         const targetPersonMatch = cleanCmd.match(/(?:ke|untuk|kepada)\s+([a-zA-Z0-9\s]+?)(?:\s+(?:tolong|pesan|minta|agar|untuk|isi)|$)/i);
         if (targetPersonMatch) {
           targetName = targetPersonMatch[1].trim();
         }
       }
 
-      // Search registered contact by targetName in customers/employees/users
+      // Combine all user & contact records for matching
+      const allContactRecords: { name: string; phone: string; role?: string; type: string }[] = [];
+
+      const addRecord = (item: any, type: string) => {
+        if (!item || typeof item !== "object") return;
+        const name = (item.nama || item.name || item.username || item.nama_lengkap || item.namaLengkap || item.pic || item.email || "").toString().trim();
+        const rawPhone = (item.whatsapp || item.phone || item.no_hp || item.no_wa || item.telepon || item.noHp || item.noWa || item.mobile || item.contact || "").toString().trim();
+        const phone = rawPhone.replace(/[^0-9]/g, "");
+        if (name && phone) {
+          allContactRecords.push({ name, phone, role: item.role, type });
+        }
+      };
+
+      // Ingest provided contacts first (from client state if any)
+      if (Array.isArray(providedContacts)) {
+        providedContacts.forEach(c => addRecord(c, "Client State"));
+      }
+
+      // Ingest users from Menu Users (app_users, users)
+      appUsers.forEach(u => addRecord(u, "User"));
+      usersList.forEach(u => addRecord(u, "User"));
+
+      // Ingest employees and customers
+      employees.forEach(e => addRecord(e, "Karyawan"));
+      customers.forEach(c => addRecord(c, "Pelanggan"));
+      contactsList.forEach(c => addRecord(c, "Kontak"));
+
+      // Search matching record by name
       if (targetName && !targetPhone) {
-        const searchLower = targetName.toLowerCase();
-        
-        // Search in customers
-        const foundCustomer = customers.find(c => 
-          (c.nama || "").toLowerCase().includes(searchLower) || 
-          (c.pic || "").toLowerCase().includes(searchLower)
+        const searchLower = targetName.toLowerCase().trim();
+
+        // Exact or substring match
+        const matched = allContactRecords.find(c => 
+          c.name.toLowerCase() === searchLower ||
+          c.name.toLowerCase().includes(searchLower) || 
+          searchLower.includes(c.name.toLowerCase())
         );
 
-        if (foundCustomer && (foundCustomer.whatsapp || foundCustomer.phone)) {
-          targetPhone = foundCustomer.whatsapp || foundCustomer.phone;
-          targetName = foundCustomer.nama;
-        } else {
-          // Search in employees
-          const foundEmp = employees.find(e => (e.nama || "").toLowerCase().includes(searchLower));
-          if (foundEmp && foundEmp.whatsapp) {
-            targetPhone = foundEmp.whatsapp;
-            targetName = foundEmp.nama;
-          } else {
-            // Search in app_users
-            const foundUser = appUsers.find(u => (u.nama || "").toLowerCase().includes(searchLower));
-            if (foundUser && foundUser.whatsapp) {
-              targetPhone = foundUser.whatsapp;
-              targetName = foundUser.nama;
-            }
-          }
+        if (matched) {
+          targetPhone = matched.phone;
+          targetName = matched.name;
         }
       }
 
@@ -330,7 +346,7 @@ class WANotifService {
           targetName: targetName || "Tidak Diketahui",
           targetPhone: "-",
           messageSent: messageContent,
-          error: `Nomor WhatsApp terdaftar untuk kontak "${targetName || "penerima"}" tidak ditemukan di database sistem.`
+          error: `Nomor WhatsApp terdaftar untuk user/kontak "${targetName || "penerima"}" tidak ditemukan di database sistem. Pastikan nomor terdaftar di menu Users/Kontak.`
         };
       }
 
@@ -341,7 +357,7 @@ class WANotifService {
           targetName,
           targetPhone,
           messageSent: messageContent,
-          error: "Perangkat WhatsApp Notifikasi (Perangkat 2) belum terhubung. Silakan scan QR code di menu Pengaturan Notifikasi."
+          error: "Perangkat WhatsApp Notifikasi (Perangkat 2) belum terhubung. Silakan scan QR code di menu Pengaturan Aplikasi & Notifikasi terlebih dahulu."
         };
       }
 

@@ -134,22 +134,26 @@ export const WANotifSettingsSection: React.FC = () => {
     setTestResult(null);
 
     try {
-      const res = await fetch(getApiUrl("/api/send-whatsapp"), {
+      const res = await fetch(getApiUrl("/api/wa-notif/send"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: testPhone, message: testMessage })
+        body: JSON.stringify({ 
+          phone: testPhone, 
+          text: testMessage, 
+          message: testMessage 
+        })
       });
 
       const data = await safeParseResponse(res);
       if (data && data.success) {
         setTestResult({
           success: true,
-          message: `Berhasil dikirim via ${data.provider === "baileys_notif" ? "WhatsApp Notifikasi Baileys" : "Fonnte API"}!`
+          message: `Berhasil dikirim via WhatsApp Notifikasi Baileys (Perangkat 2)!`
         });
       } else {
         setTestResult({
           success: false,
-          message: data?.error || "Gagal mengirim pesan."
+          message: data?.error || "Gagal mengirim pesan. Pastikan Perangkat 2 dalam posisi Terhubung (Connected)."
         });
       }
     } catch (err: any) {
@@ -222,7 +226,7 @@ export const WANotifSettingsSection: React.FC = () => {
                   <button
                     onClick={handleLogout}
                     disabled={loading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg text-xs font-bold transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg text-xs font-bold transition-colors cursor-pointer"
                   >
                     <LogOut size={14} /> Putuskan Sesi WA Notifikasi
                   </button>
@@ -237,7 +241,7 @@ export const WANotifSettingsSection: React.FC = () => {
                   <button
                     onClick={() => handleConnect(true)}
                     disabled={loading}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs cursor-pointer"
                   >
                     <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
                     {loading ? "Proses..." : "Sambungkan / Muat QR Code Baru"}
@@ -278,7 +282,7 @@ export const WANotifSettingsSection: React.FC = () => {
               </p>
               <button
                 onClick={() => handleConnect(true)}
-                className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline flex items-center gap-1 mx-auto"
+                className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline flex items-center gap-1 mx-auto cursor-pointer"
               >
                 <RefreshCw size={12} /> Segarkan QR Code
               </button>
@@ -292,7 +296,7 @@ export const WANotifSettingsSection: React.FC = () => {
               <button
                 onClick={() => handleConnect(true)}
                 disabled={loading}
-                className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-xs transition-colors shadow-xs inline-flex items-center gap-2"
+                className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-xs transition-colors shadow-xs inline-flex items-center gap-2 cursor-pointer"
               >
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
                 Generasi QR Code WA Notifikasi
@@ -325,7 +329,7 @@ export const WANotifSettingsSection: React.FC = () => {
           <button
             onClick={handleSendTest}
             disabled={sendingTest || !testPhone.trim()}
-            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
           >
             <Send size={14} className={sendingTest ? "animate-spin" : ""} />
             {sendingTest ? "Mengirim..." : "Kirim Pesan Uji Coba"}
