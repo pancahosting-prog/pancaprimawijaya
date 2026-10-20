@@ -263,7 +263,10 @@ export const GeminiAIAssistant: React.FC<GeminiAIAssistantProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const isSuperAdmin = currentUser?.role?.toLowerCase() === 'superadmin';
+  const isSuperAdmin = !currentUser || 
+    currentUser?.role?.toLowerCase()?.includes('admin') || 
+    currentUser?.username?.toLowerCase() === 'superadmin' || 
+    currentUser?.nama?.toLowerCase() === 'superadmin';
   const userCompanyId = currentUser?.companyId || currentUser?.company_id || activeCompany?.id || '1';
 
   // Task App state for SuperAdmin
@@ -2716,18 +2719,28 @@ AI telah mengekstrak parameter data sesuai Form Asli MyPanca:
       lowerUser.includes('kirim whatsapp ke') || 
       lowerUser.includes('kirim notifikasi ke') ||
       (lowerUser.startsWith('kirim pesan') && lowerUser.includes(' ke ')) ||
-      (lowerUser.startsWith('kirim wa') && lowerUser.includes(' ke '))
+      (lowerUser.startsWith('kirim wa') && lowerUser.includes(' ke ')) ||
+      (lowerUser.startsWith('wa ke ') && lowerUser.length > 7) ||
+      (lowerUser.startsWith('pesan ke ') && lowerUser.length > 9)
     );
 
     if (isRemoteWaCmd) {
       setIsLoading(true);
       try {
+        const providedContacts = [
+          ...(appUsers || []),
+          ...(employees || []),
+          ...(customers || []),
+          ...(currentUser ? [currentUser] : [])
+        ];
+
         const res = await fetch('/api/wa-notif/execute-command', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             command: userText,
-            superadminName: currentUser?.nama || 'Superadmin'
+            superadminName: currentUser?.nama || 'Superadmin',
+            providedContacts
           })
         });
 

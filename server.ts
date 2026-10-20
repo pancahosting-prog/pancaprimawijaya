@@ -122,11 +122,11 @@ async function startServer() {
   });
 
   app.post("/api/wa-notif/execute-command", async (req, res) => {
-    const { command, superadminName } = req.body;
+    const { command, superadminName, providedContacts } = req.body;
     if (!command || !command.trim()) {
       return res.status(400).json({ success: false, error: "Perintah tidak boleh kosong." });
     }
-    const result = await waNotifService.executeRemoteCommand(command, superadminName);
+    const result = await waNotifService.executeRemoteCommand(command, superadminName, providedContacts || []);
     res.json(result);
   });
 

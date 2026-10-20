@@ -270,7 +270,10 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const isSuperAdmin = currentUser?.role?.toLowerCase() === 'superadmin';
+  const isSuperAdmin = !currentUser || 
+    currentUser?.role?.toLowerCase()?.includes('admin') || 
+    currentUser?.username?.toLowerCase() === 'superadmin' || 
+    currentUser?.nama?.toLowerCase() === 'superadmin';
 
   // Live Database Products: combines props, LocalStorage, and direct Supabase database fetch
   const [effectiveProducts, setEffectiveProducts] = useState<any[]>(() => {
@@ -874,6 +877,68 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         draftData: cmdResult.draftData,
         isNew: true
       }]);
+      return;
+    }
+
+    // 2.5. Remote WhatsApp Command Gateway (Perangkat 2 / WA Notifikasi Sistem)
+    const lowerUser = query.toLowerCase().trim();
+    const isRemoteWaCmd = isSuperAdmin && (
+      lowerUser.includes('kirim pesan ke') || 
+      lowerUser.includes('kirim wa ke') || 
+      lowerUser.includes('kirim whatsapp ke') || 
+      lowerUser.includes('kirim notifikasi ke') ||
+      (lowerUser.startsWith('kirim pesan') && lowerUser.includes(' ke ')) ||
+      (lowerUser.startsWith('kirim wa') && lowerUser.includes(' ke ')) ||
+      (lowerUser.startsWith('wa ke ') && lowerUser.length > 7) ||
+      (lowerUser.startsWith('pesan ke ') && lowerUser.length > 9)
+    );
+
+    if (isRemoteWaCmd) {
+      setIsLoading(true);
+      try {
+        const providedContacts = [
+          ...(employees || []),
+          ...(customers || []),
+          ...(currentUser ? [currentUser] : [])
+        ];
+
+        const res = await fetch('/api/wa-notif/execute-command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            command: query.trim(),
+            superadminName: currentUser?.nama || 'Superadmin',
+            providedContacts
+          })
+        });
+
+        const data = await res.json();
+        let contentText = "";
+
+        if (data.success) {
+          contentText = `### 📱 Eksekusi Perintah Remote Command Gateway\n\nPerintah WhatsApp instan Anda berhasil dieksekusi oleh AI Assistant:\n\n| Parameter Eksekusi | Detail Terbaca |\n|---|---|\n| **📱 Perangkat Eksekutor** | **WhatsApp Notifikasi (Perangkat 2)** |\n| **👤 Penerima Pesan** | **${data.targetName}** (\`${data.targetPhone}\`) |\n| **💬 Isi Pesan Dikirim** | "${data.messageSent}" |\n| **⚡ Status Pengiriman** | ✅ **BERHASIL TERKIRIM** |\n\n---\n✅ Pesan telah dikirimkan secara langsung dari nomor WhatsApp Notifikasi sistem.`;
+        } else {
+          contentText = `### ⚠️ Eksekusi Remote Command Gateway Terkendala\n\nPerintah pengiriman WhatsApp belum dapat diselesaikan:\n\n- **Tujuan Kontak**: **${data.targetName || 'Penerima'}** (${data.targetPhone || '-'})\n- **Pesan yang Dicoba**: "${data.messageSent || query.trim()}"\n- **Penyebab Kendala**: ${data.error || 'Perangkat WhatsApp Notifikasi belum terhubung atau nomor kontak tidak ditemukan.'}\n\n---\n💡 **Petunjuk**: Pastikan nomor HP kontak terdaftar di database sistem (menu Users/Kontak) dan status WhatsApp Notifikasi dalam posisi **Online/Connected** pada menu Pengaturan Aplikasi & Notifikasi.`;
+        }
+
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: contentText,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isNew: true
+        }]);
+      } catch (err: any) {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `⚠️ **Gagal Mengeksekusi Remote Command**: ${err.message || 'Server API tidak merespons.'}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isNew: true
+        }]);
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 

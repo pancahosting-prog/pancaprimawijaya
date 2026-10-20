@@ -98,7 +98,7 @@ class WANotifService {
       const logger = pino({ level: "silent" });
 
       this.socket = makeWASocket({
-        version,
+        version: version as any,
         auth: state,
         logger,
         printQRInTerminal: false,
@@ -253,11 +253,11 @@ class WANotifService {
       if (supabaseServer) {
         try {
           const [cRes, eRes, uRes, usersRes, ctRes] = await Promise.all([
-            supabaseServer.from("customers").select("*").catch(() => ({ data: [] })),
-            supabaseServer.from("employees").select("*").catch(() => ({ data: [] })),
-            supabaseServer.from("app_users").select("*").catch(() => ({ data: [] })),
-            supabaseServer.from("users").select("*").catch(() => ({ data: [] })),
-            supabaseServer.from("contacts").select("*").catch(() => ({ data: [] }))
+            Promise.resolve(supabaseServer.from("customers").select("*")).catch(() => ({ data: [] })),
+            Promise.resolve(supabaseServer.from("employees").select("*")).catch(() => ({ data: [] })),
+            Promise.resolve(supabaseServer.from("app_users").select("*")).catch(() => ({ data: [] })),
+            Promise.resolve(supabaseServer.from("users").select("*")).catch(() => ({ data: [] })),
+            Promise.resolve(supabaseServer.from("contacts").select("*")).catch(() => ({ data: [] }))
           ]);
           customers = (cRes as any)?.data || [];
           employees = (eRes as any)?.data || [];
@@ -276,11 +276,22 @@ class WANotifService {
       let messageContent = "";
 
       // Check if command specifies target explicitly after "ke " or "kepada " or "untuk "
-      const matchWithColon = cleanCmd.match(/kirim\s+(?:pesan|wa|whatsapp|notifikasi)?\s*(?:ke|kepada|untuk)\s+([^:]+):\s*(.+)/i);
-      
+      const matchWithColon = cleanCmd.match(/^(?:tolong\s+)?(?:ai\s+)?(?:coba\s+)?kirim(?:kan)?\s+(?:pesan|wa|whatsapp|notifikasi)?\s*(?:ke|kepada|untuk)\s+([^:,\n-]+)\s*[:,\-]\s*(.+)/i);
+      const matchWithoutColon = cleanCmd.match(/^(?:tolong\s+)?(?:ai\s+)?(?:coba\s+)?kirim(?:kan)?\s+(?:pesan|wa|whatsapp|notifikasi)?\s*(?:ke|kepada|untuk)\s+([a-zA-Z0-9\+]+)\s+(?:isi\s+pesan(?:nya)?\s*[:\s]*|pesan\s*[:\s]*|bahwa\s+|tolong\s+|minta\s+)?(.+)/i);
+
       if (matchWithColon) {
         const rawTarget = matchWithColon[1].trim();
         messageContent = matchWithColon[2].trim();
+
+        if (/^[0-9+]+$/.test(rawTarget.replace(/\s/g, ""))) {
+          targetPhone = rawTarget.replace(/[^0-9]/g, "");
+          targetName = targetPhone;
+        } else {
+          targetName = rawTarget;
+        }
+      } else if (matchWithoutColon) {
+        const rawTarget = matchWithoutColon[1].trim();
+        messageContent = matchWithoutColon[2].trim();
 
         if (/^[0-9+]+$/.test(rawTarget.replace(/\s/g, ""))) {
           targetPhone = rawTarget.replace(/[^0-9]/g, "");
@@ -293,8 +304,19 @@ class WANotifService {
         const targetPersonMatch = cleanCmd.match(/(?:ke|untuk|kepada)\s+([a-zA-Z0-9\s]+?)(?:\s+(?:tolong|pesan|minta|agar|untuk|isi)|$)/i);
         if (targetPersonMatch) {
           targetName = targetPersonMatch[1].trim();
+          const idx = cleanCmd.toLowerCase().indexOf(targetName.toLowerCase());
+          if (idx !== -1) {
+            const afterTarget = cleanCmd.slice(idx + targetName.length).replace(/^[\s:,-]+/, '');
+            if (afterTarget.trim()) {
+              messageContent = afterTarget.trim();
+            }
+          }
         }
       }
+
+      // Clean redundant leading quotes or "pesan:" if user wrote e.g. "isi pesan: ..."
+      messageContent = messageContent.replace(/^(?:isi\s+pesan(?:nya)?\s*[:\-]?\s*|pesan\s*[:\-]?\s*|text\s*[:\-]?\s*)/i, '').trim();
+      messageContent = messageContent.replace(/^["']|["']$/g, '').trim();
 
       // Combine all user & contact records for matching
       const allContactRecords: { name: string; phone: string; role?: string; type: string }[] = [];
