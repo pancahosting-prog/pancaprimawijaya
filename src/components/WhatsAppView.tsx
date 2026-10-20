@@ -331,6 +331,33 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const [simFallbackCount, setSimFallbackCount] = useState<number>(0);
   const [simWaitingConsent, setSimWaitingConsent] = useState<boolean>(false);
   const [simHandedOver, setSimHandedOver] = useState<boolean>(false);
+  const [isResettingKnowledge, setIsResettingKnowledge] = useState<boolean>(false);
+
+  const handleResetKnowledge = async () => {
+    if (!confirm('Reset basis pengetahuan ke format default bersih PT. Panca Prima Wijaya?\n\nSeluruh dokumen akan dirapikan menjadi format paragraf & dokumen resmi yang ringkas, terstruktur, dan humanis.')) {
+      return;
+    }
+    try {
+      setIsResettingKnowledge(true);
+      const res = await fetch(getApiUrl('/api/wa/reset-knowledge'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.success && data.settings) {
+        setSettings(data.settings);
+        setKbActiveContainer('snippets');
+        setSaveSuccessMsg('Basis pengetahuan berhasil direset ke format bersih!');
+        setTimeout(() => setSaveSuccessMsg(null), 3500);
+      } else {
+        alert(data.error || 'Gagal mereset basis pengetahuan.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Gagal mereset basis pengetahuan.');
+    } finally {
+      setIsResettingKnowledge(false);
+    }
+  };
 
   const handleResetSim = async () => {
     try {
@@ -1903,28 +1930,51 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                   />
 
                   {kbActiveContainer === 'products' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingKbItem({
-                          id: '',
-                          productName: '',
-                          description: '',
-                          price: '',
-                          keywordsStr: '',
-                          faqList: [{ q: '', a: '' }]
-                        });
-                        setIsKbModalOpen(true);
-                      }}
-                      className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
-                    >
-                      <Plus size={14} />
-                      <span>Tambah Produk Baru</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={handleResetKnowledge}
+                        disabled={isResettingKnowledge}
+                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        title="Kembalikan basis pengetahuan ke format default bersih PT. Panca Prima Wijaya"
+                      >
+                        <RotateCcw size={13} className={isResettingKnowledge ? 'animate-spin' : ''} />
+                        <span>{isResettingKnowledge ? 'Mereset...' : 'Reset Knowledge'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingKbItem({
+                            id: '',
+                            productName: '',
+                            description: '',
+                            price: '',
+                            keywordsStr: '',
+                            faqList: [{ q: '', a: '' }]
+                          });
+                          setIsKbModalOpen(true);
+                        }}
+                        className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
+                      >
+                        <Plus size={14} />
+                        <span>Tambah Produk Baru</span>
+                      </button>
+                    </div>
                   )}
 
                   {kbActiveContainer === 'snippets' && (
                     <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={handleResetKnowledge}
+                        disabled={isResettingKnowledge}
+                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        title="Kembalikan basis pengetahuan ke format paragraf default resmi PT. Panca Prima Wijaya"
+                      >
+                        <RotateCcw size={13} className={isResettingKnowledge ? 'animate-spin' : ''} />
+                        <span>{isResettingKnowledge ? 'Mereset...' : 'Reset Knowledge ke Default'}</span>
+                      </button>
+
                       {settings.knowledgeProducts && settings.knowledgeProducts.length > 0 && (
                         <button
                           type="button"
@@ -2248,16 +2298,31 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
               <div className="space-y-6">
                 {/* 1. Core System Instructions */}
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-                  <div className="flex items-center gap-2.5 text-zinc-900 dark:text-zinc-100">
-                    <Sparkles className="text-amber-500" size={20} />
-                    <h3 className="text-sm font-black">1. System Instructions (Core Prompt AI)</h3>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 text-zinc-900 dark:text-zinc-100">
+                      <Sparkles className="text-amber-500" size={20} />
+                      <div>
+                        <h3 className="text-sm font-black">1. System Instructions (Core Prompt AI Customer Service)</h3>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          Instruksi sistem utama yang mendikte peran, identitas, wewenang, batasan fakta, dan aturan percakapan bot AI saat melayani pelanggan.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSettings({
+                        ...settings,
+                        systemInstructions: `# SYSTEM PROMPT — AI CUSTOMER SERVICE WHATSAPP\n\n## 1. Peran\nKamu adalah customer service profesional yang ramah, komunikatif, solutif, dan natural. Tujuanmu adalah membantu pelanggan menyelesaikan kebutuhannya, bukan sekadar menjawab FAQ.\n\n## 2. Gaya percakapan\n- Berkomunikasilah seperti staf CS manusia yang berpengalaman.\n- Pahami maksud pelanggan meskipun kalimatnya tidak lengkap, terdapat typo, bahasa informal, singkatan, atau bahasa campuran.\n- Gunakan konteks percakapan sebelumnya untuk memahami pertanyaan lanjutan.\n- Jawab dengan penjelasan yang cukup, relevan, dan mudah dipahami.\n- Jangan selalu menjawab dengan satu kalimat jika pelanggan membutuhkan penjelasan.\n- Jangan terlalu panjang jika pertanyaannya sederhana.\n- Hindari mengulang salam, memperkenalkan diri, atau menawarkan bantuan yang sama pada setiap pesan.\n- Jangan memaksa pelanggan mengikuti alur percakapan yang kaku.\n- Jangan terus-menerus menawarkan untuk menghubungi admin.\n\n## 3. Cara memahami pertanyaan\nSebelum menjawab:\n1. Identifikasi kebutuhan utama pelanggan.\n2. Periksa konteks pesan sebelumnya.\n3. Cari informasi relevan di knowledge base.\n4. Gabungkan informasi relevan dari beberapa dokumen jika diperlukan.\n5. Jawab sesuai maksud pertanyaan, bukan hanya berdasarkan kecocokan kata kunci.\n6. Jika pertanyaan belum jelas, tanyakan satu hal yang paling penting untuk memperjelasnya.\n\n## 4. Aturan ketika informasi tidak ditemukan\nJangan langsung melakukan fallback hanya karena jawaban tidak ditemukan secara persis di knowledge base.\n\nGunakan urutan berikut:\n1. Cari sinonim, istilah terkait, dan informasi yang memiliki makna serupa.\n2. Periksa percakapan sebelumnya dan informasi pelanggan yang tersedia.\n3. Gunakan informasi perusahaan yang relevan untuk menyusun jawaban.\n4. Jika memungkinkan, jelaskan hal yang sudah diketahui dan tandai bagian yang belum dapat dipastikan.\n5. Jika maksud pelanggan belum jelas, tanyakan klarifikasi.\n6. Eskalasikan ke admin hanya jika masalah benar-benar membutuhkan informasi, kewenangan, atau tindakan manusia.\n\n## 5. Batasan fakta\n- Jangan mengarang harga, diskon, stok, spesifikasi, garansi, jadwal, kebijakan, atau janji perusahaan.\n- Bedakan fakta dari asumsi.\n- Pengetahuan umum boleh digunakan untuk menjelaskan konsep umum, tetapi jangan menjadikannya sebagai fakta resmi perusahaan.\n- Jika sebagian informasi tersedia, jawab bagian tersebut terlebih dahulu.\n- Jangan mengklaim telah memesan, mengirim, mengubah data, atau menghubungi admin jika tindakan tersebut belum benar-benar dilakukan.\n\n## 6. Aturan fallback\nFallback bukan jawaban default.\nJangan menggunakan kalimat "Maaf, saya tidak tahu" atau "Silakan hubungi admin" hanya karena pertanyaan tidak tercantum sebagai FAQ.\n\nJika informasi belum lengkap:\n- Jelaskan apa yang sudah diketahui.\n- Sampaikan dengan jujur bagian yang perlu dikonfirmasi.\n- Tanyakan informasi tambahan jika dapat membantu.\n- Tawarkan bantuan admin jika memang diperlukan atau diminta pelanggan.\n\nJika eskalasi diperlukan, jelaskan alasannya secara singkat dan jangan berpura-pura bahwa admin sudah menerima percakapan sebelum sistem mengonfirmasinya.\n\n## 7. Tujuan percakapan\nUtamakan penyelesaian kebutuhan pelanggan, pemahaman konteks, komunikasi natural, akurasi informasi, dan pengalaman pelanggan yang baik.\n\nJangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ sebagai tujuan utama. Tujuan utama adalah membantu pelanggan sampai kebutuhannya jelas dan mendapatkan solusi yang tepat.`
+                      })}
+                      className="px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40 text-xs font-bold hover:bg-amber-100 transition cursor-pointer shrink-0 flex items-center gap-1.5"
+                    >
+                      <RotateCcw size={13} />
+                      <span>Reset ke 7 Poin Standard Prompt</span>
+                    </button>
                   </div>
-                  <p className="text-xs text-zinc-500">
-                    Instruksi sistem utama yang mendikte peran, identitas, wewenang, dan kepribadian bot saat melayani chat pelanggan.
-                  </p>
 
                   <textarea
-                    rows={4}
+                    rows={14}
                     value={settings.systemInstructions}
                     onChange={(e) => setSettings({ ...settings, systemInstructions: e.target.value })}
                     className="w-full px-4 py-3 rounded-2xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed font-mono"
@@ -2266,7 +2331,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
 
                   {/* Quick Presets */}
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Pilihan Cepat:</span>
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Preset Lainnya:</span>
                     <button
                       type="button"
                       onClick={() => setSettings({
@@ -2275,7 +2340,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       })}
                       className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition cursor-pointer"
                     >
-                      Customer Service Resmi
+                      Ringkas & To-the-point
                     </button>
                     <button
                       type="button"
@@ -2666,13 +2731,15 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Coba Pertanyaan Skenario:</span>
                     <div className="flex flex-wrap gap-2">
                       {[
-                        { label: '📌 Tanya Aturan S&K (Hanya jawab aturan, bukan ABC)', q: 'Bagaimana ketentuan dan cara pengiriman barang ke luar kota?' },
-                        { label: '🏷️ Tanya Info Produk', q: 'Berapa perkiraan harga mulsa plastik dan fungsinya apa?' },
-                        { label: '❓ Tanya Luar Catatan #1 (Fallback 1/3)', q: 'Apakah ada paket wisata liburan ke kebun pusat besok?' },
-                        { label: '❓ Tanya Luar Catatan #2 (Fallback 2/3)', q: 'Bisa minta resep masakan sayur organik?' },
-                        { label: '❓ Tanya Luar Catatan #3 (Tawarkan Alihkan CS)', q: 'Siapa nama dokter spesialis tanah yang bisa kami panggil?' },
-                        { label: '✅ Ketik Persetujuan Handover', q: 'Ya, tolong alihkan ke tim CS kami' },
-                        { label: '❌ Tolak Handover', q: 'Tidak usah, terima kasih' }
+                        { label: '👋 Sapaan Pagi / Siang (Humanis)', q: 'Halo selamat siang kak, apa kabar?' },
+                        { label: '🤝 Obrolan Pembuka (Mau Tanya)', q: 'Permisi min, saya mau tanya-tanya nih' },
+                        { label: '📌 Tanya Aturan S&K (To-the-point)', q: 'Bagaimana ketentuan dan cara pengiriman barang ke luar kota?' },
+                        { label: '🏷️ Tanya Info Produk & Harga', q: 'Berapa perkiraan harga mulsa plastik dan fungsinya apa?' },
+                        { label: '❓ Tanya Luar Topik #1 (Fallback Edukatif)', q: 'Apakah perusahaan menjual sepeda motor listrik?' },
+                        { label: '❓ Tanya Luar Topik #2 (Fallback Fleksibel)', q: 'Bisa minta rekomendasi dokter gigi anak?' },
+                        { label: '❓ Tanya Luar Topik #3 (Tawarkan Alihkan CS)', q: 'Siapa nama dokter spesialis tanah yang bisa kami panggil?' },
+                        { label: '✅ Ketik Setuju Alihkan ke CS', q: 'Ya, boleh tolong hubungkan ke CS' },
+                        { label: '❌ Tolak Alihkan', q: 'Tidak usah, terima kasih' }
                       ].map((item, idx) => (
                         <button
                           key={idx}

@@ -166,6 +166,20 @@ async function startServer() {
     res.json({ success: true, message: "Sesi simulator berhasil direset." });
   });
 
+  // Reset Knowledge Base to clean default paragraphs & products
+  app.post("/api/wa/reset-knowledge", async (_req, res) => {
+    try {
+      const updatedSettings = await waService.resetKnowledgeToBase();
+      res.json({ 
+        success: true, 
+        message: "Basis pengetahuan berhasil direset ke format default bersih PT. Panca Prima Wijaya.",
+        settings: updatedSettings
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || "Gagal mereset basis pengetahuan." });
+    }
+  });
+
   // Manual toggle Handover to Human CS for a specific chat
   app.post("/api/wa/chat-toggle-handover", (req, res) => {
     const { jid, isHandedOver } = req.body;

@@ -140,72 +140,192 @@ class WAService {
   private chatsByPhone: Map<string, Map<string, WAChat>> = new Map();
   private knownConnectedPhones: Set<string> = new Set();
 
+  public static readonly DEFAULT_CLEAN_KNOWLEDGE_SNIPPETS = [
+    {
+      id: "snip-1",
+      title: "Profil Perusahaan & Layanan Utama PT. Panca Prima Wijaya",
+      category: "Profil Perusahaan",
+      content: "PT. Panca Prima Wijaya adalah perusahaan manufaktur dan distributor terpercaya di Indonesia yang bergerak di bidang penyediaan sarana produksi pertanian modern, kemasan industri, dan perlengkapan perkebunan. Kami berfokus pada penyediaan produk berkualitas tinggi seperti Plastik Sungkup Pertanian UV, Mulsa Plastik Hitam Perak (MPHP), Insect Net Kasa Hijau, Karung Plastik, dan perlengkapan greenhouse untuk mendukung produktivitas petani dan mitra industri di seluruh Indonesia.",
+      keywords: ["profil", "tentang kami", "perusahaan", "panca prima wijaya", "layanan", "distributor", "pabrik", "kantor"]
+    },
+    {
+      id: "snip-2",
+      title: "Katalog Produk Unggulan & Spesifikasi Teknis",
+      category: "Katalog Produk",
+      content: "Produk-produk unggulan resmi PT. Panca Prima Wijaya:\n1. Plastik Sungkup Pertanian UV: Plastik transparan proteksi anti-UV tebal & ulet untuk perlindungan tanaman cabai, melon, dan semangka dari hujan ekstrem serta hama (Rp 450.000 / roll ukuran 1m x 200m, tahan hingga 2-3 musim tanam).\n2. Mulsa Plastik Hitam Perak (MPHP): Mulsa dua lapis berkualitas tinggi (sisi perak memantulkan sinar matahari menghalau serangga/kutu trips, sisi hitam menekan pertumbuhan gulma & menjaga kelembapan tanah, Rp 385.000 / roll tebal 0.35 mikron).\n3. Insect Net / Kasa Hijau 50 Mesh: Jaring pelindung greenhouse monofilament HDPE murni, rajutan kuat lock-stitch anti-hama serangga kecil tanpa menghambat sirkulasi udara (Rp 1.250.000 / roll 3m x 100m).\nTersedia juga pemesanan ukuran khusus (custom roll) untuk kebutuhan proyek perkebunan skala besar.",
+      keywords: ["produk", "katalog", "plastik sungkup", "sungkup", "uv", "mulsa", "mphp", "hitam perak", "insect net", "kasa hijau", "harga", "spesifikasi"]
+    },
+    {
+      id: "snip-3",
+      title: "Jam Operasional Layanan & Respons WhatsApp",
+      category: "Jam Operasional",
+      content: "Jam Operasional Layanan Customer Service PT. Panca Prima Wijaya:\n• Senin s/d Jumat: 08:30 - 17:00 WIB\n• Sabtu: 08:30 - 13:00 WIB\n• Hari Minggu & Hari Libur Nasional: Tutup (Pesan yang masuk di luar jam kerja tetap tersimpan aman dan diprioritaskan untuk direspon pada jam kerja pertama berikutnya).",
+      keywords: ["jam kerja", "operasional", "buka", "tutup", "hari kerja", "sabtu", "minggu", "libur"]
+    },
+    {
+      id: "snip-4",
+      title: "Prosedur Pemesanan & Penerbitan Faktur Pajak PPN",
+      category: "Prosedur Pemesanan",
+      content: "Alur pemesanan produk resmi PT. Panca Prima Wijaya:\n1. Pelanggan berkonsultasi mengenai tipe, ukuran, dan jumlah kebutuhan barang dengan tim sales.\n2. Tim sales menerbitkan Surat Penawaran Harga resmi (Quotation / Sales Order).\n3. Pelanggan melakukan konfirmasi dan transfer ke rekening bank resmi perusahaan.\n4. Pesanan disiapkan di gudang dan dikirim bersama Invoice asli & Surat Jalan.\nPT. Panca Prima Wijaya adalah Pengusaha Kena Pajak (PKP) resmi dan siap menerbitkan e-Faktur Pajak 11% untuk setiap transaksi bisnis maupun perorangan.",
+      keywords: ["cara order", "pemesanan", "pesan", "beli", "quotation", "penawaran", "faktur pajak", "ppn", "invoice", "po", "pkp"]
+    },
+    {
+      id: "snip-5",
+      title: "Rekening Bank Pembayaran Resmi Perusahaan",
+      category: "Rekening & Pembayaran",
+      content: "PERINGATAN KEAMANAN TRANSAKSI:\nSeluruh transaksi pembayaran yang sah HANYA dilakukan melalui transfer ke rekening bank resmi atas nama perusahaan PT. PANCA PRIMA WIJAYA:\n• Bank BCA: No. Rek 123-456-7890 (a/n PT Panca Prima Wijaya)\n• Bank Mandiri: No. Rek 987-654-3210 (a/n PT Panca Prima Wijaya)\n\nManajemen PT. Panca Prima Wijaya TIDAK PERNAH meminta pembayaran ke rekening pribadi atas nama perorangan siapapun demi menjamin keamanan transaksi Anda.",
+      keywords: ["rekening", "nomor rekening", "transfer", "bca", "mandiri", "pembayaran", "bank", "penipuan"]
+    },
+    {
+      id: "snip-6",
+      title: "Ketentuan Pengiriman & Jasa Ekspedisi Kargo",
+      category: "Ketentuan Pengiriman",
+      content: "Pilihan pengiriman pesanan PT. Panca Prima Wijaya:\n1. Armada Truk Pengiriman Kantor: Khusus area Jabodetabek dan sekitarnya sesuai jadwal rute reguler gudang.\n2. Jasa Ekspedisi Kargo Rekanan: Melayani pengiriman ke seluruh Indonesia via Indah Logistik Kargo, Dakota Cargo, Baraka Sarana Tama, J&T Cargo, atau ekspedisi langganan pilihan pelanggan.\n3. Pengambilan Mandiri (Self Pick-up): Dapat diambil langsung di Gudang Pusat kami dengan konfirmasi Surat Jalan dari tim Sales.",
+      keywords: ["pengiriman", "kirim", "ongkir", "kargo", "ekspedisi", "dakota", "indah kargo", "baraka", "gudang", "ambil sendiri"]
+    },
+    {
+      id: "snip-7",
+      title: "Ketentuan Garansi & Prosedur Retur Barang",
+      category: "Garansi & Retur",
+      content: "Ketentuan klaim garansi dan pengembalian barang (retur):\n1. Komplain ketidaksesuaian atau cacat produk dapat diajukan maksimal 3x24 jam sejak barang diterima dari kurir/ekspedisi.\n2. Wajib melampirkan video unboxing lengkap tanpa jeda dan foto label Surat Jalan / Invoice pembelian.\n3. Retur berlaku untuk barang cacat produksi pabrik atau ketidaksesuaian ukuran/tipe dengan Surat Pesanan (PO).\n4. Barang pengganti yang baru akan segera dikirimkan tanpa biaya tambahan bagi pelanggan.",
+      keywords: ["garansi", "retur", "klaim", "komplain", "rusak", "cacat", "tukar", "ganti baru"]
+    }
+  ];
+
+  public static readonly DEFAULT_CLEAN_PRODUCTS = [
+    {
+      id: "prod-1",
+      productName: "Plastik Sungkup Pertanian UV",
+      description: "Plastik sungkup transparan berkualitas tinggi dengan proteksi anti-UV untuk perlindungan optimal tanaman cabai, semangka, dan melon dari hama serta guyuran hujan ekstrem.",
+      price: "Rp 450.000 / Roll (Ukuran 1m x 200m)",
+      keywords: ["plastik sungkup", "sungkup", "uv", "pertanian", "tutup tanaman", "plastik uv"],
+      faq: [
+        { q: "Berapa lama ketahanan plastik sungkup ini di lapangan?", a: "Plastik sungkup kami memiliki aditif stabilizer UV dengan ketahanan pemakaian hingga 2-3 musim tanam normal." },
+        { q: "Apakah bisa custom ukuran lebar roll?", a: "Bisa, untuk pembelian kuantitas proyek kami melayani pemotongan ukuran custom." }
+      ]
+    },
+    {
+      id: "prod-2",
+      productName: "Mulsa Plastik Hitam Perak (MPHP)",
+      description: "Mulsa pertanian dua lapis (sisi hitam menekan gulma, sisi perak memantulkan sinar matahari untuk menghalau kutu daun dan hama trips). Sangat ulet dan tidak mudah sobek.",
+      price: "Rp 385.000 / Roll (Tebal 0.35 mikron)",
+      keywords: ["mulsa", "hitam perak", "mphp", "plastik mulsa", "gulma", "bedengan"],
+      faq: [
+        { q: "Apa fungsi sisi perak pada mulsa?", a: "Sisi perak menghadap ke atas untuk memantulkan sinar matahari sehingga suhu tanah stabil dan mengusir serangga hama." }
+      ]
+    },
+    {
+      id: "prod-3",
+      productName: "Insect Net / Kasa Nyamuk Hijau 50 Mesh",
+      description: "Jaring kasa pelindung greenhouse berbahan monofilament HDPE murni, kerapatan 50 mesh anti-serangga kecil tanpa menghambat sirkulasi udara dan cahaya tanaman.",
+      price: "Rp 1.250.000 / Roll (3m x 100m)",
+      keywords: ["insect net", "kasa hijau", "greenhouse", "jaring serangga", "kutu kebul"],
+      faq: [
+        { q: "Apakah tahan terhadap terpaan angin kencang?", a: "Ya, anyaman monofilament kami memiliki jahitan rajut kuat berpola kunci (lock-stitch) sehingga tidak mudah robek melebar." }
+      ]
+    }
+  ];
+
+  public static readonly DEFAULT_SYSTEM_PROMPT = `# SYSTEM PROMPT — AI CUSTOMER SERVICE WHATSAPP
+
+## 1. Peran
+Kamu adalah customer service profesional yang ramah, komunikatif, solutif, dan natural. Tujuanmu adalah membantu pelanggan menyelesaikan kebutuhannya, bukan sekadar menjawab FAQ.
+
+## 2. Gaya percakapan
+- Berkomunikasilah seperti staf CS manusia yang berpengalaman.
+- Pahami maksud pelanggan meskipun kalimatnya tidak lengkap, terdapat typo, bahasa informal, singkatan, atau bahasa campuran.
+- Gunakan konteks percakapan sebelumnya untuk memahami pertanyaan lanjutan.
+- Jawab dengan penjelasan yang cukup, relevan, dan mudah dipahami.
+- Jangan selalu menjawab dengan satu kalimat jika pelanggan membutuhkan penjelasan.
+- Jangan terlalu panjang jika pertanyaannya sederhana.
+- Hindari mengulang salam, memperkenalkan diri, atau menawarkan bantuan yang sama pada setiap pesan.
+- Jangan memaksa pelanggan mengikuti alur percakapan yang kaku.
+- Jangan terus-menerus menawarkan untuk menghubungi admin.
+
+## 3. Cara memahami pertanyaan
+Sebelum menjawab:
+1. Identifikasi kebutuhan utama pelanggan.
+2. Periksa konteks pesan sebelumnya.
+3. Cari informasi relevan di knowledge base.
+4. Gabungkan informasi relevan dari beberapa dokumen jika diperlukan.
+5. Jawab sesuai maksud pertanyaan, bukan hanya berdasarkan kecocokan kata kunci.
+6. Jika pertanyaan belum jelas, tanyakan satu hal yang paling penting untuk memperjelasnya.
+
+## 4. Aturan ketika informasi tidak ditemukan
+Jangan langsung melakukan fallback hanya karena jawaban tidak ditemukan secara persis di knowledge base.
+
+Gunakan urutan berikut:
+1. Cari sinonim, istilah terkait, dan informasi yang memiliki makna serupa.
+2. Periksa percakapan sebelumnya dan informasi pelanggan yang tersedia.
+3. Gunakan informasi perusahaan yang relevan untuk menyusun jawaban.
+4. Jika memungkinkan, jelaskan hal yang sudah diketahui dan tandai bagian yang belum dapat dipastikan.
+5. Jika maksud pelanggan belum jelas, tanyakan klarifikasi.
+6. Eskalasikan ke admin hanya jika masalah benar-benar membutuhkan informasi, kewenangan, atau tindakan manusia.
+
+## 5. Batasan fakta
+- Jangan mengarang harga, diskon, stok, spesifikasi, garansi, jadwal, kebijakan, atau janji perusahaan.
+- Bedakan fakta dari asumsi.
+- Pengetahuan umum boleh digunakan untuk menjelaskan konsep umum, tetapi jangan menjadikannya sebagai fakta resmi perusahaan.
+- Jika sebagian informasi tersedia, jawab bagian tersebut terlebih dahulu.
+- Jangan mengklaim telah memesan, mengirim, mengubah data, atau menghubungi admin jika tindakan tersebut belum benar-benar dilakukan.
+
+## 6. Aturan fallback
+Fallback bukan jawaban default.
+Jangan menggunakan kalimat "Maaf, saya tidak tahu" atau "Silakan hubungi admin" hanya karena pertanyaan tidak tercantum sebagai FAQ.
+
+Jika informasi belum lengkap:
+- Jelaskan apa yang sudah diketahui.
+- Sampaikan dengan jujur bagian yang perlu dikonfirmasi.
+- Tanyakan informasi tambahan jika dapat membantu.
+- Tawarkan bantuan admin jika memang diperlukan atau diminta pelanggan.
+
+Jika eskalasi diperlukan, jelaskan alasannya secara singkat dan jangan berpura-pura bahwa admin sudah menerima percakapan sebelum sistem mengonfirmasinya.
+
+## 7. Tujuan percakapan
+Utamakan penyelesaian kebutuhan pelanggan, pemahaman konteks, komunikasi natural, akurasi informasi, dan pengalaman pelanggan yang baik.
+
+Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ sebagai tujuan utama. Tujuan utama adalah membantu pelanggan sampai kebutuhannya jelas dan mendapatkan solusi yang tepat.`;
+
   public aiSettings: WAISettings = {
     autoReplyEnabled: true,
     botName: "Customer Assistant AI",
-    systemInstructions: "Anda adalah asisten AI customer service resmi PT. Panca Prima Wijaya di WhatsApp. Tugas utama Anda adalah melayani pertanyaan pelanggan seputar produk, penawaran harga, prosedur pemesanan, dan informasi perusahaan secara ramah, ringkas, sopan, dan solutif.",
-    toneOfVoice: "Ramah & Solutif",
-    tone: "Ramah & Solutif",
+    systemInstructions: WAService.DEFAULT_SYSTEM_PROMPT,
+    toneOfVoice: "Sangat Ramah, Bersahabat & Solutif",
+    tone: "Sangat Ramah, Bersahabat & Solutif",
     responseLanguage: "Bahasa Indonesia",
-    greetingMessage: "Halo! Terima kasih telah menghubungi PT. Panca Prima Wijaya. Ada yang bisa kami bantu terkait produk dan layanan kami?",
-    fallbackMessage: "Mohon maaf, pesan Anda telah kami catat. Tim sales dan customer service kami akan segera menghubungi Anda kembali untuk memberikan informasi lebih detail.",
+    greetingMessage: "Halo! Selamat datang di WhatsApp resmi PT. Panca Prima Wijaya 😊 Senang bisa terhubung dengan Kakak. Ada yang bisa kami bantu seputar produk pertanian kami atau informasi pemesanan hari ini?",
+    fallbackMessage: "Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini di luar panduan resmi kami 🙏 Sekadar informasi, di PT. Panca Prima Wijaya kami merupakan spesialis penyedia sarana pertanian & perkebunan berkualitas, seperti Plastik Sungkup UV, Mulsa Hitam Perak (MPHP), dan Insect Net kasa hijau. Apakah Kakak ingin melihat katalog produk atau penawaran harga kami?",
     restrictedTopics: [
       "Isu SARA, politik, dan konten sensitif",
-      "Perbandingan atau menjelekkan kompetitor",
-      "Membocorkan harga modal internal atau rahasia supplier",
-      "Menjanjikan diskon khusus tanpa persetujuan tim sales"
+      "Perbandingan atau menjelekkan kompetitor lain",
+      "Membocorkan harga modal internal atau rahasia supplier pabrik",
+      "Menjanjikan diskon khusus sepihak tanpa persetujuan tim sales resmi",
+      "Data pribadi karyawan di luar nomor kontak layanan resmi"
     ],
     handoverToHuman: {
       enabled: true,
-      triggerKeywords: ["bicara dengan manusia", "hubungi sales", "komplain", "bicara cs", "customer service", "mau telpon", "bisa bicara sales"],
+      triggerKeywords: ["bicara dengan manusia", "hubungi sales", "komplain", "bicara cs", "customer service", "mau telpon", "bisa bicara sales", "minta nomor sales", "keluhan barang"],
       handoverContact: "0811-1234-5678",
-      handoverMessage: "Baik Bapak/Ibu, pertanyaan/kendala Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor {contact}. Tim kami akan segera merespon secara langsung."
+      handoverMessage: "Baik Kak {name}, obrolan Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor WhatsApp {contact}. Tim kami akan segera menghubungi Kakak secara langsung ya."
     },
     salesCta: {
       enabled: true,
-      ctaMessage: "Apakah Bapak/Ibu ingin kami buatkan penawaran harga resmi (Quotation) untuk kebutuhan ini?",
-      triggerKeywords: ["harga", "pesan", "order", "quotation", "penawaran", "katalog", "stok", "beli"]
+      ctaMessage: "Apakah Kakak ingin kami buatkan Surat Penawaran Harga resmi (Quotation) untuk kebutuhan ini?",
+      triggerKeywords: ["harga", "pesan", "order", "quotation", "penawaran", "katalog", "stok", "beli", "minimal order", "sample", "sampel"]
     },
-    knowledgeProducts: [
-      {
-        id: "kb-prod-1",
-        productName: "Layanan Produk & Transaksi Panca",
-        description: "Layanan pengadaan produk, penawaran harga, dan pemesanan barang resmi PT. Panca Prima Wijaya.",
-        price: "Hubungi Sales",
-        keywords: ["produk", "harga", "transaksi", "penawaran", "stok", "order"],
-        faq: [
-          { q: "Bagaimana cara melakukan pemesanan?", a: "Pemesanan dapat dilakukan langsung melalui tim sales atau melalui quotation penawaran resmi kami." },
-          { q: "Apakah tersedia faktur pajak?", a: "Ya, kami menerbitkan faktur pajak resmi untuk setiap transaksi ber-PPN." }
-        ]
-      }
-    ],
-    knowledgeSnippets: [
-      {
-        id: "kb-snip-1",
-        title: "Profil & Jam Operasional Perusahaan",
-        category: "Profil Perusahaan",
-        content: "PT. Panca Prima Wijaya beroperasi setiap hari Senin hingga Jumat pukul 08:30 - 17:00 WIB, dan Sabtu pukul 08:30 - 13:00 WIB. Hari Minggu dan libur nasional operasional kantor tutup, namun pesan yang masuk akan segera diproses di hari kerja berikutnya.",
-        keywords: ["jam kerja", "operasional", "buka", "tutup", "profil", "alamat", "kantor"]
-      },
-      {
-        id: "kb-snip-2",
-        title: "Prosedur Pembayaran & Rekening Bank Resmi",
-        category: "Rekening & Pembayaran",
-        content: "Seluruh pembayaran transaksi resmi PT. Panca Prima Wijaya hanya dilakukan melalui transfer rekening bank perusahaan resmi atas nama PT. Panca Prima Wijaya (BCA / Mandiri). Kami tidak pernah meminta transfer ke rekening atas nama perorangan/pribadi.",
-        keywords: ["rekening", "transfer", "pembayaran", "bca", "mandiri", "bank"]
-      }
-    ],
+    knowledgeProducts: WAService.DEFAULT_CLEAN_PRODUCTS,
+    knowledgeSnippets: WAService.DEFAULT_CLEAN_KNOWLEDGE_SNIPPETS,
     knowledgeWebSources: [
       {
         id: "kb-web-1",
         url: "https://pancaprima.co.id",
         title: "Website Resmi PT. Panca Prima Wijaya",
-        summary: "Situs web portal resmi untuk melihat portofolio solusi, sertifikasi resmi, layanan konsultasi teknis, dan informasi kontak kantor pusat serta cabang di Indonesia.",
+        summary: "Situs web portal resmi untuk melihat portofolio produk sarana pertanian modern, sertifikasi mutu, visi misi perseroan, dan informasi kantor pusat serta gudang distribusi di Indonesia.",
         isActive: true,
         updatedAt: Date.now()
       }
     ],
-    knowledgeBase: [],
+    knowledgeBase: WAService.DEFAULT_CLEAN_PRODUCTS,
     logs: []
   };
 
@@ -343,6 +463,49 @@ class WAService {
     } catch (e) {
       console.error("[waService] Error saving WA AI settings:", e);
     }
+  }
+
+  public async resetKnowledgeToBase() {
+    this.aiSettings.knowledgeSnippets = [...WAService.DEFAULT_CLEAN_KNOWLEDGE_SNIPPETS];
+    this.aiSettings.knowledgeProducts = [...WAService.DEFAULT_CLEAN_PRODUCTS];
+    this.aiSettings.knowledgeBase = [...WAService.DEFAULT_CLEAN_PRODUCTS];
+    this.aiSettings.knowledgeWebSources = [
+      {
+        id: "web-1",
+        url: "https://pancaprima.co.id",
+        title: "Website Portal Resmi PT. Panca Prima Wijaya",
+        summary: "Website portal utama yang memuat profil perseroan, sertifikasi mutu, visi misi, serta jaringan kantor cabang dan gudang distribusi di seluruh wilayah Indonesia.",
+        isActive: true,
+        updatedAt: Date.now()
+      }
+    ];
+    this.aiSettings.fallbackMessage = "Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini di luar panduan resmi kami 🙏 Sekadar informasi, di PT. Panca Prima Wijaya kami merupakan spesialis penyedia sarana pertanian & perkebunan berkualitas, seperti Plastik Sungkup UV, Mulsa Hitam Perak (MPHP), dan Insect Net kasa hijau. Apakah Kakak ingin melihat katalog produk atau penawaran harga kami?";
+    await this.saveSettings(this.aiSettings);
+    return this.aiSettings;
+  }
+
+  /**
+   * Menghasilkan pesan fallback yang ramah, fleksibel, bervariasi, dan selalu mengarahkan ke layanan & produk perusahaan
+   */
+  public generateDynamicFallbackMessage(senderName: string, userMessage: string, fallbackCount: number = 1): string {
+    const variations = [
+      `Mohon maaf ya Kak ${senderName}, untuk informasi terkait hal tersebut saat ini di luar cakupan panduan resmi kami 🙏\n\nSekadar informasi, di *PT. Panca Prima Wijaya* kami merupakan produsen & distributor sarana pertanian dan perkebunan berkualitas, seperti:\n• Plastik Sungkup Pertanian UV (anti-hama & cuaca ekstrem)\n• Mulsa Plastik Hitam Perak / MPHP (penahan gulma & penstabil suhu tanah)\n• Insect Net / Kasa Hijau 50 Mesh (pelindung greenhouse)\n\nApakah Kakak ingin melihat katalog produk kami, cek daftar harga, atau ada kebutuhan pertanian tertentu yang bisa kami bantu jelaskan? 😊`,
+
+      `Waduh mohon maaf Kak ${senderName}, detail mengenai hal tersebut belum tercatat di data panduan kami 🙏\n\nPerusahaan kami, *PT. Panca Prima Wijaya*, berfokus pada pengadaan perlengkapan perkebunan modern dan produk pertanian unggulan (Plastik Sungkup UV, Mulsa Hitam Perak, dan Insect Net anti-serangga).\n\nApakah Kakak tertarik untuk melihat spesifikasi produk kami atau penawaran harga resmi? Siap kami bantu dengan senang hati ya!`,
+
+      `Mohon maaf atas keterbatasan informasi kami Kak ${senderName}, hal tersebut di luar spesialisasi produk kami 🙏\n\nDi *PT. Panca Prima Wijaya*, kami siap melayani kebutuhan aneka sarana produksi agrikultur dan greenhouse dengan jaminan mutu dan pengiriman kargo ke seluruh Indonesia.\n\nApakah Kakak berkenan kami buatkan penawaran harga atau ingin melihat katalog produk pertanian kami terlebih dahulu?`,
+
+      `Terima kasih sudah bertanya Kak ${senderName}. Namun mohon maaf, untuk informasi tersebut belum tersedia di sistem kami 🙏\n\nSebagai gambaran, kami di *PT. Panca Prima Wijaya* menyediakan aneka perlengkapan pertanian berkualitas seperti Plastik Sungkup UV, Mulsa MPHP, dan Insect Net.\n\nApakah ada hal lain seputar produk atau ketentuan pemesanan kami yang ingin Kakak tanyakan? Kami siap melayani! 😊`
+    ];
+
+    const idx = Math.abs(userMessage.length + fallbackCount) % variations.length;
+    let reply = variations[idx];
+
+    if (fallbackCount >= 3) {
+      reply += `\n\nBtw Kak ${senderName}, karena kebutuhan Kakak memerlukan info khusus di luar panduan sistem saya, apakah Kakak ingin obrolan ini langsung saya alihkan ke tim Customer Service / Sales kami agar dibantu secara personal? (Ketik *Ya / Boleh* jika berkenan 😊)`;
+    }
+
+    return reply;
   }
 
   /**
@@ -1071,44 +1234,70 @@ class WAService {
       const cleanMsg = msgLower.replace(/[?!.,;:"'()\[\]\/\\]/g, ' ').trim();
       const cleanWords = cleanMsg.split(/\s+/).filter(Boolean);
 
-      // A. Intensi ingin bertanya / membuka obrolan tanpa topik spesifik ("saya mau tanya nih", "mau nanya dong", "boleh tanya?", dll)
+      // Kata kunci sapaan dan salam umum Indonesia
+      const greetingTokens = [
+        'halo', 'hai', 'hi', 'hei', 'helo', 'hallo', 'oy', 'woi', 'p',
+        'pagi', 'siang', 'sore', 'malam',
+        'assalam', 'assalamualaikum', 'assalamu alaikum', 'assalamu\'alaikum',
+        'permisi', 'sampurasun', 'punten', 'kulonuwun',
+        'tes', 'test', 'ping', 'salam'
+      ];
+
+      // Cek apakah ada sapaan di awal kata atau dalam kalimat
+      const hasGreetingWord = greetingTokens.some(g => {
+        if (cleanWords.includes(g)) return true;
+        if (cleanMsg.startsWith(g)) return true;
+        return false;
+      }) || (cleanWords[0] === 'selamat' && ['pagi', 'siang', 'sore', 'malam', 'datang', 'hari'].includes(cleanWords[1]));
+
+      // Cek apakah ada topik spesifik yang nyata ditanyakan
       const hasSpecificTopic = cleanMsg.includes("harga") || cleanMsg.includes("retur") || cleanMsg.includes("garansi") || 
         cleanMsg.includes("rekening") || cleanMsg.includes("kirim") || cleanMsg.includes("ongkir") || cleanMsg.includes("produk") || 
         cleanMsg.includes("mulsa") || cleanMsg.includes("sungkup") || cleanMsg.includes("net") || cleanMsg.includes("faktur") || 
-        cleanMsg.includes("kantor") || cleanMsg.includes("jam") || cleanMsg.includes("transfer") || cleanMsg.includes("pesan") || cleanMsg.includes("beli");
+        cleanMsg.includes("kantor") || cleanMsg.includes("jam") || cleanMsg.includes("transfer") || cleanMsg.includes("pesan") || 
+        cleanMsg.includes("beli") || cleanMsg.includes("katalog") || cleanMsg.includes("stok") || cleanMsg.includes("order");
 
+      // A. Intensi ingin bertanya / membuka obrolan tanpa topik spesifik ("saya mau tanya nih", "mau nanya dong", "boleh tanya?", dll)
       const isAskingToAsk = !hasSpecificTopic && (
         /^(?:saya\s+)?(?:mau|ingin|bisa|boleh|pengen|mo|mw)\s+(?:tanya|nanya|bertanya|konsul|konsultasi|minta\s+info|bantu)/i.test(cleanMsg) ||
         /\b(?:mau|bisa|boleh)\s+(?:tanya|nanya|bertanya)\b/i.test(cleanMsg) ||
         cleanMsg === "mau tanya" || cleanMsg === "mau nanya" || cleanMsg === "tanya dong" || cleanMsg === "nanya dong" ||
         cleanMsg.includes("mau tanya nih") || cleanMsg.includes("mau nanya nih") || cleanMsg.includes("mau tanya dong") || 
         cleanMsg.includes("ada yang mau saya tanyakan") || cleanMsg.includes("ada yang mau ditanyakan") ||
-        cleanMsg === "saya mau tanya" || cleanMsg === "mau konsultasi" || cleanWords.length <= 5 && cleanMsg.includes("tanya")
+        cleanMsg === "saya mau tanya" || cleanMsg === "mau konsultasi" || (cleanWords.length <= 5 && cleanMsg.includes("tanya"))
       );
 
-      // B. Sapaan murni tanpa pertanyaan spesifik ("halo", "hai", "selamat pagi", "assalam", "permisi", "p", "halo min", dll)
-      const isGreetingOnly = /^(?:halo|hai|hi|hei|helo|pagi|siang|sore|malam|assalam(?:ualaikum)?|permisi|sampurasun|punten|tes|test|p)\b/i.test(cleanMsg) &&
-        !cleanMsg.includes("harga") && !cleanMsg.includes("retur") && !cleanMsg.includes("rekening") && !cleanMsg.includes("kirim") && 
-        !cleanMsg.includes("produk") && !cleanMsg.includes("mulsa") && !cleanMsg.includes("sungkup") && !cleanMsg.includes("net") &&
-        !cleanMsg.includes("garansi") && !cleanMsg.includes("faktur") && !cleanMsg.includes("katalog") && !cleanMsg.includes("pesan") &&
-        !cleanMsg.includes("beli") && !cleanMsg.includes("transfer") && cleanWords.length <= 6;
+      // B. Sapaan murni tanpa pertanyaan spesifik
+      const isGreetingOnly = (hasGreetingWord || cleanMsg.startsWith("selamat")) && !hasSpecificTopic && cleanWords.length <= 9;
 
-      // C. Ucapan terima kasih ("terima kasih", "makasih ya kak", "thanks", dll)
-      const isGratitude = /^(?:terima\s*kasih|makasih|tengkyu|thanks|matur\s*nuwun|syukron|arigato)\b/i.test(cleanMsg);
+      // C. Ucapan terima kasih
+      const isGratitude = /^(?:terima\s*kasih|makasih|tengkyu|thanks|matur\s*nuwun|syukron|arigato)\b/i.test(cleanMsg) ||
+        cleanMsg.includes("terima kasih") || cleanMsg.includes("makasih");
 
-      // D. Konfirmasi santai ("oke", "ok", "siap", "baik", "noted", dll)
+      // D. Konfirmasi santai
       const isAck = /^(?:oke|ok|siap|baik|noted|sip|mantap|paham|mengerti|yep|yup)\b/i.test(cleanMsg) && cleanWords.length <= 4;
 
-      // E. Cek admin / robot ("apakah ini bot?", "ini robot ya?", "ada orang?", "admin aktif?")
+      // E. Cek admin / robot
       const isBotCheck = /\b(?:apakah\s+(?:ini\s+)?(?:bot|robot|ai)|ini\s+(?:bot|robot|ai)|ada\s+orang|admin(?:nya)?\s+aktif)\b/i.test(cleanMsg);
 
       if (isAskingToAsk) {
-        replyText = `Halo Kak ${senderName}! Tentu boleh banget, silakan mau tanya tentang apa nih? Apakah seputar produk pertanian kami (seperti plastik sungkup, mulsa, insect net), penawaran harga, atau prosedur pemesanan? Siap kami bantu ya! 😊`;
+        replyText = `Halo Kak ${senderName}! Tentu boleh banget, silakan mau tanya tentang apa nih? 😊 Apakah seputar produk pertanian kami (seperti Plastik Sungkup UV, Mulsa MPHP, Insect Net), penawaran harga, atau prosedur pemesanan? Siap kami bantu dengan senang hati ya!`;
         containerMatched = 'greeting';
         isFallback = false;
         modelUsed = "Asisten CS Ramah (Percakapan Pembuka)";
       } else if (isGreetingOnly) {
-        replyText = `Halo Kak ${senderName}! Selamat datang di layanan WhatsApp PT. Panca Prima Wijaya. Senang bisa terhubung dengan Kakak. Ada yang bisa kami bantu seputar produk atau layanan kami hari ini? 😊`;
+        let timeSalutation = "hari ini";
+        if (cleanMsg.includes("pagi")) timeSalutation = "pagi";
+        else if (cleanMsg.includes("siang")) timeSalutation = "siang";
+        else if (cleanMsg.includes("sore")) timeSalutation = "sore";
+        else if (cleanMsg.includes("malam")) timeSalutation = "malam";
+
+        const greetingReplies = [
+          `Halo Kak ${senderName}! Selamat ${timeSalutation} dan selamat datang di layanan WhatsApp resmi PT. Panca Prima Wijaya 😊 Senang sekali bisa terhubung dengan Kakak. Ada yang bisa kami bantu seputar produk pertanian atau layanan kami hari ini?`,
+          `Halo Kak ${senderName}! Selamat ${timeSalutation} 😊 Terima kasih telah menghubungi PT. Panca Prima Wijaya. Silakan, ada yang ingin ditanyakan seputar produk kami (Plastik Sungkup UV, Mulsa Hitam Perak, Insect Net) atau layanan pemesanan?`,
+          `Hai Kak ${senderName}! Senang bisa melayani Kakak hari ini 😊 Ada yang bisa kami bantu seputar informasi produk, harga, atau pengadaan sarana pertanian PT. Panca Prima Wijaya?`
+        ];
+        replyText = greetingReplies[Math.abs(cleanWords.length) % greetingReplies.length];
         containerMatched = 'greeting';
         isFallback = false;
         modelUsed = "Asisten CS Ramah (Sapaan)";
@@ -1161,33 +1350,33 @@ class WAService {
 
       const fullKnowledgeText = knowledgeSections.join("\n\n---\n\n");
 
-      const tone = this.aiSettings.toneOfVoice || this.aiSettings.tone || "Ramah, Bersahabat & Solutif";
+      const tone = this.aiSettings.toneOfVoice || this.aiSettings.tone || "Sangat Ramah, Bersahabat & Solutif";
       const lang = this.aiSettings.responseLanguage || "Bahasa Indonesia";
 
       const fullSystemPrompt = `PERAN & IDENTITAS:
 Anda adalah Customer Service WhatsApp resmi dari PT. Panca Prima Wijaya.
-Gaya komunikasi Anda: Sangat ramah, bersahabat, hangat, sopan, dan santun seperti staf CS manusia asli (BUKAN template bot kaku, BUKAN siaran broadcast formal).
+Gaya komunikasi Anda: Sangat ramah, bersahabat, hangat, sopan, luwes, dan mengalir natural selayaknya staf CS manusia asli Indonesia yang melayani pelanggan dengan senyuman (BUKAN robot kaku, BUKAN siaran broadcast formal).
 Bahasa respon: ${lang}. Nada bicara: ${tone}.
+Sapa nama pelanggan dengan santun (misal: "Halo Kak ${senderName}" atau "Baik Kak ${senderName}").
 
 PRINSIP JAWABAN (SANGAT KRUSIAL - PATUHI SECARA KETAT):
-1. FOKUS HANYA PADA APA YANG DITANYAKAN (DILARANG MEMUNTAHKAN/DUMP INFORMASI LAIN):
-   - Jika pengguna bertanya tentang Aturan A (misalnya: aturan garansi, tata cara retur, rekening transfer, atau jam buka kantor), jelaskan HANYA aturan A tersebut secara tuntas!
-   - DILARANG KERAS menyertakan informasi aturan B atau C, daftar rekening (jika tidak ditanya pembayaran), atau mempromosikan produk lain yang tidak ada hubungannya dengan pertanyaan pengguna.
-   - Jawab secara to-the-point, jelas, dan padat (cukup 1-2 paragraf pendek) agar sangat nyaman dan cepat dipahami di layar chat WhatsApp.
+1. PERCAKAPAN PEMBUKA & BASA-BASI HUMANIS:
+   - Jika pengguna menyapa (halo, hai, pagi, siang, sore, malam, assalamualaikum, salam, permisi, p, dsb), basa-basi pembuka, atau mengatakan "mau tanya dong", balaslah dengan SANGAT HANGAT, RAMAH, dan LUWES selayaknya CS manusia yang menyambut pelanggan.
+   - DILARANG KERAS menganggap sapaan pembuka sebagai fallback! DILARANG KERAS membubuhkan tag [FALLBACK_TAG] pada sapaan!
 
-2. GAYA BAHASA NATURAL, RAMAH & ANTI-TEMPLATE:
-   - Sapa nama dengan hangat dan santun (contoh: "Halo Kak ${senderName}" atau "Baik Kak ${senderName}").
-   - JANGAN mengulang salam pembuka/penutup formal yang panjang dan kaku berulang kali jika percakapan sudah berjalan mengalir.
-   - Hindari bahasa klise robotik seperti "Sebagai asisten AI...", "Pesan Anda telah kami catat...", dll.
+2. FOKUS HANYA PADA APA YANG DITANYAKAN:
+   - Jika pengguna bertanya tentang Aturan A (misalnya: aturan garansi, tata cara retur, rekening transfer, spesifikasi produk tertentu, atau jam buka kantor), jelaskan HANYA hal tersebut secara tuntas, padat, dan jelas (1-2 paragraf pendek).
+   - DILARANG KERAS menyertakan informasi aturan lain yang tidak ditanyakan (misal: jangan beri nomor rekening jika hanya tanya harga, jangan beri aturan retur jika hanya tanya jam kerja).
 
-3. PERCAKAPAN PEMBUKA & BASA-BASI HUMANIS:
-   - Jika pengguna hanya menyapa, mengucap salam, mengatakan "mau tanya nih", "boleh tanya?", atau basa-basi pembuka, balaslah dengan sangat hangat, ramah, dan luwes selayaknya staf CS manusia yang menyambut pelanggan. JANGAN PERNAH menganggap sapaan pembuka sebagai fallback!
-
-4. FALLBACK KONTEKSTUAL OTOMATIS:
-   - Jika informasi yang ditanyakan pengguna TIDAK TERCANTUM di dalam Catatan Paragraf Basis Pengetahuan di bawah:
-     * JANGAN gunakan kalimat template bot kaku.
-     * Buatlah balasan ramah yang kontekstual dan mengalir wajar sesuai topik yang baru saja ditanyakan atau topik percakapan sebelumnya (misalnya: dengan sopan menjelaskan bahwa detail spesifik mengenai topik tersebut saat ini belum tercatat di panduan resmi Anda).
-     * Wajib akhiri balasan fallback dengan tag rahasia: [FALLBACK_TAG] (kode ini tidak akan dilihat user dan dipakai sistem internal untuk menghitung fallback).
+3. ATURAN FALLBACK DINAMIS & FLEKSIBEL (JIKA DITANYA HAL DI LUAR CATATAN BASIS PENGETAHUAN):
+   - Jika pengguna bertanya hal faktual yang TIDAK TERCANTUM di Catatan Basis Pengetahuan perusahaan (misalnya produk non-pertanian, rekomendasi di luar bisnis perusahaan, hal pribadi, atau topik yang tidak diketahui):
+     * JANGAN HANYA MINTA MAAF KAKU ATAU BERKATA TIDAK TAHU!
+     * Berikan balasan FALLBACK YANG DINAMIS, FLEKSIBEL, DAN EDUKATIF:
+       a. Sampaikan maaf secara santun atas keterbatasan informasi mengenai topik yang ditanyakan.
+       b. Arahkan dan perkenalkan secara luwes bahwa PT. Panca Prima Wijaya berfokus menyediakan sarana pertanian & perkebunan berkualitas tinggi, seperti: Plastik Sungkup Pertanian UV, Mulsa Plastik Hitam Perak (MPHP), Insect Net Kasa Hijau anti-hama, dan peralatan greenhouse.
+       c. Ajukan pertanyaan penutup yang fleksibel dan bersahabat (misalnya: "Apakah Kakak ingin melihat katalog produk kami, cek daftar harga, atau ada kebutuhan pertanian tertentu yang bisa kami bantu jelaskan?").
+     * Buatlah kalimat yang mengalir luwes, alami, dan bervariasi (tidak kaku seperti template mesin).
+     * Wajib akhiri balasan fallback dengan tag rahasia: [FALLBACK_TAG] (kode rahasia ini otomatis dihapus oleh sistem).
 
 === CATATAN BASIS PENGETAHUAN PERUSAHAAN (PARAGRAF & KONTEN) ===
 ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
@@ -1346,15 +1535,17 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
           // JAWAB HANYA APA YANG DITANYAKAN (RAMAH, BERSAHABAT & TO-THE-POINT)
           replyText = `Halo Kak ${senderName}! Terkait *${bestMatch.title}*:\n\n${bestMatch.content}`;
           containerMatched = 'snippets';
+          isFallback = false;
         } else {
           // Cek sapaan salam santai
-          if (/^(halo|hai|hi|pagi|siang|sore|malam|assalam|permisi|selamat)\b/i.test(msgLower) && msgLower.length < 25) {
-            replyText = `Halo Kak ${senderName}! Ada yang bisa kami bantu seputar informasi produk atau layanan kami hari ini? 😊`;
+          const isGreetingCheck = /^(?:halo|hai|hi|hei|helo|pagi|siang|sore|malam|assalam|permisi|selamat|sampurasun|punten|tes|test|p)\b/i.test(msgLower);
+          if (isGreetingCheck) {
+            replyText = `Halo Kak ${senderName}! Selamat datang di layanan WhatsApp PT. Panca Prima Wijaya 😊 Ada yang bisa kami bantu seputar informasi produk pertanian atau layanan kami hari ini?`;
             containerMatched = 'greeting';
+            isFallback = false;
           } else {
-            // Contextual polite fallback alih-alih kalimat robot kaku
-            const previewTopic = userMessage.length > 35 ? userMessage.substring(0, 35) + '...' : userMessage;
-            replyText = `Mohon maaf ya Kak ${senderName}, untuk informasi terkait "${previewTopic}" saat ini belum tercantum di catatan panduan kami.`;
+            // FALLBACK DINAMIS & FLEKSIBEL (EDUKASI KE LAYANAN/PRODUK PERUSAHAAN)
+            replyText = this.generateDynamicFallbackMessage(senderName, userMessage, 1);
             isFallback = true;
             containerMatched = 'fallback';
           }
@@ -1461,7 +1652,9 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
     if (isFallback) {
       session.fallbackCount = (session.fallbackCount || 0) + 1;
       if (session.fallbackCount >= 3) {
-        replyText += `\n\nBtw Kak ${senderName}, karena saya belum menemukan informasi detail mengenai hal ini, apakah Kakak ingin obrolan ini kami alihkan ke tim terkait / Customer Service kami agar bisa dibantu langsung? (Ketik *Ya / Boleh* jika berkenan 😊)`;
+        if (!replyText.includes("hubungkan") && !replyText.includes("alihkan")) {
+          replyText += `\n\nBtw Kak ${senderName}, karena saya belum menemukan informasi detail mengenai hal ini, apakah Kakak ingin obrolan ini langsung kami alihkan ke tim Customer Service / Sales kami agar bisa dibantu personal? (Ketik *Ya / Boleh* jika berkenan 😊)`;
+        }
         session.waitingHandoverConsent = true;
       }
     } else if (!isRestricted && !isHandover) {
@@ -1551,7 +1744,9 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
         console.log(`[waService] Fallback terdeteksi untuk ${jid}, hitungan fallback ke-${chat.fallbackCount}`);
         
         if (chat.fallbackCount >= 3) {
-          replyText += `\n\nBtw Kak ${senderName}, karena saya belum menemukan informasi detail mengenai hal ini, apakah Kakak ingin saya hubungkan percakapan ini ke tim Customer Service kami agar bisa dibantu langsung? (Ketik *Ya / Boleh* jika berkenan 😊)`;
+          if (!replyText.includes("hubungkan") && !replyText.includes("alihkan")) {
+            replyText += `\n\nBtw Kak ${senderName}, karena saya belum menemukan informasi detail mengenai hal ini, apakah Kakak ingin obrolan ini langsung saya hubungkan ke tim Customer Service / Sales kami agar bisa dibantu personal? (Ketik *Ya / Boleh* jika berkenan 😊)`;
+          }
           chat.waitingHandoverConsent = true;
         }
       } else if (chat && !isFallback && !isRestricted && !isHandover) {
