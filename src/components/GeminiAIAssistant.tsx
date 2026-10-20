@@ -926,7 +926,7 @@ ${agg.chronologicalMonthlyEntries.map(([period, data]) => {
       const matchedTrxList = agg.allowedTransactions.filter(t => {
         const noTrxStr = (t.noTrx || t.id || '').toLowerCase();
         const noTrxClean = noTrxStr.replace(/[^a-z0-9]/g, '');
-        const custName = (t.customerName || t.customer || '').toLowerCase();
+        const custName = (t.customerName || (t as any).customer || '').toLowerCase();
         return queryWords.some(tok => {
           const tokClean = tok.replace(/[^a-z0-9]/g, '');
           return noTrxStr.includes(tok) || 
@@ -940,7 +940,7 @@ ${agg.chronologicalMonthlyEntries.map(([period, data]) => {
         matchedTrxList.forEach(t => {
           const amt = getTrxAmount(t);
           const itemsStr = (t.items || []).map((it: any) => `${it.nama || it.productName} (${it.qty} unit @ Rp ${(it.harga || 0).toLocaleString('id-ID')})`).join(', ');
-          digest += `* TRANSAKSI MATCH: [${t.noTrx || t.id}] Tanggal: ${t.tanggal} | Pelanggan: ${t.customerName || t.customer} | Total Nominal: Rp ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status} | Status Pembayaran: ${t.paymentStatus} | Sales Rep: ${t.sales || t.salesName || '-'} | Item Produk: ${itemsStr || '-'}\n`;
+          digest += `* TRANSAKSI MATCH: [${t.noTrx || t.id}] Tanggal: ${t.tanggal} | Pelanggan: ${t.customerName || (t as any).customer} | Total Nominal: Rp ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status} | Status Pembayaran: ${t.paymentStatus} | Sales Rep: ${t.sales || (t as any).salesName || '-'} | Item Produk: ${itemsStr || '-'}\n`;
         });
       }
     }
@@ -1151,7 +1151,7 @@ ${agg.chronologicalMonthlyEntries.map(([period, data]) => {
         res += `| No. Transaksi | Tanggal | Pelanggan | Nominal Total | Status Pesanan | Status Pembayaran | Sales Rep |\n|---|---|---|---|---|---|---|\n`;
         matchedTrx.forEach(t => {
           const amt = getTrxAmount(t);
-          res += `| **${t.noTrx || t.id}** | ${t.tanggal || '-'} | **${t.customerName || t.customer || '-'}** | **Rp ${amt.toLocaleString('id-ID')}** | ${t.status || 'Selesai'} | ${t.paymentStatus || 'Lunas'} | ${t.sales || t.salesName || '-'} |\n`;
+          res += `| **${t.noTrx || t.id}** | ${t.tanggal || '-'} | **${t.customerName || (t as any).customer || '-'}** | **Rp ${amt.toLocaleString('id-ID')}** | ${t.status || 'Selesai'} | ${t.paymentStatus || 'Lunas'} | ${t.sales || (t as any).salesName || '-'} |\n`;
         });
 
         if (matchedTrx.length === 1) {
@@ -1168,8 +1168,8 @@ ${agg.chronologicalMonthlyEntries.map(([period, data]) => {
             res += `*(Tidak ada rincian item terpisah)*\n`;
           }
 
-          if (t.catatan || (t as any).notes) {
-            res += `\n📝 **Catatan Transaksi**: ${t.catatan || (t as any).notes}\n`;
+          if ((t as any).catatan || (t as any).notes) {
+            res += `\n📝 **Catatan Transaksi**: ${(t as any).catatan || (t as any).notes}\n`;
           }
         }
 
@@ -1178,7 +1178,7 @@ ${agg.chronologicalMonthlyEntries.map(([period, data]) => {
 
       // Direct Purchase Order (PO) Search
       const matchedPOs = agg.allowedPOs.filter(po => {
-        const noPOStr = (po.noPO || po.id || '').toLowerCase();
+        const noPOStr = ((po as any).noPO || po.id || '').toLowerCase();
         const noPOClean = noPOStr.replace(/[^a-z0-9]/g, '');
         return noPOStr.includes(lower) || (searchClean.length >= 2 && noPOClean.includes(searchClean));
       });
@@ -1187,7 +1187,7 @@ ${agg.chronologicalMonthlyEntries.map(([period, data]) => {
         let res = `### 📦 Detail Purchase Order (PO) "${query}":\n\n`;
         res += `| No. PO | Tanggal | Supplier | Total Nominal | Status |\n|---|---|---|---|---|\n`;
         matchedPOs.forEach(po => {
-          res += `| **${po.noPO || po.id}** | ${po.tanggal || '-'} | **${po.supplierName || po.supplier || '-'}** | **Rp ${(po.total || 0).toLocaleString('id-ID')}** | ${po.status || 'Aktif'} |\n`;
+          res += `| **${(po as any).noPO || po.id}** | ${(po as any).tanggal || '-'} | **${(po as any).supplierName || (po as any).supplier || '-'}** | **Rp ${((po as any).total || 0).toLocaleString('id-ID')}** | ${po.status || 'Aktif'} |\n`;
         });
         return res;
       }
@@ -1509,7 +1509,7 @@ ${agg.chronologicalMonthlyEntries.map(([period, data]) => {
           res += `- **No. WhatsApp / Telp**: **${c.whatsapp || c.phone || '-'}**\n`;
           res += `- **Sales Penanggung Jawab**: **${c.sales || '-'}**\n`;
           res += `- **PIC / Kontak**: ${c.pic || c.nama}\n`;
-          if (c.email) res += `- **Email**: ${c.email}\n`;
+          if ((c as any).email) res += `- **Email**: ${(c as any).email}\n`;
           if (c.alamat) res += `- **Alamat Lengkap**: ${c.alamat}\n\n`;
 
           res += `**📊 Ringkasan Finansial Pelanggan Ini:**\n`;
@@ -1968,7 +1968,7 @@ ${agg.chronologicalMonthlyEntries.map(([period, data]) => {
       let res = `### 🏢 Data Supplier (${agg.allowedSuppliers.length} Supplier Terdaftar):\n\n`;
       res += `| No | Nama Supplier | Kode | Kontak |\n|---|---|---|---|\n`;
       agg.allowedSuppliers.forEach((s, idx) => {
-        res += `| ${idx + 1} | **${s.nama}** | ${s.kode || '-'} | ${s.phone || '-'} |\n`;
+        res += `| ${idx + 1} | **${s.nama}** | ${s.kode || '-'} | ${(s as any).phone || (s as any).telepon || '-'} |\n`;
       });
       return res;
     }

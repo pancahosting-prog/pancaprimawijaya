@@ -32,6 +32,7 @@ interface Employee {
   departemen?: string;
   jabatan?: string;
   atasan?: string;
+  kontrakAwal?: string;
 }
 
 interface Transaction {
@@ -39,7 +40,7 @@ interface Transaction {
   noTrx: string;
   tanggal: string;
   customerName: string;
-  status: string;
+  status?: string;
   nilaiProyek: number;
   pembayaranDiterima: number;
   sisaPembayaran: number;
@@ -263,6 +264,8 @@ interface KPIEmployee {
   nik: string;
   jabatanId: string;
   gaji: number;
+  jabatan?: string;
+  role?: string;
 }
 
 interface GradingKPIItem {
@@ -1948,7 +1951,7 @@ export default function KPIModule({
     setKpiMonthlyFinancials(prev => ({
       ...prev,
       [key]: {
-        omsetKotor: companyFinancials.targetOmset || 133716920,
+        omsetKotor: (companyFinancials as any).targetOmset || (companyFinancials as any).totalRevenue || 133716920,
         pajak: 14701861,
         pengiriman: 0,
         lainLain: 14500000

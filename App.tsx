@@ -3043,12 +3043,12 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
           prevFilteredTrx = []; // no diff
       }
 
-      const totalOmzet = currentFilteredTrx.filter(t => t.status === 'Selesai' || t.status === 'Lunas' || t.paymentStatus === 'Lunas').reduce((acc, t) => acc + (t.nilaiProyek || 0), 0);
-      const activeTrx = currentFilteredTrx.filter(t => ['Penawaran', 'Progress', 'Invoice', 'Payment', 'Pengiriman'].includes(t.status)).length;
+      const totalOmzet = currentFilteredTrx.filter(t => t.status === 'Selesai' || (t.status as string) === 'Lunas' || t.paymentStatus === 'Lunas').reduce((acc, t) => acc + (t.nilaiProyek || 0), 0);
+      const activeTrx = currentFilteredTrx.filter(t => ['Penawaran', 'Progress', 'Invoice', 'Payment', 'Pengiriman'].includes(t.status || '')).length;
       const ongoingPenawaran = currentFilteredTrx.filter(t => t.status === 'Penawaran' || t.status === 'Progress' || !t.status).length;
       
-      const prevTotalOmzet = prevFilteredTrx.filter(t => t.status === 'Selesai' || t.status === 'Lunas' || t.paymentStatus === 'Lunas').reduce((acc, t) => acc + (t.nilaiProyek || 0), 0);
-      const prevActiveTrx = prevFilteredTrx.filter(t => ['Penawaran', 'Progress', 'Invoice', 'Payment', 'Pengiriman'].includes(t.status)).length;
+      const prevTotalOmzet = prevFilteredTrx.filter(t => t.status === 'Selesai' || (t.status as string) === 'Lunas' || t.paymentStatus === 'Lunas').reduce((acc, t) => acc + (t.nilaiProyek || 0), 0);
+      const prevActiveTrx = prevFilteredTrx.filter(t => ['Penawaran', 'Progress', 'Invoice', 'Payment', 'Pengiriman'].includes(t.status || '')).length;
       const prevOngoingPenawaran = prevFilteredTrx.filter(t => t.status === 'Penawaran' || t.status === 'Progress' || !t.status).length;
 
       const calcTrend = (current: number, previous: number) => {
@@ -4137,9 +4137,9 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                           }
                       }
 
-                      const newTrx = { 
+                      const newTrx: Transaction = { 
                           ...t, 
-                          status: 'Pengiriman',
+                          status: 'Pengiriman' as Transaction['status'],
                           paymentStatus: currentTrx.paymentStatus,
                           pembayaranDiterima: currentTrx.pembayaranDiterima,
                           sisaPembayaran: currentTrx.sisaPembayaran,
@@ -5602,7 +5602,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
 
                       const topProductsData = (() => {
                           const productSales: Record<string, number> = {};
-                          filteredDashboardTrx.filter(t => t.status === 'Selesai' || t.status === 'Lunas' || t.paymentStatus === 'Lunas').forEach(t => {
+                          filteredDashboardTrx.filter(t => t.status === 'Selesai' || (t.status as string) === 'Lunas' || t.paymentStatus === 'Lunas').forEach(t => {
                               t.items?.forEach(item => {
                                   const itemValue = ((item.qty || 0) * (item.harga || 0)) - (item.diskon || 0);
                                   productSales[item.nama] = (productSales[item.nama] || 0) + itemValue;
@@ -5623,7 +5623,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                               const periodFiltered = transactions.filter(t => {
                                   if (t.companyId !== activeCompanyId) return false;
                                   // HANYA MENCATAT TRANSAKSI SELESAI / LUNAS
-                                  const isCompletedOrPaid = t.status === 'Selesai' || t.status === 'Lunas' || t.paymentStatus === 'Lunas';
+                                  const isCompletedOrPaid = t.status === 'Selesai' || (t.status as string) === 'Lunas' || t.paymentStatus === 'Lunas';
                                   if (!isCompletedOrPaid) return false;
                                   if (filterSales && t.sales !== filterSales) return false;
                                   if (filterMonth && t.tanggal?.split('-')[1] !== filterMonth) return false;
@@ -5705,7 +5705,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                           const periodFiltered = transactions.filter(t => {
                               if (t.companyId !== activeCompanyId) return false;
                               // HANYA MENCATAT TRANSAKSI SELESAI / LUNAS
-                              const isCompletedOrPaid = t.status === 'Selesai' || t.status === 'Lunas' || t.paymentStatus === 'Lunas';
+                              const isCompletedOrPaid = t.status === 'Selesai' || (t.status as string) === 'Lunas' || t.paymentStatus === 'Lunas';
                               if (!isCompletedOrPaid) return false;
                               if (filterSales && t.sales !== filterSales) return false;
                               const trDate = new Date(t.tanggal);
@@ -7014,11 +7014,11 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                   </div>
                   ) : activeView === 'KPI' ? (
                       <KPIModule 
-                          employees={employees}
-                          transactions={transactions}
+                          employees={employees as any}
+                          transactions={transactions as any}
                           currentUser={currentUser}
                           activeCompanyId={activeCompanyId}
-                          onUpdateEmployees={(updated) => setEmployees(updated)}
+                          onUpdateEmployees={(updated: any) => setEmployees(updated)}
                       />
                   ) : (
                   /* LIST / TABLE VIEW */
@@ -10655,7 +10655,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                                                     const sortedFollowUps = currentTrx.followUps && currentTrx.followUps.length > 0 
                                                         ? [...currentTrx.followUps].sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime())
                                                         : [];
-                                                    const latestFU = sortedFollowUps[0] || {};
+                                                    const latestFU: Partial<FollowUp> = sortedFollowUps[0] || {};
                                                     const cust = customers.find(c => c.nama === currentTrx.customerName);
                                                     const noCust = cust ? `${cust.phoneCode || ''}${cust.phone || ''}` : '-';
                                                     
@@ -10742,7 +10742,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                                                 const sortedFollowUps = currentTrx.followUps && currentTrx.followUps.length > 0 
                                                     ? [...currentTrx.followUps].sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime())
                                                     : [];
-                                                const latestFU = sortedFollowUps[0] || {};
+                                                const latestFU: Partial<FollowUp> = sortedFollowUps[0] || {};
                                                 
                                                 const itemListStr = currentTrx.items && currentTrx.items.length > 0 ? currentTrx.items.map((item: any) => `- ${item.nama} (Qty: ${item.qty})`).join('\n') : 'Tidak ada item';
                                                 const totalVal = currentTrx.items?.reduce((acc: number, curr: any) => acc + ((curr.harga * curr.qty) - (curr.diskon || 0)), 0) || 0;
@@ -11095,7 +11095,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                                                         <Printer size={16} /> Print Penawaran
                                                     </button>
                                                     <button
-                                                        onClick={() => handleConvertQuotation(currentTrx)}
+                                                        onClick={() => handleConvertQuotation(currentTrx as Transaction)}
                                                         className="col-span-2 bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase tracking-widest py-2.5 rounded-lg transition-all shadow-lg shadow-green-100 flex items-center justify-center gap-2"
                                                     >
                                                         <ArrowRightCircle size={16} /> Buat Invoice
@@ -11690,7 +11690,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                                              return (
                                                  <div key={effectiveId} className="px-3 py-2.5 flex justify-between items-center hover:bg-slate-50 transition-colors">
                                                      <div className="flex items-center gap-2">
-                                                         {item.icon && <item.icon size={14} className={customPerm ? "text-violet-500" : "text-slate-400"} />}
+                                                         {Boolean((item as any).icon) && React.createElement((item as any).icon, { size: 14, className: customPerm ? "text-violet-500" : "text-slate-400" })}
                                                          <span className={`text-xs font-semibold ${customPerm ? 'text-violet-700' : 'text-slate-700'}`}>
                                                              {item.label} {customPerm && <span className="text-[8px] uppercase tracking-tighter bg-violet-100 text-violet-600 px-1 py-0.5 rounded ml-1">Kustom</span>}
                                                          </span>
@@ -11821,7 +11821,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                                              return (
                                                  <div key={effectiveId} className="px-3 py-2.5 flex justify-between items-center hover:bg-slate-50 transition-colors">
                                                      <div className="flex items-center gap-2">
-                                                         {item.icon && <item.icon size={14} className="text-slate-400" />}
+                                                         {Boolean((item as any).icon) && React.createElement((item as any).icon, { size: 14, className: "text-slate-400" })}
                                                          <span className="text-xs font-semibold text-slate-700">{item.label}</span>
                                                      </div>
                                                      <div className="flex gap-4">
@@ -12072,7 +12072,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                         <h5 className="font-bold text-sm text-slate-800 mb-3 flex items-center gap-2"><Store size={16} className="text-slate-400"/> Riwayat Stok & Aktivitas</h5>
                         <div className="space-y-3">
                             {(() => {
-                                const history = getProductStockHistory(currentProd, purchaseOrders, transactions);
+                                const history = getProductStockHistory(currentProd as Product, purchaseOrders, transactions);
                                 if (history.length === 0) return <div className="text-slate-400 text-sm text-center py-4">Belum ada riwayat stok</div>;
                                 
                                 return history.map((item, idx) => (
