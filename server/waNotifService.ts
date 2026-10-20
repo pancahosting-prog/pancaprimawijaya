@@ -252,12 +252,13 @@ class WANotifService {
 
       if (supabaseServer) {
         try {
+          const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({ data: [] }), 2000));
           const [cRes, eRes, uRes, usersRes, ctRes] = await Promise.all([
-            Promise.resolve(supabaseServer.from("customers").select("*")).catch(() => ({ data: [] })),
-            Promise.resolve(supabaseServer.from("employees").select("*")).catch(() => ({ data: [] })),
-            Promise.resolve(supabaseServer.from("app_users").select("*")).catch(() => ({ data: [] })),
-            Promise.resolve(supabaseServer.from("users").select("*")).catch(() => ({ data: [] })),
-            Promise.resolve(supabaseServer.from("contacts").select("*")).catch(() => ({ data: [] }))
+            Promise.race([Promise.resolve(supabaseServer.from("customers").select("nama, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] })),
+            Promise.race([Promise.resolve(supabaseServer.from("employees").select("nama, username, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] })),
+            Promise.race([Promise.resolve(supabaseServer.from("app_users").select("nama, username, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] })),
+            Promise.race([Promise.resolve(supabaseServer.from("users").select("nama, username, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] })),
+            Promise.race([Promise.resolve(supabaseServer.from("contacts").select("nama, whatsapp, phone, no_hp")), timeoutPromise]).catch(() => ({ data: [] }))
           ]);
           customers = (cRes as any)?.data || [];
           employees = (eRes as any)?.data || [];
@@ -269,69 +270,21 @@ class WANotifService {
         }
       }
 
-      // Extract target name/phone and message from command
-      const cleanCmd = command.trim();
-      let targetName = "";
-      let targetPhone = "";
-      let messageContent = "";
-
-      // Check if command specifies target explicitly after "ke " or "kepada " or "untuk "
-      const matchWithColon = cleanCmd.match(/^(?:tolong\s+)?(?:ai\s+)?(?:coba\s+)?kirim(?:kan)?\s+(?:pesan|wa|whatsapp|notifikasi)?\s*(?:ke|kepada|untuk)\s+([^:,\n-]+)\s*[:,\-]\s*(.+)/i);
-      const matchWithoutColon = cleanCmd.match(/^(?:tolong\s+)?(?:ai\s+)?(?:coba\s+)?kirim(?:kan)?\s+(?:pesan|wa|whatsapp|notifikasi)?\s*(?:ke|kepada|untuk)\s+([a-zA-Z0-9\+]+)\s+(?:isi\s+pesan(?:nya)?\s*[:\s]*|pesan\s*[:\s]*|bahwa\s+|tolong\s+|minta\s+)?(.+)/i);
-
-      if (matchWithColon) {
-        const rawTarget = matchWithColon[1].trim();
-        messageContent = matchWithColon[2].trim();
-
-        if (/^[0-9+]+$/.test(rawTarget.replace(/\s/g, ""))) {
-          targetPhone = rawTarget.replace(/[^0-9]/g, "");
-          targetName = targetPhone;
-        } else {
-          targetName = rawTarget;
-        }
-      } else if (matchWithoutColon) {
-        const rawTarget = matchWithoutColon[1].trim();
-        messageContent = matchWithoutColon[2].trim();
-
-        if (/^[0-9+]+$/.test(rawTarget.replace(/\s/g, ""))) {
-          targetPhone = rawTarget.replace(/[^0-9]/g, "");
-          targetName = targetPhone;
-        } else {
-          targetName = rawTarget;
-        }
-      } else {
-        messageContent = cleanCmd;
-        const targetPersonMatch = cleanCmd.match(/(?:ke|untuk|kepada)\s+([a-zA-Z0-9\s]+?)(?:\s+(?:tolong|pesan|minta|agar|untuk|isi)|$)/i);
-        if (targetPersonMatch) {
-          targetName = targetPersonMatch[1].trim();
-          const idx = cleanCmd.toLowerCase().indexOf(targetName.toLowerCase());
-          if (idx !== -1) {
-            const afterTarget = cleanCmd.slice(idx + targetName.length).replace(/^[\s:,-]+/, '');
-            if (afterTarget.trim()) {
-              messageContent = afterTarget.trim();
-            }
-          }
-        }
-      }
-
-      // Clean redundant leading quotes or "pesan:" if user wrote e.g. "isi pesan: ..."
-      messageContent = messageContent.replace(/^(?:isi\s+pesan(?:nya)?\s*[:\-]?\s*|pesan\s*[:\-]?\s*|text\s*[:\-]?\s*)/i, '').trim();
-      messageContent = messageContent.replace(/^["']|["']$/g, '').trim();
-
       // Combine all user & contact records for matching
-      const allContactRecords: { name: string; phone: string; role?: string; type: string }[] = [];
+      const allContactRecords: { name: string; username?: string; phone: string; role?: string; type: string }[] = [];
 
       const addRecord = (item: any, type: string) => {
         if (!item || typeof item !== "object") return;
         const name = (item.nama || item.name || item.username || item.nama_lengkap || item.namaLengkap || item.pic || item.email || "").toString().trim();
+        const username = (item.username || "").toString().trim();
         const rawPhone = (item.whatsapp || item.phone || item.no_hp || item.no_wa || item.telepon || item.noHp || item.noWa || item.mobile || item.contact || "").toString().trim();
         const phone = rawPhone.replace(/[^0-9]/g, "");
         if (name && phone) {
-          allContactRecords.push({ name, phone, role: item.role, type });
+          allContactRecords.push({ name, username, phone, role: item.role, type });
         }
       };
 
-      // Ingest provided contacts first (from client state if any)
+      // Ingest provided contacts first (from client state / props)
       if (Array.isArray(providedContacts)) {
         providedContacts.forEach(c => addRecord(c, "Client State"));
       }
@@ -345,16 +298,101 @@ class WANotifService {
       customers.forEach(c => addRecord(c, "Pelanggan"));
       contactsList.forEach(c => addRecord(c, "Kontak"));
 
-      // Search matching record by name
+      // Extract target name/phone and message from command
+      // Strip outer quotes (both standard " / ' and Unicode smart quotes “ ” ‘ ’), backticks, brackets
+      let cleanCmd = command
+        .trim()
+        .replace(/^["'“‘”’`«»]+|["'“‘”’`«»]+$/g, "")
+        .replace(/^["'“‘”’`«»]+|["'“‘”’`«»]+$/g, "")
+        .trim();
+
+      // Strip conversational leading greetings / AI fillers
+      cleanCmd = cleanCmd
+        .replace(/^(?:halo\s+|hai\s+|hi\s+)?(?:ai|asisten|bot)?[\s,:]*(?:tolong\s+|mohon\s+|bantu\s+|coba\s+|minta\s+)?/i, "")
+        .trim();
+
+      let targetName = "";
+      let targetPhone = "";
+      let messageContent = "";
+
+      // 1. Check if command matches: kirim [pesan/wa] ke [target] : [pesan]
+      const colonMatch = cleanCmd.match(/(?:kirim(?:kan)?\s+(?:pesan|wa|whatsapp|notifikasi)?|wa|pesan)?\s*(?:ke|kepada|untuk)\s+([^:,\n-]+?)\s*[:,\-]\s*(.+)$/i);
+      
+      // 2. Check if command matches without colon: kirim [pesan/wa] ke [target] [pesan]
+      const withoutColonMatch = cleanCmd.match(/(?:kirim(?:kan)?\s+(?:pesan|wa|whatsapp|notifikasi)?|wa|pesan)?\s*(?:ke|kepada|untuk)\s+([a-zA-Z0-9\+._]+)\s+(?:bahwa\s+|isi\s+pesan(?:nya)?\s*[:\s]*|pesan\s*[:\s]*|tolong\s+|minta\s+)?(.+)$/i);
+
+      if (colonMatch) {
+        targetName = colonMatch[1].trim();
+        messageContent = colonMatch[2].trim();
+      } else if (withoutColonMatch) {
+        targetName = withoutColonMatch[1].trim();
+        messageContent = withoutColonMatch[2].trim();
+      } else {
+        // Fallback: search for " ke " or " kepada " or " untuk "
+        const keMatch = cleanCmd.match(/(?:ke|kepada|untuk)\s+([^:,\n\s]+)(?:[\s:]+(.+))?$/i);
+        if (keMatch) {
+          targetName = keMatch[1].trim();
+          messageContent = (keMatch[2] || cleanCmd).trim();
+        } else {
+          messageContent = cleanCmd;
+        }
+      }
+
+      // If targetName is still not found, check if cleanCmd mentions any known contact by name
+      if (!targetName) {
+        for (const record of allContactRecords) {
+          const recName = record.name.trim().toLowerCase();
+          if (recName.length >= 3 && cleanCmd.toLowerCase().includes(recName)) {
+            targetName = record.name;
+            targetPhone = record.phone;
+            const idx = cleanCmd.toLowerCase().indexOf(recName);
+            const after = cleanCmd.slice(idx + recName.length).replace(/^[\s:,-]+/, '');
+            if (after.trim()) {
+              messageContent = after.trim();
+            }
+            break;
+          }
+        }
+      }
+
+      // Clean targetName and messageContent
+      targetName = targetName.replace(/[:,\-]/g, "").trim().replace(/^["'“‘”’`]+|["'“‘”’`]+$/g, "").trim();
+      messageContent = messageContent
+        .replace(/^(?:isi\s+pesan(?:nya)?\s*[:\-]?\s*|pesan\s*[:\-]?\s*|text\s*[:\-]?\s*)/i, "")
+        .replace(/^["'“‘”’`]+|["'“‘”’`]+$/g, "")
+        .trim();
+
+      // Check if target is directly a phone number
+      if (/^[0-9+]+$/.test(targetName.replace(/\s/g, "")) && targetName.replace(/[^0-9]/g, "").length >= 8) {
+        targetPhone = targetName.replace(/[^0-9]/g, "");
+      }
+
+      // Search matching contact record if phone not yet determined
       if (targetName && !targetPhone) {
         const searchLower = targetName.toLowerCase().trim();
 
-        // Exact or substring match
-        const matched = allContactRecords.find(c => 
-          c.name.toLowerCase() === searchLower ||
-          c.name.toLowerCase().includes(searchLower) || 
-          searchLower.includes(c.name.toLowerCase())
+        // 1. Exact match by name or username
+        let matched = allContactRecords.find(c => 
+          c.name.toLowerCase() === searchLower || 
+          (c.username && c.username.toLowerCase() === searchLower)
         );
+
+        // 2. Word boundary / startswith match
+        if (!matched) {
+          matched = allContactRecords.find(c => {
+            const cLower = c.name.toLowerCase();
+            const words = cLower.split(/\s+/);
+            return words.includes(searchLower) || cLower.startsWith(searchLower) || searchLower.startsWith(cLower);
+          });
+        }
+
+        // 3. Substring match
+        if (!matched) {
+          matched = allContactRecords.find(c => 
+            c.name.toLowerCase().includes(searchLower) || 
+            searchLower.includes(c.name.toLowerCase())
+          );
+        }
 
         if (matched) {
           targetPhone = matched.phone;

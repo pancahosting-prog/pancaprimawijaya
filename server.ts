@@ -122,12 +122,23 @@ async function startServer() {
   });
 
   app.post("/api/wa-notif/execute-command", async (req, res) => {
-    const { command, superadminName, providedContacts } = req.body;
-    if (!command || !command.trim()) {
-      return res.status(400).json({ success: false, error: "Perintah tidak boleh kosong." });
+    try {
+      const { command, superadminName, providedContacts } = req.body || {};
+      if (!command || !command.trim()) {
+        return res.status(400).json({ success: false, error: "Perintah tidak boleh kosong." });
+      }
+      const result = await waNotifService.executeRemoteCommand(command, superadminName, providedContacts || []);
+      return res.json(result);
+    } catch (err: any) {
+      console.error("[server] execute-command error:", err);
+      return res.status(500).json({
+        success: false,
+        error: err.message || "Gagal memproses perintah WhatsApp Notifikasi di server.",
+        targetName: "Error",
+        targetPhone: "-",
+        messageSent: ""
+      });
     }
-    const result = await waNotifService.executeRemoteCommand(command, superadminName, providedContacts || []);
-    res.json(result);
   });
 
   app.get("/api/wa-notif/settings", (_req, res) => {

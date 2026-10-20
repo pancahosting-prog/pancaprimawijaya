@@ -4796,6 +4796,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
         suppliers={suppliers}
         purchaseOrders={purchaseOrders}
         employees={employees}
+        appUsers={appUsers}
         setCustomers={setCustomers}
         setTransactions={setTransactions}
         syncToSupabase={syncToSupabase}

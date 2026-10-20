@@ -25,6 +25,7 @@ interface PancaMobileAppProps {
   suppliers?: any[];
   purchaseOrders?: any[];
   employees?: any[];
+  appUsers?: any[];
   setCustomers?: React.Dispatch<React.SetStateAction<any[]>>;
   setTransactions?: React.Dispatch<React.SetStateAction<any[]>>;
   setProducts?: React.Dispatch<React.SetStateAction<any[]>>;
@@ -45,6 +46,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
   suppliers = [],
   purchaseOrders = [],
   employees = [],
+  appUsers = [],
   setCustomers,
   setTransactions,
   setProducts,
@@ -157,6 +159,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
                 suppliers={suppliers}
                 purchaseOrders={purchaseOrders}
                 employees={employees}
+                appUsers={appUsers}
                 setCustomers={setCustomers}
                 setTransactions={setTransactions}
                 setProducts={setProducts}

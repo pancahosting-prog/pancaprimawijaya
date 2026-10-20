@@ -203,6 +203,7 @@ interface PancaAIChatViewProps {
   suppliers?: any[];
   purchaseOrders?: any[];
   employees?: any[];
+  appUsers?: any[];
   setCustomers?: React.Dispatch<React.SetStateAction<any[]>>;
   setTransactions?: React.Dispatch<React.SetStateAction<any[]>>;
   setProducts?: React.Dispatch<React.SetStateAction<any[]>>;
@@ -240,6 +241,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   suppliers = [],
   purchaseOrders = [],
   employees = [],
+  appUsers = [],
   setCustomers,
   setTransactions,
   setProducts,
@@ -896,11 +898,12 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     if (isRemoteWaCmd) {
       setIsLoading(true);
       try {
-        const providedContacts = [
-          ...(employees || []),
-          ...(customers || []),
-          ...(currentUser ? [currentUser] : [])
-        ];
+        const cleanContacts = [
+          ...(appUsers || []).map((u: any) => ({ name: u.nama || u.username, username: u.username, phone: u.whatsapp || u.phone || u.no_hp || u.noWa })),
+          ...(employees || []).map((e: any) => ({ name: e.nama || e.username || e.name, username: e.username, phone: e.whatsapp || e.phone || e.no_hp || e.noWa })),
+          ...(customers || []).map((c: any) => ({ name: c.nama || c.perusahaan || c.pic, phone: c.whatsapp || c.phone || c.no_hp })),
+          ...(currentUser ? [{ name: currentUser.nama || currentUser.username, username: currentUser.username, phone: (currentUser as any).whatsapp || '' }] : [])
+        ].filter(c => c.name && c.phone);
 
         const res = await fetch('/api/wa-notif/execute-command', {
           method: 'POST',
@@ -908,11 +911,27 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           body: JSON.stringify({
             command: query.trim(),
             superadminName: currentUser?.nama || 'Superadmin',
-            providedContacts
+            providedContacts: cleanContacts
           })
         });
 
-        const data = await res.json();
+        let data: any = null;
+        try {
+          const rawText = await res.text();
+          data = rawText ? JSON.parse(rawText) : null;
+        } catch (parseErr) {
+          console.warn("[PancaAIChatView] Non-JSON response:", parseErr);
+        }
+
+        if (!data) {
+          data = {
+            success: false,
+            error: res.status !== 200 
+              ? `Server merespons status ${res.status}. Pastikan server backend sedang aktif.`
+              : 'Respon server kosong atau tidak dapat dibaca sebagai JSON.'
+          };
+        }
+
         let contentText = "";
 
         if (data.success) {
