@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy package files first for efficient caching
 COPY package*.json ./
 
-# Install all required dependencies
-RUN npm install
+# Install all required dependencies with legacy peer deps for React 19 compatibility
+RUN npm install --legacy-peer-deps
 
 # Copy application source code
 COPY . .
