@@ -2,7 +2,6 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-ENV NODE_ENV=production
 ENV PORT=3000
 
 # Install CA certificates and curl for secure outbound API calls (WhatsApp, Supabase, Gemini)
@@ -14,14 +13,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy package files first for efficient caching
 COPY package*.json ./
 
-# Install all required dependencies with legacy peer deps for React 19 compatibility
-RUN npm install --legacy-peer-deps
+# Install all dependencies including build tools
+RUN npm install --legacy-peer-deps --include=dev
 
 # Copy application source code
 COPY . .
 
 # Build frontend assets to dist/
 RUN npm run build
+
+# Switch to production environment for runtime
+ENV NODE_ENV=production
 
 # Create session directories for WhatsApp Baileys connections
 RUN mkdir -p /app/wa-notif-session /app/wa-session /app/wa-company-session
