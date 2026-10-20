@@ -2709,6 +2709,60 @@ AI telah mengekstrak parameter data sesuai Form Asli MyPanca:
       }
     }
 
+    // 2.5. Check if command is a Remote Superadmin WhatsApp Command (e.g. "kirim pesan ke maria: tolong followup cust A")
+    const isRemoteWaCmd = isSuperAdmin && (
+      lowerUser.includes('kirim pesan ke') || 
+      lowerUser.includes('kirim wa ke') || 
+      lowerUser.includes('kirim whatsapp ke') || 
+      lowerUser.includes('kirim notifikasi ke') ||
+      (lowerUser.startsWith('kirim pesan') && lowerUser.includes(' ke ')) ||
+      (lowerUser.startsWith('kirim wa') && lowerUser.includes(' ke '))
+    );
+
+    if (isRemoteWaCmd) {
+      setIsLoading(true);
+      try {
+        const res = await fetch('/api/wa-notif/execute-command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            command: userText,
+            superadminName: currentUser?.nama || 'Superadmin'
+          })
+        });
+
+        const data = await res.json();
+        let contentText = "";
+
+        if (data.success) {
+          contentText = `### 📱 Eksekusi Perintah Remote Command Gateway\n\nPerintah WhatsApp instan Anda berhasil dieksekusi oleh AI Assistant:\n\n| Parameter Eksekusi | Detail Terbaca |\n|---|---|\n| **📱 Perangkat Eksekutor** | **WhatsApp Notifikasi (Perangkat 2)** |\n| **👤 Penerima Pesan** | **${data.targetName}** (\`${data.targetPhone}\`) |\n| **💬 Isi Pesan Dikirim** | "${data.messageSent}" |\n| **⚡ Status Pengiriman** | ✅ **BERHASIL TERKIRIM** |\n\n---\n✅ Pesan telah dikirimkan secara langsung dari nomor WhatsApp Notifikasi sistem.`;
+        } else {
+          contentText = `### ⚠️ Eksekusi Remote Command Gateway Terkendala\n\nPerintah pengiriman WhatsApp belum dapat diselesaikan:\n\n- **Tujuan Kontak**: **${data.targetName || 'Penerima'}** (${data.targetPhone || '-'})\n- **Pesan yang Dicoba**: "${data.messageSent || userText}"\n- **Penyebab Kendala**: ${data.error || 'Perangkat 2 (WhatsApp Notifikasi) belum terhubung atau nomor kontak tidak ditemukan.'}\n\n---\n💡 **Petunjuk**: Pastikan nomor HP kontak terdaftar di database sistem dan status WhatsApp Notifikasi (Perangkat 2) dalam posisi **Online/Connected** pada menu Pengaturan Aplikasi & Notifikasi.`;
+        }
+
+        const aiMsg: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: contentText,
+          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          isNew: true
+        };
+        setMessages(prev => [...prev, aiMsg]);
+      } catch (err: any) {
+        const errMsg: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `⚠️ **Gagal Mengeksekusi Remote Command**: ${err.message || 'Server API tidak merespons.'}`,
+          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          isNew: true
+        };
+        setMessages(prev => [...prev, errMsg]);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     // 3. Check if query is a conversational greeting / opening statement
     if (isConversationalGreeting(userText)) {
       const aiMessage: ChatMessage = {

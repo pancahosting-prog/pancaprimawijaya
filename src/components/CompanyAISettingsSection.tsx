@@ -110,14 +110,17 @@ export const CompanyAISettingsSection: React.FC<CompanyAISettingsSectionProps> =
     setIsLoadingStatus(true);
     try {
       const res = await fetch('/api/company-ai/status');
-      if (res.ok) {
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
         const data = await res.json();
-        setStatus({
-          connectionState: data.connectionState,
-          qrCodeBase64: data.qrCodeBase64,
-          userPhone: data.userPhone,
-          userName: data.userName
-        });
+        if (data && data.success !== false) {
+          setStatus({
+            connectionState: data.connectionState || 'disconnected',
+            qrCodeBase64: data.qrCodeBase64 || null,
+            userPhone: data.userPhone || null,
+            userName: data.userName || null
+          });
+        }
       }
     } catch (err) {
       console.error('Error fetching Company AI status:', err);
@@ -129,9 +132,10 @@ export const CompanyAISettingsSection: React.FC<CompanyAISettingsSectionProps> =
   const fetchSettings = async () => {
     try {
       const res = await fetch('/api/company-ai/settings');
-      if (res.ok) {
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
         const data = await res.json();
-        if (data.settings) {
+        if (data && data.settings) {
           setSettings(data.settings);
         }
       }
@@ -155,12 +159,13 @@ export const CompanyAISettingsSection: React.FC<CompanyAISettingsSectionProps> =
     setIsLoadingStatus(true);
     try {
       const res = await fetch('/api/company-ai/connect', { method: 'POST' });
-      if (res.ok) {
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
         const data = await res.json();
         setStatus(prev => ({
           ...prev,
-          connectionState: data.connectionState,
-          qrCodeBase64: data.qrCodeBase64
+          connectionState: data.connectionState || 'disconnected',
+          qrCodeBase64: data.qrCodeBase64 || null
         }));
       }
     } catch (err) {
@@ -171,7 +176,7 @@ export const CompanyAISettingsSection: React.FC<CompanyAISettingsSectionProps> =
   };
 
   const handleLogoutWA = async () => {
-    if (!confirm('Putuskan koneksi nomor WhatsApp AI Perusahaan ini?')) return;
+    if (!confirm('Putuskan koneksi nomor WhatsApp AI Perusahaan / Notifikasi ini?')) return;
     try {
       await fetch('/api/company-ai/logout', { method: 'POST' });
       fetchStatus();
@@ -195,15 +200,21 @@ export const CompanyAISettingsSection: React.FC<CompanyAISettingsSectionProps> =
         body: JSON.stringify(newWhitelister)
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSettings(data.settings);
-        setNewWhitelister({ name: '', phone: '', role: 'sales' });
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
+        const data = await res.json();
+        if (data.success && data.settings) {
+          setSettings(data.settings);
+          setNewWhitelister({ name: '', phone: '', role: 'sales' });
+        } else {
+          setWhitelistError(data.error || 'Gagal menambahkan ke whitelist.');
+        }
       } else {
-        setWhitelistError(data.error || 'Gagal menambahkan ke whitelist.');
+        setWhitelistError('Gagal menyambungkan ke server.');
       }
     } catch (err) {
       console.error('Error adding whitelist user:', err);
+      setWhitelistError('Terjadi kesalahan jaringan.');
     }
   };
 
@@ -215,9 +226,12 @@ export const CompanyAISettingsSection: React.FC<CompanyAISettingsSectionProps> =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
       });
-      if (res.ok) {
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
         const data = await res.json();
-        setSettings(data.settings);
+        if (data.settings) {
+          setSettings(data.settings);
+        }
       }
     } catch (err) {
       console.error('Error deleting whitelist item:', err);

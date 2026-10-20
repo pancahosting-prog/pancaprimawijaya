@@ -29,6 +29,7 @@ import KPIModule from './src/components/KPIModule';
 import { GeminiAIAssistant } from './src/components/GeminiAIAssistant';
 import { PancaMobileApp } from './src/components/panca-app/PancaMobileApp';
 import { GeminiSettingsSection } from './src/components/GeminiSettingsSection';
+import { WANotifSettingsSection } from './src/components/WANotifSettingsSection';
 import { WhatsAppView } from './src/components/WhatsAppView';
 import { callGeminiWithKeyRotation, loadGeminiSettingsFromDatabase } from './src/services/geminiKeyService';
 
@@ -6921,6 +6922,9 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                       <div className="max-w-4xl mx-auto space-y-6">
                           {/* Google Gemini AI Multi-Key & Auto-Rolling Configuration */}
                           <GeminiSettingsSection />
+
+                          {/* WhatsApp System Notification & AI Command Gateway */}
+                          <WANotifSettingsSection />
 
                           <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                               <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">

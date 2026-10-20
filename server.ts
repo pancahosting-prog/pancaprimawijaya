@@ -65,12 +65,79 @@ async function startServer() {
     }
   });
 
-  // WhatsApp Baileys Endpoints
+  // WhatsApp Baileys Endpoints (CS AI & Notification Engine)
   const { waService } = await import("./server/waService.ts");
+  const { waNotifService } = await import("./server/waNotifService.ts");
   const { supabaseServer } = await import("./server/supabaseServer.ts");
   
-  // Auto-initialize WhatsApp on server startup
-  waService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp failed:", err));
+  // Auto-initialize WhatsApp CS & WhatsApp Notifikasi on server startup
+  waService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp CS failed:", err));
+  waNotifService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp Notifikasi failed:", err));
+
+  // --- WhatsApp Notifikasi (Perangkat 2) Endpoints ---
+  app.get("/api/wa-notif/status", (_req, res) => {
+    const isExpired = waNotifService.qrExpired || (waNotifService.connectionState === "disconnected" && waNotifService.isQRExpired());
+    res.json({
+      success: true,
+      connectionState: waNotifService.connectionState,
+      qrCodeBase64: waNotifService.qrCodeBase64,
+      rawQrCodeBase64: waNotifService.qrCodeBase64,
+      qrTimestamp: waNotifService.qrTimestamp,
+      qrVersion: waNotifService.qrVersion,
+      qrExpired: isExpired && waNotifService.connectionState !== "connected",
+      userJid: waNotifService.userJid,
+      userPhone: waNotifService.userPhone,
+      userName: waNotifService.userName
+    });
+  });
+
+  app.post("/api/wa-notif/connect", async (req, res) => {
+    const force = req.query.force === "true" || req.body?.force === true;
+    await waNotifService.initBaileys(force);
+    const isExpired = waNotifService.qrExpired || (waNotifService.connectionState === "disconnected" && waNotifService.isQRExpired());
+    res.json({
+      success: true,
+      message: "Inisialisasi WhatsApp Notifikasi (Perangkat 2) dimulai.",
+      connectionState: waNotifService.connectionState,
+      qrCodeBase64: waNotifService.qrCodeBase64,
+      qrVersion: waNotifService.qrVersion,
+      qrTimestamp: waNotifService.qrTimestamp,
+      qrExpired: isExpired && waNotifService.connectionState !== "connected",
+      userPhone: waNotifService.userPhone
+    });
+  });
+
+  app.post("/api/wa-notif/logout", async (_req, res) => {
+    await waNotifService.disconnectSession();
+    res.json({ success: true, message: "Sesi WhatsApp Notifikasi berhasil diputuskan." });
+  });
+
+  app.post("/api/wa-notif/send", async (req, res) => {
+    const { phone, text } = req.body;
+    if (!phone || !text) {
+      return res.status(400).json({ success: false, error: "Nomor tujuan dan teks pesan diperlukan." });
+    }
+    const result = await waNotifService.sendMessage(phone, text);
+    res.json(result);
+  });
+
+  app.post("/api/wa-notif/execute-command", async (req, res) => {
+    const { command, superadminName } = req.body;
+    if (!command || !command.trim()) {
+      return res.status(400).json({ success: false, error: "Perintah tidak boleh kosong." });
+    }
+    const result = await waNotifService.executeRemoteCommand(command, superadminName);
+    res.json(result);
+  });
+
+  app.get("/api/wa-notif/settings", (_req, res) => {
+    res.json({ success: true, settings: waNotifService.notifSettings });
+  });
+
+  app.post("/api/wa-notif/settings", async (req, res) => {
+    const updated = await waNotifService.saveSettings(req.body);
+    res.json({ success: true, settings: updated });
+  });
 
   app.get("/api/wa/status", (_req, res) => {
     const isExpired = waService.qrExpired || (waService.connectionState === "disconnected" && waService.isQRExpired());

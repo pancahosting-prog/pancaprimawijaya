@@ -39,8 +39,10 @@ import {
   PlusCircle,
   Layers,
   Play,
-  UserCheck
+  UserCheck,
+  Bell
 } from 'lucide-react';
+import { WANotifDeviceTab } from './WANotifDeviceTab';
 import { 
   loadWAChatsFromSupabase, 
   saveWAChatToSupabase, 
@@ -182,7 +184,7 @@ export interface WAISettings {
 }
 
 interface WhatsAppViewProps {
-  initialSubTab?: 'chat' | 'setting-ai' | 'perangkat';
+  initialSubTab?: 'chat' | 'setting-ai' | 'perangkat' | 'perangkat-notif';
   currentUser?: {
     id?: string;
     nama?: string;
@@ -192,7 +194,7 @@ interface WhatsAppViewProps {
 }
 
 export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'chat', currentUser }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'chat' | 'setting-ai' | 'perangkat'>(initialSubTab);
+  const [activeSubTab, setActiveSubTab] = useState<'chat' | 'setting-ai' | 'perangkat' | 'perangkat-notif'>(initialSubTab);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const isSuperAdmin = currentUser?.role === 'superadmin' || currentUser?.role === 'admin';
 
@@ -1232,17 +1234,18 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
             <p className="text-[11px] text-zinc-400 dark:text-zinc-500 hidden sm:block">
               {activeSubTab === 'chat' && 'Percakapan pelanggan & interaksi pesan WhatsApp'}
               {activeSubTab === 'setting-ai' && 'Basis pengetahuan multi-kontainer, guardrails & instruksi AI'}
-              {activeSubTab === 'perangkat' && 'Status barcode QR & perangkat tertaut Baileys'}
+              {activeSubTab === 'perangkat' && 'Status barcode QR & perangkat tertaut CS AI (Perangkat 1)'}
+              {activeSubTab === 'perangkat-notif' && 'Sistem Notifikasi & Remote Command Gateway (Perangkat 2)'}
             </p>
           </div>
         </div>
 
-        {/* 3 Nav Tabs */}
-        <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl text-xs font-bold">
+        {/* 4 Nav Tabs */}
+        <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl text-xs font-bold overflow-x-auto custom-scrollbar">
           <button
             type="button"
             onClick={() => setActiveSubTab('chat')}
-            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeSubTab === 'chat'
                 ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
@@ -1260,28 +1263,41 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
           <button
             type="button"
             onClick={() => setActiveSubTab('setting-ai')}
-            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeSubTab === 'setting-ai'
                 ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
             <Bot size={14} />
-            <span>Knowledge & AI WhatsApp</span>
+            <span>Knowledge & AI CS</span>
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           </button>
 
           <button
             type="button"
             onClick={() => setActiveSubTab('perangkat')}
-            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeSubTab === 'perangkat'
                 ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
             <Smartphone size={14} />
-            <span>Perangkat (QR)</span>
+            <span>WA CS (Perangkat 1)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('perangkat-notif')}
+            className={`px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              activeSubTab === 'perangkat-notif'
+                ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+            }`}
+          >
+            <Bell size={14} />
+            <span>WA Notifikasi (Perangkat 2)</span>
           </button>
         </div>
       </div>
@@ -3158,6 +3174,11 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
               </div>
             )}
           </div>
+        )}
+
+        {/* SUB-TAB 4: PERANGKAT WA NOTIFIKASI (PERANGKAT 2) */}
+        {activeSubTab === 'perangkat-notif' && (
+          <WANotifDeviceTab />
         )}
       </div>
 
