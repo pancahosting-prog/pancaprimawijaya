@@ -42,6 +42,9 @@ interface Transaction {
   status?: string;
   paymentStatus?: string;
   statuses?: string[];
+  followUpDate?: string;
+  followUpMethod?: string;
+  followUps?: any[];
   companyId?: string;
   company_id?: string;
   createdAt?: string;
@@ -274,7 +277,14 @@ export const GeminiAIAssistant: React.FC<GeminiAIAssistantProps> = ({
     tasks: Task[];
     projects: Project[];
     drivePosts: DrivePost[];
-  }>({ tasks: [], projects: [], drivePosts: [] });
+  }>(() => {
+    let initialTasks: Task[] = [];
+    try {
+      const cached = localStorage.getItem('mypanca_cached_tasks');
+      if (cached) initialTasks = JSON.parse(cached);
+    } catch {}
+    return { tasks: initialTasks, projects: [], drivePosts: [] };
+  });
 
   // Fetch Task App data for SuperAdmin when AI assistant is opened
   useEffect(() => {
@@ -521,7 +531,18 @@ export const GeminiAIAssistant: React.FC<GeminiAIAssistantProps> = ({
     // Quotes / Penawaran tally (BRM)
     let totalQuotes = 0;
     let followedUpQuotes = 0;
-    const quoteList: { noTrx: string; customer: string; tanggal: string; total: number; followedUp: boolean; sales?: string }[] = [];
+    const quoteList: {
+      noTrx: string;
+      customer: string;
+      tanggal: string;
+      total: number;
+      followedUp: boolean;
+      nextFollowUpDate?: string;
+      nextFollowUpMethod?: string;
+      latestFollowUp?: string;
+      roadmapFollowUps?: string[];
+      sales?: string;
+    }[] = [];
 
     allowedTransactions.forEach(t => {
       const amt = getTrxAmount(t);
@@ -600,12 +621,19 @@ export const GeminiAIAssistant: React.FC<GeminiAIAssistantProps> = ({
         totalQuotes++;
         const hasFollowUp = Array.isArray((t as any).followUps) && (t as any).followUps.length > 0;
         if (hasFollowUp) followedUpQuotes++;
+        const fuArr = Array.isArray((t as any).followUps) ? (t as any).followUps : [];
+        const sortedFu = fuArr.slice().sort((a: any, b: any) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+        const latestFu = sortedFu[0];
         quoteList.push({
           noTrx: t.noTrx || t.id,
           customer: t.customerName || 'Pelanggan',
           tanggal: t.tanggal || '-',
           total: amt,
           followedUp: hasFollowUp,
+          nextFollowUpDate: t.followUpDate || 'Belum dijadwalkan',
+          nextFollowUpMethod: t.followUpMethod || '-',
+          latestFollowUp: latestFu ? `[${latestFu.tanggal || '-'}${latestFu.method ? ` via ${latestFu.method}` : ''}] ${latestFu.keterangan || ''}` : 'Belum ada catatan follow-up',
+          roadmapFollowUps: sortedFu.map((f: any) => `[${f.tanggal || '-'}${f.method ? ` via ${f.method}` : ''}] ${f.keterangan || '-'}`),
           sales: t.sales
         });
       }
@@ -831,8 +859,11 @@ ${agg.allowedCustomers.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-
 [MENU 3: BRM - PENAWARAN (QUOTATIONS) - TIDAK MASUK OMZET]
 * Total Penawaran: ${agg.totalQuotes} penawaran (${agg.followedUpQuotes} di-follow up, ${agg.totalQuotes - agg.followedUpQuotes} belum follow-up)
 * Total Nilai Penawaran Berjalan: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')} (*Hanya Prospek/Quotation - BUKAN OMZET REAL*)
-* Daftar Penawaran Terbaru:
-${agg.quoteList.slice(0, 10).map(q => `  - ${q.noTrx} | ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Status Follow-Up: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu Follow-Up'} (Nilai Penawaran Berjalan)`).join('\n') || '  (Tidak ada penawaran aktif)'}
+* Daftar Penawaran & Roadmap Follow-Up:
+${agg.quoteList.slice(0, 15).map(q => {
+  const fuRoadmap = q.roadmapFollowUps && q.roadmapFollowUps.length > 0 ? ` | Riwayat: [${q.roadmapFollowUps.join(' -> ')}]` : '';
+  return `  - ${q.noTrx} | Pelanggan: ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Sales: ${q.sales || '-'} | Next: ${q.nextFollowUpDate} (${q.nextFollowUpMethod}) | Latest: "${q.latestFollowUp}"${fuRoadmap}`;
+}).join('\n') || '  (Tidak ada penawaran aktif)'}
 
 [MENU 4: TRADE - TRANSAKSI REAL, PIPELINE & SALES]
 * Total Transaksi Real (Non-Penawaran, Non-Batal): ${agg.allowedTransactions.filter(t => !['Penawaran', 'Pesanan Batal'].includes(t.status || '')).length} transaksi (Omzet Penjualan Real: Rp ${agg.totalOmzetReal.toLocaleString('id-ID')}, Omzet Selesai/Lunas: Rp ${agg.totalOmzetLunas.toLocaleString('id-ID')})
@@ -1003,8 +1034,11 @@ ${agg.chronologicalMonthlyEntries.map(([period, data]) => {
       digest += `\n=== [MENU 10: KHUSUS SUPERADMIN - DATA TASK APP, PROYEK & DRIVE] ===\n`;
       digest += `* Total Task/Tugas: ${taskAppData.tasks.length} task (${taskAppData.tasks.filter(t => t.status === 'Selesai').length} Selesai, ${taskAppData.tasks.filter(t => t.status !== 'Selesai').length} Berjalan/Pending)\n`;
       digest += `* Daftar Task Aktif/Pending Terbaru:\n`;
-      taskAppData.tasks.slice(0, 25).forEach(t => {
-        digest += `  - [${t.priority || 'Medium'}] ${t.title} | Status: ${t.status} | Progress: ${t.progress || 0}% | Perusahaan: ${t.companyName || '-'} | Kategori: ${t.category || '-'} | Petugas: ${t.employeeName || t.owner || '-'} | Tgl: ${t.startDate || '-'} s/d ${t.endDate || '-'}\n`;
+      taskAppData.tasks.slice(0, 30).forEach(t => {
+        const logs = Array.isArray(t.logs) ? t.logs : [];
+        const sortedLogs = logs.slice().sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+        const logStr = sortedLogs.slice(0, 6).map((l: any) => `[${l.date || '-'}: ${l.status || 'Proses'} ${l.progress || 0}% - "${l.description || '-'}"`).join('; ');
+        digest += `  - [${t.priority || 'Medium'}] "${t.title}" | Status: ${t.status} | Progress: ${t.progress || 0}% | Perusahaan: ${t.companyName || '-'} | Kategori: ${t.category || '-'} | Petugas: ${t.employeeName || t.owner || '-'} | Tgl: ${t.startDate || '-'} s/d ${t.endDate || '-'}${logStr ? ` | Timeline Log: ${logStr}` : ''}\n`;
       });
 
       digest += `* Total Proyek Database: ${taskAppData.projects.length} proyek\n`;

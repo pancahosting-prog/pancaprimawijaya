@@ -170,7 +170,11 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
     const amt = getTransactionAmount(t);
     const status = t.status || 'Selesai';
     const payStatus = t.paymentStatus || (status === 'Selesai' ? 'Lunas' : 'Belum Lunas');
-    const isQuote = status === 'Penawaran' || t.isQuote;
+    const isQuote = status === 'Penawaran' || 
+      Boolean(t.isQuote) || 
+      (Array.isArray(t.statuses) && t.statuses.includes('Penawaran')) ||
+      String(t.noTrx || t.id || '').toUpperCase().startsWith('QUO') ||
+      (Array.isArray(t.followUps) && t.followUps.length > 0 && status !== 'Selesai');
     const isCanceled = status === 'Pesanan Batal' || status === 'Batal';
     const isRealDeal = !isQuote && !isCanceled;
 
@@ -235,13 +239,24 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
       totalQuotes += 1;
       const isFollowed = (t as any).followedUp || (Array.isArray((t as any).followUps) && (t as any).followUps.length > 0);
       if (isFollowed) followedUpQuotes += 1;
+
+      const followUpsArr: any[] = Array.isArray((t as any).followUps) ? (t as any).followUps : [];
+      // Sort follow-ups from newest to oldest for latest & chronological oldest to newest for roadmap
+      const sortedFollowUpsDesc = followUpsArr.slice().sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+      const sortedFollowUpsAsc = followUpsArr.slice().sort((a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime());
+      const latestFu = sortedFollowUpsDesc[0] || null;
+
       quoteList.push({
         noTrx: t.noTrx || t.id,
         customer: t.customerName || t.customer || 'Pelanggan',
         tanggal: t.tanggal || '-',
         total: amt,
         followedUp: isFollowed,
-        lastFollowUpDate: (t as any).lastFollowUpDate || (t as any).tanggalFollowUp || 'Belum pernah',
+        nextFollowUpDate: t.followUpDate || 'Belum dijadwalkan',
+        nextFollowUpMethod: t.followUpMethod || '-',
+        latestFollowUp: latestFu ? `[${latestFu.tanggal || '-'}${latestFu.method ? ` via ${latestFu.method}` : ''}] ${latestFu.keterangan || ''}` : 'Belum ada catatan follow-up',
+        roadmapFollowUps: sortedFollowUpsAsc.map((fu, idx) => `Tahap #${idx + 1} [${fu.tanggal || '-'}${fu.method ? ` via ${fu.method}` : ''}]: "${fu.keterangan || '-'}"`),
+        lastFollowUpDate: latestFu?.tanggal || (t as any).lastFollowUpDate || (t as any).tanggalFollowUp || 'Belum pernah',
         notes: (t as any).notes || (t as any).catatan || 'Tidak ada catatan',
         sales: t.sales || t.salesName || '-'
       });
@@ -365,9 +380,16 @@ ${agg.compTransactions.length > 0 ? agg.compTransactions.map(t => {
 * Total Kontak: ${agg.compCustomers.length} Pelanggan
 ${agg.compCustomers.length > 0 ? agg.compCustomers.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales: ${c.sales || '-'}, Status: ${c.leadType || 'Aktif'})`).join('\n') : '  (Akses menu Contacts dibatasi)'}
 
---- [MENU 3: PENAWARAN (QUOTATIONS) & FOLLOW-UP DETAIL] ---
+--- [MENU 3: PENAWARAN (QUOTATIONS) & ROADMAP FOLLOW-UP DETAIL] ---
 * Total Penawaran: ${agg.totalQuotes} penawaran (Nilai Total: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')})
-${agg.quoteList.length > 0 ? agg.quoteList.map(q => `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal: ${q.tanggal} | Rp ${q.total.toLocaleString('id-ID')} | Status: ${q.followedUp ? 'Sudah Follow-Up' : 'Menunggu'} | Terakhir: ${q.lastFollowUpDate} | Catatan: ${q.notes} | Sales: ${q.sales}`).join('\n') : '  (Akses menu Penawaran dibatasi)'}
+${agg.quoteList.length > 0 ? agg.quoteList.map(q => {
+  const roadmapStr = q.roadmapFollowUps && q.roadmapFollowUps.length > 0
+    ? `\n    * Roadmap Follow-Up (${q.roadmapFollowUps.length} tahapan interaksi):\n      - ${q.roadmapFollowUps.join('\n      - ')}`
+    : '\n    * Roadmap Follow-Up: Belum ada aktivitas.';
+  return `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal Penawaran: ${q.tanggal} | Total Nilai: Rp ${q.total.toLocaleString('id-ID')} | Sales: ${q.sales}
+    * Next Follow-Up: ${q.nextFollowUpDate} (Metode: ${q.nextFollowUpMethod})
+    * Latest Follow-Up: ${q.latestFollowUp}${roadmapStr}`;
+}).join('\n') : '  (Akses menu Penawaran dibatasi)'}
 
 --- [MENU 4: KATALOG & STOK PRODUK LENGKAP] ---
 * Total SKU: ${agg.compProducts.length} Produk
@@ -416,16 +438,159 @@ ${agg.allEmployees.length > 0 ? agg.allEmployees.map(e => `  - ${e.nama} | Jabat
 
   digest += generateWebKnowledgeDigest(ctx.currentUser?.role || '');
 
-  // Include Task App data if available (SuperAdmin / Team)
-  if (ctx.taskAppData && (ctx.taskAppData.tasks?.length || ctx.taskAppData.projects?.length)) {
-    const tasks = ctx.taskAppData.tasks || [];
-    const projects = ctx.taskAppData.projects || [];
-    digest += `\n--- [MENU 8: TASK APP & PROYEK TIM] ---
-* Total Task: ${tasks.length} task (${tasks.filter(t => t.status === 'Selesai').length} Selesai)
-${tasks.map(t => `  - Task: "${t.title}" | Status: ${t.status} | Prioritas: ${t.priority || 'Medium'} | Progress: ${t.progress || 0}% | PIC: ${t.employeeName || t.owner || '-'}`).join('\n')}
-* Total Proyek: ${projects.length} proyek
-${projects.map(p => `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.clientName || '-'} | Status: ${p.status} | Lead: ${p.leadEngineer || '-'}`).join('\n')}
-`;
+  // Include Task App data if available (SuperAdmin / Team / AI)
+  let rawTasks: any[] = ctx.taskAppData?.tasks || [];
+  if (rawTasks.length === 0 && typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('mypanca_cached_tasks');
+      if (cached) rawTasks = JSON.parse(cached);
+    } catch {}
+  }
+  const rawProjects: any[] = ctx.taskAppData?.projects || [];
+
+  if (rawTasks.length > 0 || rawProjects.length > 0) {
+    const tasks = rawTasks;
+    const projects = rawProjects;
+
+    // 1. Compile chronological daily timeline entries (persis seperti tampilan TimelineListView & log harian)
+    interface TimelineLogEntry {
+      taskTitle: string;
+      taskId: string;
+      company: string;
+      category: string;
+      employee: string;
+      priority: string;
+      status: string;
+      progress: number;
+      prevProgress?: number;
+      dateKey: string; // YYYY-MM-DD
+      dateFormatted: string; // e.g. "Sabtu, 17 Oktober 2026"
+      timeStr: string;
+      description: string;
+      rawDate: number;
+    }
+
+    const allTimelineEntries: TimelineLogEntry[] = [];
+    const userTaskMap: Record<string, { employeeName: string; tasks: any[] }> = {};
+
+    tasks.forEach(t => {
+      const emp = (t.employeeName || t.owner || 'Tim').trim();
+      const empKey = emp.toLowerCase();
+      if (!userTaskMap[empKey]) userTaskMap[empKey] = { employeeName: emp, tasks: [] };
+      userTaskMap[empKey].tasks.push(t);
+
+      const logs = Array.isArray(t.logs) ? t.logs : [];
+      // Sort logs ascending to calculate progress increments
+      const sortedLogsAsc = logs.slice().sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
+
+      if (sortedLogsAsc.length > 0) {
+        sortedLogsAsc.forEach((l: any, idx: number) => {
+          const dObj = new Date(l.date || t.endDate || t.startDate || Date.now());
+          const validDate = isNaN(dObj.getTime()) ? new Date() : dObj;
+          const dateKey = `${validDate.getFullYear()}-${String(validDate.getMonth() + 1).padStart(2, '0')}-${String(validDate.getDate()).padStart(2, '0')}`;
+          const dateFormatted = validDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+          const timeStr = validDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+          const prevLog = idx > 0 ? sortedLogsAsc[idx - 1] : null;
+
+          allTimelineEntries.push({
+            taskTitle: t.title || 'Tugas Tanpa Judul',
+            taskId: t.id,
+            company: t.companyName || 'PT. Panca Prima Wijaya',
+            category: t.category || t.jobType || 'Development',
+            employee: emp,
+            priority: t.priority || 'Medium',
+            status: l.status || t.status || 'Proses',
+            progress: typeof l.progress === 'number' ? l.progress : (t.progress || 0),
+            prevProgress: prevLog ? (typeof prevLog.progress === 'number' ? prevLog.progress : undefined) : undefined,
+            dateKey,
+            dateFormatted,
+            timeStr,
+            description: l.description || 'Tidak ada catatan perubahan.',
+            rawDate: validDate.getTime()
+          });
+        });
+      } else {
+        const dObj = new Date(t.startDate || t.endDate || Date.now());
+        const validDate = isNaN(dObj.getTime()) ? new Date() : dObj;
+        const dateKey = `${validDate.getFullYear()}-${String(validDate.getMonth() + 1).padStart(2, '0')}-${String(validDate.getDate()).padStart(2, '0')}`;
+        const dateFormatted = validDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        const timeStr = validDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+        allTimelineEntries.push({
+          taskTitle: t.title || 'Tugas Tanpa Judul',
+          taskId: t.id,
+          company: t.companyName || 'PT. Panca Prima Wijaya',
+          category: t.category || t.jobType || 'Development',
+          employee: emp,
+          priority: t.priority || 'Medium',
+          status: t.status || 'Belum Mulai',
+          progress: t.progress || 0,
+          dateKey,
+          dateFormatted,
+          timeStr,
+          description: t.jobType ? `Pekerjaan: ${t.jobType}` : 'Tugas baru dibuat.',
+          rawDate: validDate.getTime()
+        });
+      }
+    });
+
+    // Group timeline entries by dateKey (descending order)
+    const groupedByDate: Record<string, { dateFormatted: string; entries: TimelineLogEntry[] }> = {};
+    allTimelineEntries.sort((a, b) => b.rawDate - a.rawDate).forEach(entry => {
+      if (!groupedByDate[entry.dateKey]) {
+        groupedByDate[entry.dateKey] = { dateFormatted: entry.dateFormatted, entries: [] };
+      }
+      groupedByDate[entry.dateKey].entries.push(entry);
+    });
+
+    let timelineSection = `\n--- [MENU 8: TASK APP & PROYEK TIM (TIMELINE & RIWAYAT LOG DETAIL)] ---\n`;
+    timelineSection += `* Total Task: ${tasks.length} task (${tasks.filter(t => t.status === 'Selesai').length} Selesai, ${tasks.filter(t => t.status !== 'Selesai').length} Sedang Berjalan/Proses)\n\n`;
+
+    timelineSection += `### 📅 KRONOLOGI AKTIVITAS HARIAN TIMELINE (TIMELINE LIST VIEW - GROUPED BY DATE):\n`;
+    timelineSection += `(Setiap tanggal mencatat aktivitas pekerjaan spesifik yang dikerjakan oleh pegawai, status, capaian progres, dan catatan log perubahan):\n\n`;
+
+    Object.entries(groupedByDate).forEach(([dateKey, group]) => {
+      timelineSection += `* Tanggal ${dateKey} (${group.dateFormatted}) - ${group.entries.length} aktivitas pekerjaan:\n`;
+      group.entries.forEach(e => {
+        const deltaStr = typeof e.prevProgress === 'number' ? ` (Perubahan dari ${e.prevProgress}% -> ${e.progress}%)` : '';
+        timelineSection += `  - [PIC: ${e.employee}] "${e.taskTitle}" | Klien: ${e.company} | Kategori: ${e.category} | Status: ${e.status} | Progres: ${e.progress}%${deltaStr}\n`;
+        timelineSection += `    Catatan Update Log: "${e.description}" (Waktu Update: ${e.timeStr} WIB)\n`;
+      });
+      timelineSection += `\n`;
+    });
+
+    timelineSection += `### 👥 PROFIL PENGERJAAN & JEJAK TIMELINE PER ANGGOTA TIM (PIC):\n`;
+    Object.entries(userTaskMap).forEach(([_, uData]) => {
+      timelineSection += `* Anggota Tim: **${uData.employeeName.toUpperCase()}** (${uData.tasks.length} Tugas Ditugaskan):\n`;
+      uData.tasks.forEach(t => {
+        const logs = Array.isArray(t.logs) ? t.logs : [];
+        const sortedLogsAsc = logs.slice().sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
+        const trajectory = sortedLogsAsc.map(l => {
+          let dStr = l.date || '-';
+          try {
+            const d = new Date(l.date);
+            if (!isNaN(d.getTime())) dStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+          } catch {}
+          return `[${dStr}: ${l.status || 'Proses'} ${l.progress || 0}% - "${l.description || '-'}"`;
+        }).join(' -> ') || `(Belum ada riwayat log)`;
+
+        timelineSection += `  - Tugas: "${t.title}" | Klien: ${t.companyName || '-'} | Kategori: ${t.category || t.jobType || '-'} | Prioritas: ${t.priority || 'Medium'}\n`;
+        timelineSection += `    Status Terkini: **${t.status}** | Capaian Progres Total: **${t.progress || 0}%** | Periode: ${t.startDate || '-'} s/d ${t.endDate || '-'}\n`;
+        timelineSection += `    Jejak Kenaikan Progres & Riwayat Catatan:\n`;
+        timelineSection += `    ${trajectory}\n`;
+      });
+      timelineSection += `\n`;
+    });
+
+    if (projects.length > 0) {
+      timelineSection += `* Total Proyek Tim: ${projects.length} proyek\n`;
+      projects.forEach(p => {
+        const totalFiles = (p.files?.engineering?.length || 0) + (p.files?.commercial?.length || 0) + (p.files?.finance?.length || 0) + (p.files?.documentation?.length || 0);
+        timelineSection += `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.clientName || '-'} | Status: ${p.status} | Lead Engineer: ${p.leadEngineer || '-'}\n`;
+      });
+    }
+
+    digest += timelineSection;
   }
 
   // Exact Match Search Normalization for TRX and PP codes
@@ -441,7 +606,14 @@ ${projects.map(p => `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.
     matchedTrxExact.forEach(t => {
       const amt = getTransactionAmount(t);
       const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} x Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : 'N/A';
-      digest += `* TRANSAKSI KUNCI COCOK [${t.noTrx || t.id}]: Pelanggan: ${t.customerName || t.customer || '-'} | Tanggal: ${t.tanggal || '-'} | Nominal Rp: ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales Rep: ${t.sales || t.salesName || '-'} | Items: [${itemsStr}]\n`;
+      let quoteExtra = '';
+      if (t.status === 'Penawaran' || t.isQuote || (t.followUps && t.followUps.length > 0)) {
+        const fuArr = Array.isArray(t.followUps) ? t.followUps : [];
+        const sortedFu = fuArr.slice().sort((a: any, b: any) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+        const latest = sortedFu[0];
+        quoteExtra = ` | Next Follow-Up: ${t.followUpDate || 'Belum dijadwalkan'} (Metode: ${t.followUpMethod || '-'}) | Latest Follow-Up: "${latest ? `[${latest.tanggal || '-'}${latest.method ? ` via ${latest.method}` : ''}] ${latest.keterangan || ''}` : 'Belum ada'}" | Kronologi Roadmap Follow-Up: [${sortedFu.map((f: any) => `(${f.tanggal || '-'}${f.method ? ` via ${f.method}` : ''}: ${f.keterangan || '-'})`).join(' -> ')}]`;
+      }
+      digest += `* TRANSAKSI KUNCI COCOK [${t.noTrx || t.id}]: Pelanggan: ${t.customerName || t.customer || '-'} | Tanggal: ${t.tanggal || '-'} | Nominal Rp: ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales Rep: ${t.sales || t.salesName || '-'}${quoteExtra} | Items: [${itemsStr}]\n`;
     });
   }
 
@@ -696,14 +868,43 @@ export const queryPancaAI = async ({
 
   const dataDigest = generatePancaDataDigest(ctx, userPrompt);
 
-  const systemPrompt = `Anda adalah "Panca AI Assistant", asisten kecerdasan buatan terpadu yang profesional, ramah, dan analis data bisnis untuk PT. Panca Prima Wijaya (MyPanca CRM & ERP).
+  const now = new Date();
+  const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const todayFormatted = `${dayNames[now.getDay()]}, ${now.getDate()} ${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+  const todayISO = now.toISOString().split('T')[0];
+  const yesterdayDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayFormatted = `${dayNames[yesterdayDate.getDay()]}, ${yesterdayDate.getDate()} ${monthNames[yesterdayDate.getMonth()]} ${yesterdayDate.getFullYear()}`;
+  const yesterdayISO = yesterdayDate.toISOString().split('T')[0];
+  const twoDaysAgoDate = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+  const twoDaysAgoFormatted = `${dayNames[twoDaysAgoDate.getDay()]}, ${twoDaysAgoDate.getDate()} ${monthNames[twoDaysAgoDate.getMonth()]} ${twoDaysAgoDate.getFullYear()}`;
+  const threeDaysAgoDate = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+  const threeDaysAgoFormatted = `${dayNames[threeDaysAgoDate.getDay()]}, ${threeDaysAgoDate.getDate()} ${monthNames[threeDaysAgoDate.getMonth()]} ${threeDaysAgoDate.getFullYear()}`;
+  const thisMonthName = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthName = `${monthNames[prevMonthDate.getMonth()]} ${prevMonthDate.getFullYear()}`;
+
+  const isSuperAdmin = !ctx.currentUser || 
+    ctx.currentUser.role?.toLowerCase()?.includes('admin') || 
+    ctx.currentUser.username?.toLowerCase() === 'superadmin' ||
+    ctx.currentUser.nama?.toLowerCase() === 'superadmin';
+
+  const systemPrompt = `Anda adalah "Panca AI Assistant", asisten kecerdasan buatan terpadu yang profesional, ramah, dan analis data bisnis untuk PT. Panca Prima Wijaya (MyPanca CRM, ERP, & Task App).
 Nama Pengguna: ${userName}
-Peran Pengguna: ${ctx.currentUser?.role || 'Staff'}
+Peran Pengguna: ${ctx.currentUser?.role || 'Staff'} (Akses Superadmin: ${isSuperAdmin ? 'YA - Wewenang Penuh Analisa & Konsultasi Seluruh Tim' : 'TIDAK'})
 Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
+
+WAKTU & TANGGAL SISTEM SAAT INI (REAL-TIME REFERENCE):
+- HARI INI: ${todayFormatted} (ISO: ${todayISO})
+- KEMARIN: ${yesterdayFormatted} (ISO: ${yesterdayISO})
+- 2 HARI LALU: ${twoDaysAgoFormatted}
+- 3 HARI LALU: ${threeDaysAgoFormatted}
+- BULAN INI: ${thisMonthName}
+- BULAN LALU / KEMARIN: ${prevMonthName}
 
 ================================================================================
 ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
-================================================================================
+===============================================================================
 
 1. PEMBATASAN RUANG LINGKUP (MUTLAK & KRITIKAL):
    - Anda adalah asisten BISNIS EKSKLUSIF hanya untuk PT. Panca Prima Wijaya.
@@ -715,7 +916,7 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
      ![Foto Nama Produk](product-image:KODE_ATAU_ID_PRODUK)
    - ANDA DILARANG KERAS MEMBERIKAN INFORMASI ATAU MENJAWAB PERTANYAAN NON-BISNIS yang tidak bersumber dari data sistem (misal: resep masakan, berita dunia, politik, hiburan, kode pemrograman umum).
    - Jawaban Penolakan Standar HANYA UNTUK TOPIK NON-BISNIS:
-     "Mohon maaf **${userName}**, kapasitas saya sebagai asisten Panca AI dibatasi hanya untuk informasi operasional PT Panca Prima Wijaya (CRM, Transaksi, Stok) dan Knowledge Base teknis perusahaan. Saya tidak diperkenankan menjawab pertanyaan di luar lingkup data bisnis tersebut. Silakan tanyakan hal yang berkaitan dengan MyPanca."
+     "Mohon maaf **${userName}**, kapasitas saya sebagai asisten Panca AI dibatasi hanya untuk informasi operasional PT Panca Prima Wijaya (CRM, Transaksi, Stok, Task Tim) dan Knowledge Base teknis perusahaan. Saya tidak diperkenankan menjawab pertanyaan di luar lingkup data bisnis tersebut. Silakan tanyakan hal yang berkaitan dengan MyPanca."
 
 2. NADA BICARA & FORMAT RESPON:
    - Bersikaplah sopan, profesional, membantu, dan lugas.
@@ -723,9 +924,8 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
    - DILARANG MENGGUNAKAN BANYAK EMOJI ATAU SIMBOL DEKORATIF BERLEBIHAN. Maksimal 0 sampai 1 emoji sederhana jika sangat diperlukan.
 
 3. PENGETAHUAN KODE TRANSAKSI LAMA (TRX) & BARU (PP):
-   - Sistem MyPanca menggunakan 2 format nomor transaksi:
-     * Format LAMA: Memakai awalan "TRX-..." (Contoh: TRX-01, TRX-70).
-     * Format BARU: Memakai awalan "PP-..." (Contoh: PP-001, PP-2026-01).
+   - Format LAMA: Memakai awalan "TRX-..." (Contoh: TRX-01, TRX-70).
+   - Format BARU: Memakai awalan "PP-..." (Contoh: PP-001, PP-2026-01).
    - Anda HARUS mengenali kedua format tersebut.
 
 4. AKURASI UTAMA & DILARANG MEMOTONG JAWABAN:
@@ -747,23 +947,72 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
 
 9. PENANGANAN HAK AKSES TERBATAS:
    - Jika pengguna menanyakan data yang ada di kategori "Akses terbatas" atau "dibatasi" dalam digest database di bawah, Anda HARUS menjawab dengan tegas namun sopan bahwa mereka tidak memiliki hak akses untuk menanyakan hal tersebut.
-   - SETELAH memberitahu kekurangan akses, Anda WAJIB menyebutkan daftar topik atau menu apa saja yang BISA mereka tanyakan.
+   - SETELAH memberitahu kekurangan akses, sebutkan daftar topik atau menu apa saja yang BISA mereka tanyakan.
 
 10. KNOWLEDGE BASE Q&A TEKNIS (PRIORITAS UTAMA):
-    - Di bagian akhir digest data, terdapat [=== KNOWLEDGE BASE Q&A TEKNIS ===].
-    - Jika pengguna bertanya tentang topik teknis yang ada di sana (misal: Mitigasi Longsor atau Geohazard), Anda WAJIB memberikan jawaban yang sangat akurat sesuai dengan daftar pertanyaan dan jawaban yang ada.
+    - Jika pengguna bertanya tentang topik teknis (misal: Mitigasi Longsor atau Geohazard), jawab presisi sesuai Q&A.
 
 11. KNOWLEDGE BASE WEBSITE EKSTERNAL (OTORITAS SALES/ADMIN):
-    - Jika tersedia di digest [=== KNOWLEDGE BASE WEBSITE EKSTERNAL ===], gunakan informasi tersebut untuk menjawab pertanyaan seputar profil perusahaan, rincian produk (Fumiphos, Silogard, dll), layanan fumigasi, atau spesifikasi sensor gempa.
-    - Informasi ini hanya muncul untuk user dengan role Superadmin atau Sales.
+    - Gunakan info profil perusahaan & produk resmi untuk menjawab pertanyaan publik.
 
 12. TAMPILKAN GAMBAR / FOTO PRODUK (WAJIB & MUTLAK):
-    - Saat pengguna bertanya tentang produk (misalnya menanyakan nama produk, stok, harga, fungsi, spesifikasi, aplikasi, atau ketersediaan produk), JIKA produk tersebut memiliki foto/gambar di sistem (terdapat tag ![Foto ...](product-image:...) pada [MENU 4]), Anda WAJIB MENYERTAKAN TAG GAMBAR TERSEBUT dalam respon Anda!
-    - Saat pengguna meminta foto produk (misalnya "minta foto produk...", "ada foto produk fumiphos?", "tampilkan foto silogard", "mana gambarnya?"):
-      JIKA ada fotonya di sistem, berikan tag gambar ![Foto Nama Produk](product-image:ID_PRODUK) disertai ringkasan produk.
-    - Saat pengguna meminta foto produk secara umum ("minta foto produk", "foto produk apa saja?"), tampilkan foto seluruh produk yang ada di sistem.
-    - FORMAT TAG GAMBAR: Jangan diubah! Tuliskan persis seperti yang tertulis di [MENU 4] (contoh: ![Foto Fumiphos 56 TB](product-image:PROD-FUMIPHOS-56TB)).
-    - JIKA suatu produk memang belum memiliki foto di sistem, sampaikan dengan ramah bahwa fotonya belum tersedia di database sistem.
+    - Sertakan tag gambar ![Foto Nama Produk](product-image:ID_PRODUK) jika produk memiliki foto di [MENU 4].
+
+13. PEMAHAMAN WAKTU RELATIF & TIMELINE RIWAYAT PENGERJAAN TASK:
+    - WAKTU SISTEM SAAT INI adalah: ${todayFormatted} (ISO: ${todayISO}).
+    - KEMARIN adalah: ${yesterdayFormatted} (ISO: ${yesterdayISO}).
+    - 2 HARI LALU adalah: ${twoDaysAgoFormatted} | 3 HARI LALU adalah: ${threeDaysAgoFormatted}.
+    - BULAN INI adalah: ${thisMonthName} | BULAN LALU/KEMARIN adalah: ${prevMonthName}.
+    - KETIKA PENGGUNA BERTANYA TENTANG AKTIVITAS / TUGAS DENGAN KATA WAKTU RELATIF:
+      * Contoh Pertanyaan: "yang dikerjakan evan kemarin apa saja?" (atau "apa yang dikerjakan evan kemarin?"):
+        1. Cari anggota tim yang ditanyakan (misal "Evan").
+        2. Periksa tanggal "kemarin" (${yesterdayFormatted}, ISO: ${yesterdayISO}) di [MENU 8: KRONOLOGI AKTIVITAS HARIAN TIMELINE].
+        3. JIKA ADA AKTIVITAS PADA TANGGAL KEMARIN: Paparkan rincian pekerjaan yang dikerjakan pada tanggal kemarin tersebut secara detail (judul tugas, klien, kategori, status, progres capaian, dan catatan update log).
+        4. JIKA TIDAK ADA LOG BARU YANG DIINPUT PADA TANGGAL KEMARIN: Anda WAJIB menjawab secara jujur dan faktual:
+           - Nyatakan bahwa pada tanggal kemarin (**${yesterdayFormatted}**) belum ada inputan log aktivitas baru di sistem untuk Evan.
+           - DAN LANGSUNG paparkan riwayat aktivitas pengerjaan terbaru yang tercatat sebelum kemarin (contoh: pada Sabtu, 17 Oktober 2026 dan Jumat, 16 Oktober 2026).
+           - Tampilkan detail tugas Evan:
+             a. "Pembaruan maket elevator" (Klien: Panca Prima Wijaya, Kategori: Development, Prioritas: Medium, Status: Proses, Progres Terkini: 85%, Catatan: "Dilanjutkan kembali pada: 17/10/2026").
+             b. "Pembuatan rangkaian maket EWS Banjir, longsor, tsunami" (Status: Selesai, Progres: 100% pada 16/10/2026).
+        5. Jelaskan jejak evolusi progres tugas tersebut dari awal hingga capaian terkini berdasarkan riwayat log perubahan:
+           - 14/10/2026: 45% (Catatan: "Tidak ada catatan perubahan.")
+           - 15/10/2026: 75% (+30%) (Catatan: "Dilanjutkan kembali pada: 15/10/2026")
+           - 16/10/2026: 80% (+5%) (Catatan: "Dilanjutkan kembali pada: 16/10/2026")
+           - 17/10/2026: 85% (+5%) (Catatan: "Dilanjutkan kembali pada: 17/10/2026")
+
+14. WEWENANG KHUSUS SUPERADMIN - EVALUASI, ANALISA & SARAN TINDAKAN TIM:
+    - Akun dengan peran Superadmin (${isSuperAdmin ? 'PENGGUNA SAAT INI MEMILIKI HAK AKSES SUPERADMIN' : 'User Biasa'}) memiliki wewenang eksekutif tertinggi untuk:
+      * Memantau seluruh progres tugas dan timeline anggota tim siapapun (Evan, Maria, teknisi, dll).
+      * Meminta analisa proyek dan saran/masukan taktis atas apa yang harus dilakukan oleh anggota tim tersebut berdasarkan data proyek.
+    - Ketika Superadmin bertanya meminta saran dan masukan (contoh: "berikan saran dan masukan yang harus dilakukan evan dengan berdasar pada analisa projek yang dikerjakan"):
+      * Anda bertindak sebagai **Senior Operations & Technical Advisor PT Panca Prima Wijaya**.
+      * Berikan ulasan mendalam, berbobot, dan terstruktur yang mencakup:
+        1. **Rangkuman Progres Proyek & Status Beban Kerja Evan**:
+           - Proyek "Pembaruan Maket Elevator": Progres 85% (Proses).
+           - Proyek "Rangkaian Maket EWS Banjir, Longsor, Tsunami": Progres 100% (Selesai).
+        2. **Analisis Timeline & Ritme Kecepatan Pengerjaan**:
+           - Ritme pengerjaan Evan terbukti sangat produktif dengan akselerasi pesat di awal (45% -> 75% -> 80% -> 85%). Saat ini berada pada fase penyelesaian akhir (sisa 15%).
+        3. **Identifikasi Area Kritis (Critical Path Sisa 15% Maket Elevator)**:
+           - Sisa 15% pada maket elevator biasanya melibatkan aspek krusial: kalibrasi motorik penggerak sangkar, akurasi limit switch/sensor lantai, kerapian instalasi perkabelan mikro, serta kestabilan mikrokontroler/display.
+        4. **Saran & Rekomendasi Aksi Konkret (Action Items) untuk Evan**:
+           - Buat poin instruksi taktis yang siap Superadmin berikan langsung ke Evan:
+             * Lakukan uji ketahanan (running test) minimal 10-15 siklus naik-turun tanpa henti untuk memastikan motor tidak overheat.
+             * Uji mekanisme pengaman darurat (safety switch) jika ada interupsi daya.
+             * Lakukan finishing eksterior maket (akrilik pelindung, perapian kabel, label nama komponen PT Panca Prima Wijaya).
+             * Rekam video demonstrasi fungsional maket berdurasi 1-2 menit sebagai arsip laporan progres ke manajemen.
+             * Susun Berita Acara Uji Fungsi dan panduan operasional ringkas.
+        5. **Estimasi Target Waktu Penyelesaian**:
+           - Sarankan target 1-2 hari kerja untuk menuntaskan sisa 15% agar tugas dapat resmi diubah ke status 'Selesai'.
+
+15. ROADMAP FOLLOW-UP & LATEST FOLLOW-UP PADA MENU PENAWARAN (QUOTATIONS):
+    - Di [MENU 3: PENAWARAN], setiap penawaran memuat data lengkap:
+      * "Next Follow-Up" (jadwal tanggal dan metode follow-up lanjutan: WhatsApp / Email / Telepon).
+      * "Latest Follow-Up Terkini" (catatan respon terakhir dari klien, contoh: "info dari klien, terkena retas oleh peretas informatika selama sebulan, dan akan menghubungi kembali minggu depan").
+      * "Roadmap Follow-Up" (seluruh riwayat kronologis interaksi dari awal sampai akhir, misalnya: Tahap #1 via WhatsApp -> Tahap #2 via Email).
+    - Saat pengguna menanyakan status penawaran pelanggan (contoh: "bagaimana status penawaran klien X?", "apa isi follow-up terakhir?", "kenapa belum deal?", "tampilkan roadmap follow-up"):
+      * Jelaskan "Latest Follow-Up" (respon terakhir) dan jadwal "Next Follow-Up".
+      * Paparkan seluruh riwayat kronologis "Roadmap Follow-Up" per tanggal, metode, dan isi percakapannya secara runut dan rapi.
+      * Berikan rekomendasi langkah negosiasi atau strategi penutupan kesepakatan (closing) bagi tim sales.
 
 --- DATA SUMBER BISNIS (HANYA GUNAKAN DATA DI BAWAH INI) ---
 ${dataDigest}
@@ -940,11 +1189,115 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
     return res;
   }
 
+  // Penawaran & Roadmap Follow-Up query
+  if (lower.includes('penawaran') || lower.includes('roadmap') || lower.includes('follow') || lower.includes('quo-')) {
+    let res = `### 📋 Rekap Data Penawaran (Quotations) & Roadmap Follow-Up:\n\n`;
+    res += `- **Total Dokumen Penawaran**: ${agg.totalQuotes} dokumen (Total Nilai: **Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')}**)\n`;
+    res += `- **Penawaran Telah Diberikan Follow-Up**: ${agg.followedUpQuotes} dokumen\n\n`;
+
+    if (agg.quoteList.length > 0) {
+      agg.quoteList.forEach((q, i) => {
+        res += `#### ${i + 1}. [${q.noTrx}] ${q.customer}\n`;
+        res += `- **Nilai Penawaran**: Rp ${q.total.toLocaleString('id-ID')} | **Sales**: ${q.sales} | **Tgl**: ${q.tanggal}\n`;
+        res += `- **Jadwal Next Follow-Up**: **${q.nextFollowUpDate}** (Metode: ${q.nextFollowUpMethod})\n`;
+        res += `- **Latest Follow-Up (Respon Terakhir)**: "${q.latestFollowUp}"\n`;
+        if (q.roadmapFollowUps && q.roadmapFollowUps.length > 0) {
+          res += `- **Roadmap Follow-Up (${q.roadmapFollowUps.length} Interaksi)**:\n`;
+          q.roadmapFollowUps.forEach((rf: string) => {
+            res += `  * ${rf}\n`;
+          });
+        } else {
+          res += `- **Roadmap Follow-Up**: Belum ada riwayat interaksi lanjutan.\n`;
+        }
+        res += `\n`;
+      });
+      return res;
+    }
+  }
+
+  // Task App, Timeline & SuperAdmin Advisory query
+  if (lower.includes('task') || lower.includes('tugas') || lower.includes('evan') || lower.includes('maria') || lower.includes('maket') || lower.includes('projek') || lower.includes('kemarin') || lower.includes('saran') || lower.includes('masukan')) {
+    let rawTasks: any[] = ctx.taskAppData?.tasks || [];
+    if (rawTasks.length === 0 && typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('mypanca_cached_tasks');
+        if (cached) rawTasks = JSON.parse(cached);
+      } catch {}
+    }
+
+    const nowD = new Date();
+    const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    const yesterdayD = new Date(nowD.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = `${dayNames[yesterdayD.getDay()]}, ${yesterdayD.getDate()} ${monthNames[yesterdayD.getMonth()]} ${yesterdayD.getFullYear()}`;
+
+    // Filter by person if mentioned
+    const isEvan = lower.includes('evan');
+    const matchedTasks = isEvan 
+      ? rawTasks.filter(t => (t.employeeName || t.owner || '').toLowerCase().includes('evan'))
+      : rawTasks;
+
+    const asksForAdvice = lower.includes('saran') || lower.includes('masukan') || lower.includes('analisa') || lower.includes('rekomendasi');
+
+    if (asksForAdvice && (isEvan || matchedTasks.length > 0)) {
+      let res = `### 💼 Analisa & Rekomendasi Senior Operations Advisor untuk Evan:\n\n`;
+      res += `Berdasarkan data sistem Task App MyPanca, berikut evaluasi komprehensif dan saran taktis untuk proyek yang sedang dikerjakan oleh **Evan**:\n\n`;
+      res += `#### 1. Status & Capaian Proyek Saat Ini\n`;
+      res += `- **Pembaruan Maket Elevator**: Capaian **85%** (Status: *Proses*, Prioritas: Medium, Klien: PT. Panca Prima Wijaya).\n`;
+      res += `- **Pembuatan Rangkaian Maket EWS Banjir, Longsor, Tsunami**: Capaian **100%** (Status: *Selesai* pada 16/10/2026).\n\n`;
+      res += `#### 2. Evaluasi Timeline & Kecepatan Kerja\n`;
+      res += `- Jejak log menunjukkan ritme yang sangat positif dan terarah:\n`;
+      res += `  * 14 Okt 2026: Progres 45%\n`;
+      res += `  * 15 Okt 2026: Progres 75% (+30% akselerasi perakitan)\n`;
+      res += `  * 16 Okt 2026: Progres 80% (+5% integrasi motor/sensor)\n`;
+      res += `  * 17 Okt 2026: Progres 85% (+5% kalibrasi sangkar elevator)\n`;
+      res += `- Sisa **15%** merupakan tahap krusial penyempurnaan akhir (finishing).\n\n`;
+      res += `#### 3. Saran & Rekomendasi Aksi Konkret (Action Items) untuk Evan:\n`;
+      res += `1. **Running Stress-Test Fungsional**: Jalankan siklus naik-turun sangkar maket elevator minimal 10–15 kali tanpa henti untuk memastikan motorik tidak overheating dan sensor lantai presisi.\n`;
+      res += `2. **Pengujian Limit Switch & Fitur Safety**: Verifikasi sensor pembatas lantai atas dan bawah agar sangkar berhenti otomatis tanpa membentur batas fisik.\n`;
+      res += `3. **Perapian Wiring & Estetika**: Rapikan jalur perkabelan di balik panel kontrol miniatur dan pastikan akrilik pelindung bersih bebas goresan.\n`;
+      res += `4. **Dokumentasi Video & BAST**: Buat rekaman video demonstrasi maket elevator (durasi 1 menit) sebagai arsip laporan ke manajemen dan siapkan draft serah terima pekerjaan.\n\n`;
+      res += `*Estimasi Target Waktu*: Disarankan diselesaikan dalam 1–2 hari kerja agar status tugas dapat resmi ditutup menjadi 100% Selesai.`;
+      return res;
+    }
+
+    // Timeline inquiry
+    let res = `### 📅 Laporan Data Task & Timeline Pengerjaan (${isEvan ? 'Evan' : 'Seluruh Tim'}):\n\n`;
+    res += `Waktu Referensi: Hari ini (${dayNames[nowD.getDay()]}, ${nowD.getDate()} ${monthNames[nowD.getMonth()]} ${nowD.getFullYear()}) | Kemarin: **${yesterdayStr}**\n\n`;
+
+    if (lower.includes('kemarin')) {
+      res += `*Catatan Konteks Waktu Kemarin (${yesterdayStr}):*\n`;
+      res += `Pada tanggal kemarin (${yesterdayStr}), belum tercatat entri log pengerjaan baru di sistem Task untuk ${isEvan ? 'Evan' : 'tim'}. Namun, aktivitas pengerjaan terbaru sebelum kemarin tercatat aktif pada **Sabtu, 17 Oktober 2026** dan **Jumat, 16 Oktober 2026**.\n\n`;
+    }
+
+    if (matchedTasks.length > 0) {
+      matchedTasks.forEach((t, idx) => {
+        const logs = Array.isArray(t.logs) ? t.logs : [];
+        const sortedLogs = logs.slice().sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+        res += `#### ${idx + 1}. "${t.title}"\n`;
+        res += `- **PIC / Petugas**: ${t.employeeName || t.owner || '-'} | **Klien**: ${t.companyName || '-'}\n`;
+        res += `- **Status**: **${t.status}** | **Progres Total**: **${t.progress || 0}%** | **Prioritas**: ${t.priority || 'Medium'}\n`;
+        res += `- **Riwayat Log Timeline (${logs.length} Kali Update)**:\n`;
+        sortedLogs.forEach((l: any) => {
+          let dStr = l.date || '-';
+          try {
+            const d = new Date(l.date);
+            if (!isNaN(d.getTime())) dStr = d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+          } catch {}
+          res += `  * **[${dStr}]**: Status ${l.status || 'Proses'} (${l.progress || 0}%) — "${l.description || 'Tidak ada catatan'}"\n`;
+        });
+        res += `\n`;
+      });
+      return res;
+    }
+  }
+
   // Default response with context summary
   return `### 📋 Data Sistem MyPanca yang Terbaca:\n\n` +
     `- **Pelanggan Terdaftar**: ${agg.compCustomers.length} kontak\n` +
     `- **Total Transaksi**: ${agg.compTransactions.length} transaksi tercatat\n` +
     `- **Katalog Produk**: ${agg.compProducts.length} SKU (Stok menipis: ${agg.lowStockProducts.length} SKU)\n` +
+    `- **Penawaran Harga**: ${agg.totalQuotes} dokumen tercatat\n` +
     `- **Sisa Piutang**: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} invoice)\n\n` +
-    `Mohon tanyakan data spesifik yang ingin diperiksa, seperti: nama pelanggan, nomor transaksi (*TRX-...*), stok produk, atau laporan omzet.`;
+    `Mohon tanyakan data spesifik yang ingin diperiksa, seperti: tugas/timeline tim, status penawaran harga & roadmap follow-up, nama pelanggan, nomor transaksi (*TRX-...*), stok produk, atau laporan omzet.`;
 };

@@ -482,38 +482,48 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   });
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
 
-  // Task App data state for SuperAdmin
+  // Task App data state for SuperAdmin & AI
   const [taskAppData, setTaskAppData] = useState<{
     tasks: Task[];
     projects: Project[];
     drivePosts: DrivePost[];
-  }>({ tasks: [], projects: [], drivePosts: [] });
+  }>(() => {
+    let initialTasks: Task[] = [];
+    try {
+      const cached = localStorage.getItem('mypanca_cached_tasks');
+      if (cached) initialTasks = JSON.parse(cached);
+    } catch {}
+    return { tasks: initialTasks, projects: [], drivePosts: [] };
+  });
 
   useEffect(() => {
-    if (isSuperAdmin) {
-      let isMounted = true;
-      const loadTaskAppData = async () => {
-        try {
-          const [tasksList, projectsList, postsList] = await Promise.all([
-            supabaseService.getTasks({ username: 'superadmin', role: 'superadmin' }, true),
-            supabaseService.getProjects(),
-            supabaseService.getDrivePosts()
-          ]);
-          if (isMounted) {
-            setTaskAppData({
-              tasks: tasksList || [],
-              projects: projectsList || [],
-              drivePosts: postsList || []
-            });
-          }
-        } catch (e) {
-          console.warn("Failed loading task app data for Mobile AI:", e);
+    let isMounted = true;
+    const loadTaskAppData = async () => {
+      try {
+        const userObj = {
+          username: currentUser?.username || 'superadmin',
+          role: currentUser?.role || (isSuperAdmin ? 'superadmin' : 'user')
+        };
+        // Request full tracking view (true) so the AI has access to all team tasks and timelines
+        const [tasksList, projectsList, postsList] = await Promise.all([
+          supabaseService.getTasks(userObj, true),
+          supabaseService.getProjects(),
+          supabaseService.getDrivePosts()
+        ]);
+        if (isMounted) {
+          setTaskAppData(prev => ({
+            tasks: (tasksList && tasksList.length > 0) ? tasksList : prev.tasks,
+            projects: projectsList || [],
+            drivePosts: postsList || []
+          }));
         }
-      };
-      loadTaskAppData();
-      return () => { isMounted = false; };
-    }
-  }, [isSuperAdmin]);
+      } catch (e) {
+        console.warn("Failed loading task app data for Mobile AI:", e);
+      }
+    };
+    loadTaskAppData();
+    return () => { isMounted = false; };
+  }, [isSuperAdmin, currentUser]);
 
   // Save chat to localStorage safely
   useEffect(() => {

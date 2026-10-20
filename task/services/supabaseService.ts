@@ -79,29 +79,53 @@ export const supabaseService = {
 
   // --- Manajemen Tugas ---
   async getTasks(currentUser: { username: string; role: string }, isTrackingView: boolean = false) {
+    const isSuper = !currentUser || 
+      String(currentUser.role || '').toLowerCase().includes('admin') || 
+      String(currentUser.username || '').toLowerCase() === 'superadmin';
+
     // Join dengan task_logs untuk mendapatkan history lengkap
     let query = supabase.from('tasks').select('*, task_logs(*)');
     
     // Jika BUKAN tampilan tracking (artinya tampilan Kalender/Dashboard/List Pribadi)
     if (!isTrackingView) {
-      // Semua user (termasuk superadmin) hanya melihat tugas di mana mereka adalah OWNER atau COLLABORATOR
-      // Ini memastikan kalender superadmin tidak kotor oleh tugas yang ia tugaskan ke orang lain
-      query = query.or(`owner_username.eq.${currentUser.username},collaborators.cs.{${currentUser.username}}`);
-    } else {
-      // Jika INI ADALAH tampilan tracking dan dia superadmin, biarkan ambil semua (atau filter per target user di App.tsx)
-      if (currentUser.role !== 'superadmin') {
+      if (!isSuper) {
         query = query.or(`owner_username.eq.${currentUser.username},collaborators.cs.{${currentUser.username}}`);
       }
-      // Jika superadmin di view tracking, query tidak difilter di sini karena App.tsx akan memfilter berdasarkan targetUser
+    } else {
+      // Jika tampilan tracking / AI view, ambil semua jika superadmin/admin
+      if (!isSuper) {
+        query = query.or(`owner_username.eq.${currentUser.username},collaborators.cs.{${currentUser.username}}`);
+      }
     }
 
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) {
-      console.error('Error fetching tasks:', error);
+    try {
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) {
+        console.warn('Error fetching tasks from Supabase, attempting cache:', error);
+        if (typeof window !== 'undefined') {
+          const cached = localStorage.getItem('mypanca_cached_tasks');
+          if (cached) return JSON.parse(cached);
+        }
+        return [];
+      }
+      
+      const mapped = (data || []).map(t => mapTaskFromDB(t, t.task_logs));
+      if (mapped.length > 0 && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('mypanca_cached_tasks', JSON.stringify(mapped));
+        } catch {}
+      }
+      return mapped;
+    } catch (err) {
+      console.warn('Exception in getTasks, fallback to cache:', err);
+      if (typeof window !== 'undefined') {
+        try {
+          const cached = localStorage.getItem('mypanca_cached_tasks');
+          if (cached) return JSON.parse(cached);
+        } catch {}
+      }
       return [];
     }
-    
-    return data.map(t => mapTaskFromDB(t, t.task_logs));
   },
 
   async saveTask(task: Task, ownerUsername: string) {
