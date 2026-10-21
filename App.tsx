@@ -28,7 +28,6 @@ import TaskApp from './task/App';
 import KPIModule from './src/components/KPIModule';
 import { GeminiAIAssistant } from './src/components/GeminiAIAssistant';
 import { PancaMobileApp } from './src/components/panca-app/PancaMobileApp';
-import { SharedPostView } from './task/components/SharedPostView';
 import { GeminiSettingsSection } from './src/components/GeminiSettingsSection';
 import { WANotifSettingsSection } from './src/components/WANotifSettingsSection';
 import { WhatsAppView } from './src/components/WhatsAppView';
@@ -4944,27 +4943,6 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
             <div className="w-2 h-2 bg-zinc-900 dark:bg-zinc-100 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
             <div className="w-2 h-2 bg-zinc-900 dark:bg-zinc-100 rounded-full animate-bounce"></div>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Public Shared Drive Link Access (allows any user with the link to view without login)
-  const sharedDriveToken = typeof window !== 'undefined'
-    ? (new URLSearchParams(window.location.search).get('shareDrive') || new URLSearchParams(window.location.search).get('share_token'))
-    : null;
-
-  if (sharedDriveToken) {
-    return (
-      <div className="min-h-screen w-full bg-slate-900 flex items-center justify-center p-0 sm:p-4 font-sans">
-        <div className="w-full max-w-4xl h-screen sm:h-auto sm:max-h-[92vh] overflow-y-auto bg-white rounded-none sm:rounded-3xl shadow-2xl">
-          <SharedPostView
-            shareToken={sharedDriveToken}
-            onBackToApp={() => {
-              window.history.replaceState({}, document.title, window.location.pathname.startsWith('/app') ? '/app' : '/');
-              window.location.reload();
-            }}
-          />
         </div>
       </div>
     );
