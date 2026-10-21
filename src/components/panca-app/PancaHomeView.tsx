@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Bell, Search, ArrowRight, Sparkles, Send, User, FileText, 
-  Tag, BarChart3, Zap, Target, FileEdit, TrendingUp, LayoutGrid
+  Tag, BarChart3, Zap, Target, FileEdit, TrendingUp, LayoutGrid, MessageSquare
 } from 'lucide-react';
 
 interface PancaHomeViewProps {
