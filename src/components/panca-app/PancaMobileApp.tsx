@@ -5,14 +5,13 @@ import { PancaAIChatView } from './PancaAIChatView';
 import { PancaMessagesView } from './PancaMessagesView';
 import { PancaNotificationsView } from './PancaNotificationsView';
 import { PancaDriveView } from './PancaDriveView';
-import { PancaWhatsAppMobileView } from './PancaWhatsAppMobileView';
 import { SharedPostView } from '../../../task/components/SharedPostView';
 import { 
-  Bot, MessageSquare, Bell, HardDrive, ArrowLeft, Home as HomeIcon, LayoutGrid, Menu, MessageCircle
+  Bot, MessageSquare, Bell, HardDrive, ArrowLeft, Home as HomeIcon, LayoutGrid, Menu
 } from 'lucide-react';
 import { PWAInstallButton } from '../PWAInstallButton';
 
-export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file' | 'whatsapp';
+export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file';
 
 interface PancaMobileAppProps {
   currentUser?: {
@@ -150,12 +149,6 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
     </div>
   );
 
-  const isSalesOrSuperadmin = 
-    currentUser?.role === 'sales' || 
-    currentUser?.role === 'superadmin' || 
-    currentUser?.username === 'superadmin' ||
-    (currentUser?.role || '').toLowerCase().includes('admin');
-
   return (
     <div className="min-h-screen w-full bg-slate-900 dark:bg-zinc-950 flex items-center justify-center p-0 sm:p-4 font-sans select-none">
       {/* Mobile Screen Shell Frame */}
@@ -223,19 +216,8 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
                 <PancaNotificationsView 
                   currentUser={currentUser} 
                   onCountChange={setUnreadNotifCount}
-                  transactions={transactions}
-                  customers={customers}
                 />
               </div>
-            </div>
-          )}
-
-          {activeTab === 'whatsapp' && (
-            <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950">
-              <PancaWhatsAppMobileView 
-                currentUser={currentUser}
-                onBack={() => setActiveTab('home')}
-              />
             </div>
           )}
 
@@ -302,39 +284,23 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
               <span className={`text-[10px] ${activeTab === 'file' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Drive</span>
             </button>
 
-            {/* 4. WhatsApp (Khusus Sales & Superadmin) atau Lainnya (Untuk Role Lain) */}
-            {isSalesOrSuperadmin ? (
-              <button
-                onClick={() => setActiveTab('whatsapp')}
-                className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
-                  activeTab === 'whatsapp'
-                    ? 'text-emerald-600 dark:text-emerald-400 font-extrabold'
-                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-                }`}
-              >
-                <div className="p-1 rounded-xl">
-                  <MessageCircle className={`w-5 h-5 ${activeTab === 'whatsapp' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
-                </div>
-                <span className={`text-[10px] ${activeTab === 'whatsapp' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>WhatsApp</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => setActiveTab('notifikasi')}
-                className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
-                  activeTab === 'notifikasi' || activeTab === 'pesan'
-                    ? 'text-slate-900 dark:text-white font-extrabold'
-                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-                }`}
-              >
-                <div className="p-1 rounded-xl">
-                  <Menu className={`w-5 h-5 ${activeTab === 'notifikasi' || activeTab === 'pesan' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
-                </div>
-                {unreadNotifCount > 0 && (
-                  <span className="absolute top-1 right-3 w-2 h-2 bg-rose-500 rounded-full" />
-                )}
-                <span className={`text-[10px] ${activeTab === 'notifikasi' || activeTab === 'pesan' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Lainnya</span>
-              </button>
-            )}
+            {/* 4. Lainnya */}
+            <button
+              onClick={() => setActiveTab('notifikasi')}
+              className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                activeTab === 'notifikasi' || activeTab === 'pesan'
+                  ? 'text-slate-900 dark:text-white font-extrabold'
+                  : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+              }`}
+            >
+              <div className="p-1 rounded-xl">
+                <Menu className={`w-5 h-5 ${activeTab === 'notifikasi' || activeTab === 'pesan' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+              </div>
+              {unreadNotifCount > 0 && (
+                <span className="absolute top-1 right-3 w-2 h-2 bg-rose-500 rounded-full" />
+              )}
+              <span className={`text-[10px] ${activeTab === 'notifikasi' || activeTab === 'pesan' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Lainnya</span>
+            </button>
           </div>
         )}
       </div>

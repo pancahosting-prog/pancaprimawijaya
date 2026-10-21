@@ -2934,7 +2934,6 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
       // Group messages strictly by the responsible sales rep's phone number
       const salesMessages: Record<string, string[]> = {};
       const salesUpdateRecords: Record<string, { i: number, t: any, lastNotDate: string }[]> = {};
-      const superadminSystemNotifs: { taskId: string; title: string; message: string; priority: string }[] = [];
 
       for (let i = 0; i < newTransactions.length; i++) {
         const t = newTransactions[i];
@@ -2980,14 +2979,6 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
               salesMessages[targetPhone].push(message);
               salesUpdateRecords[targetPhone].push({ i, t, lastNotDate: `FU_${fuDateStr}` });
             }
-
-            // Simpan juga untuk notifikasi sistem Superadmin
-            superadminSystemNotifs.push({
-              taskId: t.noTrx || t.id,
-              title: `Pengingat Follow-up Penawaran (${t.noTrx})`,
-              message: `Customer: ${t.customerName}\nSales: ${salesName || '-'}\nTotal: ${formatRupiah(totalVal)}\nStatus: Belum di-follow-up selama ${diffDays} hari.`,
-              priority: 'high'
-            });
           }
         }
 
@@ -3019,14 +3010,6 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
               salesMessages[targetPhone].push(message);
               salesUpdateRecords[targetPhone].push({ i, t, lastNotDate: `DUE_${rawDue}` });
             }
-
-            // Simpan juga untuk notifikasi sistem Superadmin
-            superadminSystemNotifs.push({
-              taskId: t.noTrx || t.id,
-              title: `Peringatan Jatuh Tempo Piutang (${t.noTrx})`,
-              message: `Customer: ${t.customerName}\nSales: ${salesName || '-'}\nSisa Piutang: ${formatRupiah(t.sisaPembayaran || 0)}\nJatuh Tempo: ${rawDue} (${isOverdue ? 'Lewat Jatuh Tempo' : 'Jatuh Tempo Hari Ini'})`,
-              priority: 'high'
-            });
           }
         }
       }
@@ -3086,31 +3069,6 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
               });
             } catch (err) {
               console.error("Superadmin notify copy error:", err);
-            }
-          }
-        }
-      }
-
-      // Kirimkan notifikasi ke sistem internal Superadmin (agar muncul di notifikasi aplikasi dan bisa lihat detail transaksinya)
-      if (superadminSystemNotifs.length > 0) {
-        const superadminUsernames = Array.from(new Set([
-          'superadmin',
-          ...appUsers.filter(u => u.role === 'superadmin' || u.username === 'superadmin').map(u => u.username)
-        ])).filter(Boolean);
-
-        for (const notifItem of superadminSystemNotifs) {
-          for (const sUser of superadminUsernames) {
-            try {
-              await taskSupabaseService.sendNotification({
-                recipient_username: sUser,
-                type: 'alert',
-                taskId: notifItem.taskId,
-                title: notifItem.title,
-                message: notifItem.message,
-                priority: notifItem.priority
-              });
-            } catch (errNotif) {
-              console.warn("Gagal menyimpan notifikasi sistem superadmin:", errNotif);
             }
           }
         }
