@@ -93,17 +93,35 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
     setChatInput('');
   };
 
-  const tindakanCepat = [
+  const userRole = (currentUser?.role || '').toLowerCase();
+  const isSuperAdmin = !currentUser || userRole.includes('admin') || currentUser?.username?.toLowerCase() === 'superadmin' || currentUser?.nama?.toLowerCase() === 'superadmin';
+  const isSalesOrAdmin = isSuperAdmin || userRole === 'sales';
+
+  const tindakanCepat = isSalesOrAdmin ? [
+    { label: '📞 Followup', icon: MessageSquare, prompt: 'followup penawaran' },
     { label: 'Tambah Customer', icon: User, prompt: 'tambah customer baru' },
     { label: 'Transaksi Baru', icon: FileText, prompt: 'tambah transaksi baru' },
     { label: 'Penawaran Baru', icon: Tag, prompt: 'tambah penawaran baru' },
+    { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
+    { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
+    { label: '📊 Analisa Pekerjaan', icon: Target, prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
+  ] : [
+    { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
+    { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
+    { label: '📊 Analisa Pekerjaan', icon: Target, prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
   ];
 
-  const pilihanCepatAI = [
+  const pilihanCepatAI = isSalesOrAdmin ? [
+    {
+      title: '📞 Follow-up Penawaran',
+      desc: 'Pilih penawaran & catat hasil komunikasi follow-up terbaru',
+      icon: MessageSquare,
+      prompt: 'followup penawaran'
+    },
     {
       title: 'Tambah Customer Baru',
       desc: 'Input kontak & lead pelanggan ke database CRM',
-      icon: BarChart3,
+      icon: User,
       prompt: 'tambah customer baru'
     },
     {
@@ -115,14 +133,45 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
     {
       title: 'Penawaran Baru',
       desc: 'Input quotation harga penawaran untuk pelanggan',
-      icon: Zap,
+      icon: Tag,
       prompt: 'tambah penawaran baru'
     },
     {
-      title: 'Ringkasan Omzet Bisnis',
-      desc: 'Cek omzet real deals & performa sales',
+      title: '➕ Tambah Tugas Baru',
+      desc: 'Input pekerjaan / task baru ke sistem database',
+      icon: FileEdit,
+      prompt: 'tugas baru'
+    },
+    {
+      title: '🔄 Lanjutkan / Update Task',
+      desc: 'Pilih tugas aktif dan perbarui progress & log pengerjaan',
+      icon: Zap,
+      prompt: 'update task'
+    },
+    {
+      title: '📊 Analisa Pekerjaan AI',
+      desc: 'Analisis daftar tugas, urutan prioritas, dan tips penyelesaian',
       icon: Target,
-      prompt: 'Tolong buatkan ringkasan omzet dan performa penjualan saat ini.'
+      prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.'
+    }
+  ] : [
+    {
+      title: '➕ Tambah Tugas Baru',
+      desc: 'Input pekerjaan / task teknis baru ke database',
+      icon: FileEdit,
+      prompt: 'tugas baru'
+    },
+    {
+      title: '🔄 Lanjutkan / Update Task',
+      desc: 'Pilih tugas aktif dan perbarui progress & log pengerjaan',
+      icon: Zap,
+      prompt: 'update task'
+    },
+    {
+      title: '📊 Analisa Pekerjaan AI',
+      desc: 'Rekomendasi urutan prioritas tugas hari ini, strategi & tips efisiensi',
+      icon: Target,
+      prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.'
     }
   ];
 

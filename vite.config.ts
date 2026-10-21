@@ -18,14 +18,14 @@ export default defineConfig(({ mode }) => {
           registerType: 'autoUpdate',
           includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
           manifest: {
-            id: '/',
+            id: '/app',
             name: 'MyPanca CRM & AI Assistant',
             short_name: 'MyPanca',
             description: 'Sistem CRM Cerdas & Asisten AI Terpadu PT. Panca Prima Wijaya.',
             theme_color: '#0f172a',
             background_color: '#ffffff',
             display: 'standalone',
-            start_url: '/',
+            start_url: '/app',
             scope: '/',
             icons: [
               {

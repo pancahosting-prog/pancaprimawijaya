@@ -88,13 +88,15 @@ export const supabaseService = {
     
     // Jika BUKAN tampilan tracking (artinya tampilan Kalender/Dashboard/List Pribadi)
     if (!isTrackingView) {
-      if (!isSuper) {
-        query = query.or(`owner_username.eq.${currentUser.username},collaborators.cs.{${currentUser.username}}`);
-      }
+      const u = currentUser?.username || 'superadmin';
+      const n = currentUser?.nama || 'Superadmin';
+      query = query.or(`owner_username.eq.${u},employee_name.eq.${n},employee_name.eq.${u},collaborators.cs.{${u}}`);
     } else {
-      // Jika tampilan tracking / AI view, ambil semua jika superadmin/admin
+      // Jika tampilan tracking / AI view, ambil semua jika superadmin/admin, atau filter jika user biasa
       if (!isSuper) {
-        query = query.or(`owner_username.eq.${currentUser.username},collaborators.cs.{${currentUser.username}}`);
+        const u = currentUser?.username || 'user';
+        const n = currentUser?.nama || 'User';
+        query = query.or(`owner_username.eq.${u},employee_name.eq.${n},employee_name.eq.${u},collaborators.cs.{${u}}`);
       }
     }
 

@@ -4783,6 +4783,10 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
     );
   }
 
+  if (!isLoggedIn) {
+    return <Login onLogin={handleLogin} users={appUsers} dbStatus={dbStatus} dbError={dbError} />;
+  }
+
   if (isAppRoute) {
     const userPermissions = currentUser ? (roleTemplates[currentUser.role] || ROLE_TEMPLATES[currentUser.role] || []) : [];
     
@@ -4807,10 +4811,6 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
         qaQuestions={qaQuestions}
       />
     );
-  }
-
-  if (!isLoggedIn) {
-    return <Login onLogin={handleLogin} users={appUsers} dbStatus={dbStatus} dbError={dbError} />;
   }
 
   if (showTaskApp && currentUser) {

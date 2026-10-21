@@ -14,6 +14,8 @@ import { queryPancaAI, PancaAIContext, generateSmartDynamicFallback } from '../.
 import { SUPPORTED_GEMINI_MODELS } from '../../services/geminiKeyService';
 import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl, extractProductPhoto, hasDatabaseProductImage } from '../../services/pancaProductCatalog';
 import { safeSetLocalStorage, getApiUrl } from '../../lib/apiUtils';
+import TaskModal from '../../../task/components/TaskModal';
+import DayTaskPicker from '../../../task/components/DayTaskPicker';
 
 export interface DraftData {
   type: 'customer' | 'transaction' | 'penawaran';
@@ -277,6 +279,12 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     currentUser?.username?.toLowerCase() === 'superadmin' || 
     currentUser?.nama?.toLowerCase() === 'superadmin';
 
+  // Task Input & Update Modal States
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [selectedTaskForEdit, setSelectedTaskForEdit] = useState<Task | null>(null);
+  const [selectedLogIndex, setSelectedLogIndex] = useState<number>(-1);
+  const [isDayPickerOpen, setIsDayPickerOpen] = useState(false);
+
   // Live Database Products: combines props, LocalStorage, and direct Supabase database fetch
   const [effectiveProducts, setEffectiveProducts] = useState<any[]>(() => {
     if (products && products.length > 0) return products;
@@ -325,9 +333,9 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     'maria', 'yadi', 'superadmin', 'angel1', 'dwi1'
   ])).filter(Boolean);
 
-  // Active Session for guided multi-step form wizard (Customer, Transaksi, Penawaran)
+  // Active Session for guided multi-step form wizard (Customer, Transaksi, Penawaran, Task, Follow-up)
   const [activeSession, setActiveSession] = useState<{
-    type: 'customer' | 'transaction' | 'penawaran';
+    type: 'customer' | 'transaction' | 'penawaran' | 'task_new' | 'task_update' | 'followup';
     step: number;
     data: Record<string, any>;
   } | null>(null);
@@ -335,6 +343,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   // Search box states for interactive form wizards
   const [wizardCustSearch, setWizardCustSearch] = useState('');
   const [wizardProdSearch, setWizardProdSearch] = useState('');
+  const [wizardQuotationSearch, setWizardQuotationSearch] = useState('');
   const [wizardProdQty, setWizardProdQty] = useState(1);
 
   // Helper to update active form state dynamically
@@ -345,12 +354,192 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     } : null);
   };
 
-  // Helper to directly save CRM form input to state & Supabase
-  const handleDirectSaveFromForm = () => {
+  // Helper to directly save CRM & Task form input to state & Supabase
+  const handleDirectSaveFromForm = async () => {
     if (!activeSession) return;
     const { type, data } = activeSession;
     const isQuote = type === 'penawaran';
     const activeCompanyId = activeCompany?.id || '1';
+
+    if (type === 'task_new') {
+      const title = data.title?.trim() || 'Pekerjaan Baru';
+      const companyName = data.companyName?.trim() || 'PT. Panca Prima Wijaya';
+      const priority = data.priority || 'Medium';
+      const status = data.status || 'Belum Mulai';
+      const progress = Number(data.progress || 0);
+      const description = data.description?.trim() || 'Pekerjaan baru dibuat.';
+      const nowIso = new Date().toISOString();
+
+      const newTask: Task = {
+        id: `task_${Date.now()}`,
+        title,
+        companyName,
+        priority,
+        status,
+        progress,
+        jobType: 'Umum',
+        category: 'Pengembangan',
+        startDate: nowIso,
+        endDate: nowIso,
+        employeeName: currentUser?.nama || 'Superadmin',
+        owner_username: currentUser?.username || 'superadmin',
+        collaborators: [],
+        pendingCollaborators: [],
+        logs: [{
+          status,
+          progress,
+          date: nowIso,
+          description
+        }]
+      };
+
+      try {
+        const owner = currentUser?.username || 'superadmin';
+        await supabaseService.saveTask(newTask, owner);
+        
+        setTaskAppData(prev => {
+          const updated = [newTask, ...prev.tasks];
+          try { localStorage.setItem('mypanca_cached_tasks', JSON.stringify(updated)); } catch {}
+          return { ...prev, tasks: updated };
+        });
+
+        playTone(880, 0.2);
+
+        const successMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `### 📝 TUGAS BARU BERHASIL DISIMPAN KE DATABASE!\n\n| Field Tugas | Data Terdaftar |\n|---|---|\n| **Judul Pekerjaan** | **${newTask.title}** |\n| **Perusahaan / Klien** | **${newTask.companyName}** |\n| **Prioritas** | **${newTask.priority}** |\n| **Status Pengerjaan** | **${newTask.status}** |\n| **Progres Capaian** | **${newTask.progress}%** |\n| **Penanggung Jawab** | **${newTask.employeeName}** |\n| **Catatan Log Awal** | ${description} |\n\nData tugas telah tersimpan resmi ke Supabase & Task Tracker MyPanca! 🚀`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setMessages(prev => [...prev, successMsg]);
+      } catch (err) {
+        console.error("Gagal menyimpan task_new:", err);
+        alert("Gagal menyimpan tugas baru ke database. Silakan coba kembali.");
+      }
+      setActiveSession(null);
+      return;
+    }
+
+    if (type === 'task_update') {
+      const selectedTask = data.selectedTask;
+      if (!selectedTask) {
+        alert("Silakan pilih tugas yang ingin dilanjutkan terlebih dahulu.");
+        return;
+      }
+
+      const priority = data.priority || selectedTask.priority || 'Medium';
+      const status = data.status || selectedTask.status || 'Proses';
+      const progress = Number(data.progress !== undefined ? data.progress : selectedTask.progress || 85);
+      const description = data.description?.trim() || `Dilanjutkan pada: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+      const nowIso = new Date().toISOString();
+
+      const newLog = {
+        status,
+        progress,
+        date: nowIso,
+        description
+      };
+
+      const updatedLogs = [...(selectedTask.logs || []), newLog];
+
+      const updatedTask: Task = {
+        ...selectedTask,
+        priority,
+        status,
+        progress,
+        logs: updatedLogs
+      };
+
+      try {
+        const owner = currentUser?.username || 'superadmin';
+        await supabaseService.saveTask(updatedTask, owner);
+
+        setTaskAppData(prev => {
+          const idx = prev.tasks.findIndex(t => t.id === updatedTask.id);
+          let updatedList = [...prev.tasks];
+          if (idx >= 0) updatedList[idx] = updatedTask;
+          else updatedList.unshift(updatedTask);
+          try { localStorage.setItem('mypanca_cached_tasks', JSON.stringify(updatedList)); } catch {}
+          return { ...prev, tasks: updatedList };
+        });
+
+        playTone(880, 0.2);
+
+        const successMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `### 🔄 UPDATE LAPORAN TERKINI BERHASIL DISIMPAN!\n\n| Field Tugas | Detail Perubahan |\n|---|---|\n| **Judul Pekerjaan** | **${updatedTask.title}** |\n| **Perusahaan / Klien** | **${updatedTask.companyName}** |\n| **Prioritas** | **${updatedTask.priority}** |\n| **Status Pengerjaan** | **${updatedTask.status}** |\n| **Progres Capaian** | **${updatedTask.progress}%** |\n| **Deskripsi / Catatan** | ${description} |\n\nLog perubahan pekerjaan telah berhasil diperbarui dan tersimpan permanen di Supabase! 🚀`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setMessages(prev => [...prev, successMsg]);
+      } catch (err) {
+        console.error("Gagal update task:", err);
+        alert("Gagal memperbarui tugas ke database. Silakan coba kembali.");
+      }
+      setActiveSession(null);
+      return;
+    }
+
+    if (type === 'followup') {
+      const selectedQuotation = data.selectedQuotation;
+      if (!selectedQuotation) {
+        alert("Silakan pilih penawaran yang ingin di-followup terlebih dahulu.");
+        return;
+      }
+
+      const followUpDate = data.followUpDate || new Date().toISOString().split('T')[0];
+      const followUpMethod = data.followUpMethod || 'WhatsApp';
+      const keterangan = data.keterangan?.trim() || 'Follow-up penawaran';
+      const salesName = currentUser?.nama || selectedQuotation.sales || 'Sales';
+
+      const newFollowUpItem = {
+        tanggal: followUpDate,
+        method: followUpMethod,
+        keterangan: keterangan,
+        sales: salesName,
+        createdAt: new Date().toISOString()
+      };
+
+      const existingFollowUps = Array.isArray(selectedQuotation.followUps) ? selectedQuotation.followUps : [];
+      const updatedFollowUps = [newFollowUpItem, ...existingFollowUps];
+
+      const updatedQuotation = {
+        ...selectedQuotation,
+        followedUp: true,
+        followedUpDate: followUpDate,
+        followUpDate: followUpDate,
+        followUpMethod: followUpMethod,
+        latestFollowUp: `${followUpDate} - ${followUpMethod}: ${keterangan}`,
+        followUps: updatedFollowUps
+      };
+
+      try {
+        if (setTransactions) {
+          setTransactions(prev => prev.map(t => (t.id === selectedQuotation.id || t.noTrx === selectedQuotation.noTrx) ? updatedQuotation : t));
+        }
+        if (syncToSupabase) {
+          syncToSupabase('transactions', updatedQuotation);
+        }
+
+        playTone(880, 0.2);
+
+        const successMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `### 📞 FOLLOW-UP PENAWARAN BERHASIL DISIMPAN!\n\n| Detail Follow-up | Data Terdaftar |\n|---|---|\n| **No. Penawaran** | **${selectedQuotation.noTrx || selectedQuotation.id}** |\n| **Pelanggan** | **${selectedQuotation.customerName || selectedQuotation.customer || selectedQuotation.perusahaan || '-'}** |\n| **Tanggal Follow-up** | **${followUpDate}** |\n| **Metode Follow-up** | **${followUpMethod}** |\n| **Sales Officer** | **${salesName}** |\n| **Hasil / Keterangan** | ${keterangan} |\n\nData follow-up telah berhasil diperbarui dan tersimpan permanen di **Latest Follow-up** & **Roadmap Follow-up** Supabase! 🚀`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setMessages(prev => [...prev, successMsg]);
+      } catch (err) {
+        console.error("Gagal menyimpan follow-up:", err);
+        alert("Gagal menyimpan data follow-up ke database. Silakan coba kembali.");
+      }
+      setActiveSession(null);
+      return;
+    }
 
     if (type === 'customer') {
       const name = data.nama?.trim() || data.perusahaan?.trim() || 'Customer Baru';
@@ -524,6 +713,99 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     loadTaskAppData();
     return () => { isMounted = false; };
   }, [isSuperAdmin, currentUser]);
+
+  // Filter tasks visible to current user for updating tasks (always user's own tasks for Lanjutkan Task)
+  const userVisibleTasks = React.useMemo(() => {
+    const currentName = (currentUser?.nama || '').toLowerCase();
+    const currentUsername = (currentUser?.username || '').toLowerCase();
+    return taskAppData.tasks.filter(t => {
+      const emp = (t.employeeName || '').toLowerCase();
+      const owner = (t.owner_username || '').toLowerCase();
+      const isCollab = Array.isArray(t.collaborators) && t.collaborators.some(c => String(c).toLowerCase() === currentUsername || String(c).toLowerCase() === currentName);
+      return emp === currentName || emp === currentUsername || owner === currentUsername || owner === currentName || isCollab;
+    });
+  }, [taskAppData.tasks, currentUser]);
+
+  const handleOpenNewTaskModal = () => {
+    setWizardCustSearch('');
+    setActiveSession({
+      type: 'task_new',
+      step: 1,
+      data: {
+        title: '',
+        companyName: 'Panca Prima Wijaya',
+        priority: 'Medium',
+        status: 'Belum Mulai',
+        progress: 0,
+        description: ''
+      }
+    });
+  };
+
+  const handleOpenUpdateTaskPicker = () => {
+    setWizardCustSearch('');
+    setActiveSession({
+      type: 'task_update',
+      step: 1,
+      data: {
+        selectedTask: null,
+        priority: 'Medium',
+        status: 'Proses',
+        progress: 85,
+        description: ''
+      }
+    });
+  };
+
+  const handleSelectTaskFromPicker = (task: Task) => {
+    const latestLogIdx = task.logs && task.logs.length > 0 ? task.logs.length - 1 : -1;
+    setSelectedTaskForEdit(task);
+    setSelectedLogIndex(latestLogIdx >= 0 ? latestLogIdx : 0);
+    setIsDayPickerOpen(false);
+    setIsTaskModalOpen(true);
+  };
+
+  const handleSaveTaskFromModal = async (savedTask: Task) => {
+    try {
+      const owner = currentUser?.username || 'superadmin';
+      await supabaseService.saveTask(savedTask, owner);
+      
+      // Update local taskAppData immediately
+      setTaskAppData(prev => {
+        const existingIdx = prev.tasks.findIndex(t => t.id === savedTask.id);
+        let updatedTasksList = [...prev.tasks];
+        if (existingIdx >= 0) {
+          updatedTasksList[existingIdx] = savedTask;
+        } else {
+          updatedTasksList.unshift(savedTask);
+        }
+        try {
+          localStorage.setItem('mypanca_cached_tasks', JSON.stringify(updatedTasksList));
+        } catch {}
+        return { ...prev, tasks: updatedTasksList };
+      });
+
+      const isUpdate = Boolean(selectedTaskForEdit);
+      const latestLog = savedTask.logs && savedTask.logs.length > 0 ? savedTask.logs[savedTask.logs.length - 1] : null;
+
+      const confirmMsg = isUpdate
+        ? `✅ **Update Laporan Terkini Berhasil Disimpan!**\n\n📌 **Tugas:** ${savedTask.title}\n🏢 **Klien:** ${savedTask.companyName || '-'}\n📊 **Status:** ${savedTask.status} (${savedTask.progress}%)\n📝 **Catatan Log:** ${latestLog?.description || '-'}`
+        : `✅ **Tugas Baru Berhasil Ditambahkan!**\n\n📌 **Judul Pekerjaan:** ${savedTask.title}\n🏢 **Perusahaan/Klien:** ${savedTask.companyName || '-'}\n⚡ **Prioritas:** ${savedTask.priority}\n📊 **Status:** ${savedTask.status} (${savedTask.progress}%)`;
+
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: confirmMsg,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isNew: true
+      }]);
+    } catch (err) {
+      console.error("Gagal menyimpan task ke database:", err);
+      alert("Terjadi kendala saat menyimpan data task. Silakan coba kembali.");
+    } finally {
+      setIsTaskModalOpen(false);
+    }
+  };
 
   // Save chat to localStorage safely
   useEffect(() => {
@@ -748,10 +1030,30 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
   const handleCommandOrIntent = (text: string): { responseText: string; draftData?: DraftData; nextSession?: typeof activeSession } | null => {
     const lower = text.toLowerCase().trim();
+    if (lower.includes('tugas baru') || lower.includes('input task') || lower.includes('tambah task') || lower.includes('buat task') || lower.includes('input tugas') || lower.includes('tambah tugas')) {
+      handleOpenNewTaskModal();
+      return {
+        responseText: '### 📝 Formulir Tugas Baru\n\nFormulir Tugas Baru telah dibuka. Silakan lengkapi detail pekerjaan pada formulir secara lengkap.',
+        nextSession: null
+      };
+    }
+    if (lower.includes('update task') || lower.includes('lanjutkan task') || lower.includes('lanjutkan tugas') || lower.includes('update tugas') || lower.includes('progres task') || lower.includes('log task')) {
+      handleOpenUpdateTaskPicker();
+      return {
+        responseText: '### 🔄 Lanjutkan Pekerjaan / Update Task\n\nPilih tugas yang ingin Anda perbarui dari daftar tugas aktif di bawah ini.',
+        nextSession: null
+      };
+    }
     if (lower.includes('tambah customer')) {
       return {
         responseText: '### 👤 Form CRM Customer Baru\n\nSilakan isi data pelanggan baru pada **Form CRM Interactive** di bawah ini:',
         nextSession: { type: 'customer', step: 1, data: {} }
+      };
+    }
+    if (lower.includes('followup') || lower.includes('follow up') || lower.includes('folowup')) {
+      return {
+        responseText: '### 📞 Tambah Follow-up Penawaran\n\nPilih dokumen penawaran yang ingin Anda catat hasil komunikasi follow-up-nya dari daftar di bawah ini:',
+        nextSession: { type: 'followup', step: 1, data: {} }
       };
     }
     if (lower.includes('tambah transaksi') || lower.includes('tambah penawaran')) {
@@ -1269,9 +1571,279 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         {activeSession && (
           <div className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 rounded-3xl p-4 shadow-xl space-y-3 animate-in slide-in-from-bottom-3 duration-300 my-2">
             <div className="flex justify-between items-center border-b pb-2">
-              <h4 className="text-xs font-black uppercase">Form {activeSession.type === 'penawaran' ? 'Penawaran' : activeSession.type === 'transaction' ? 'Transaksi Penjualan' : 'Customer'} Baru</h4>
+              <h4 className="text-xs font-black uppercase">
+                {activeSession.type === 'task_new' ? 'Tugas Baru (Formulir Detail Pekerjaan)' :
+                 activeSession.type === 'task_update' ? (activeSession.data.selectedTask ? 'Update Laporan Terkini' : 'Lanjutkan Tugas Belum Selesai') :
+                 activeSession.type === 'followup' ? 'Tambah Follow-up Penawaran' :
+                 activeSession.type === 'penawaran' ? 'Form Penawaran' :
+                 activeSession.type === 'transaction' ? 'Form Transaksi Penjualan' : 'Form Customer Baru'}
+              </h4>
               <button onClick={() => setActiveSession(null)} className="text-slate-400 hover:text-rose-500"><XCircle size={18} /></button>
             </div>
+            
+            {/* 1. FORM TUGAS BARU (Matches Image 1, 2, 3) */}
+            {activeSession.type === 'task_new' && (
+              <div className="space-y-3.5 text-xs">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">JUDUL PEKERJAAN</label>
+                  <input 
+                    type="text" 
+                    value={activeSession.data.title || ''} 
+                    onChange={(e) => updateActiveData('title', e.target.value)} 
+                    placeholder="Masukkan judul pekerjaan / task..." 
+                    className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100 placeholder:font-normal" 
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">PERUSAHAAN / KLIEN</label>
+                    <input 
+                      type="text" 
+                      value={activeSession.data.companyName || ''} 
+                      onChange={(e) => updateActiveData('companyName', e.target.value)} 
+                      placeholder="Nama perusahaan / klien..." 
+                      className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100 placeholder:font-normal" 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">PRIORITAS</label>
+                    <select 
+                      value={activeSession.data.priority || 'Medium'} 
+                      onChange={(e) => updateActiveData('priority', e.target.value)} 
+                      className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Detail Perubahan Log Container */}
+                <div className="bg-slate-50 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/80 rounded-2xl p-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-zinc-200">
+                      DETAIL PERUBAHAN LOG ({new Date().toLocaleDateString('id-ID')})
+                    </span>
+                    <span className="px-2 py-0.5 bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-[9px] font-black rounded-md uppercase">AKTIF</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">STATUS PENGERJAAN</label>
+                      <select 
+                        value={activeSession.data.status || 'Belum Mulai'} 
+                        onChange={(e) => updateActiveData('status', e.target.value)} 
+                        className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                      >
+                        <option value="Belum Mulai">Belum Mulai</option>
+                        <option value="Proses">Proses</option>
+                        <option value="Selesai">Selesai</option>
+                        <option value="Ulang">Ulang</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">PROGRES CAPAIAN ({activeSession.data.progress || 0}%)</label>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="100" 
+                        step="5" 
+                        value={activeSession.data.progress || 0} 
+                        onChange={(e) => updateActiveData('progress', Number(e.target.value))} 
+                        className="w-full h-2 bg-slate-200 rounded-full cursor-pointer accent-slate-900 dark:accent-white mt-2" 
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">DESKRIPSI PERUBAHAN / CATATAN</label>
+                    <textarea 
+                      rows={3} 
+                      value={activeSession.data.description || ''} 
+                      onChange={(e) => updateActiveData('description', e.target.value)} 
+                      placeholder="Jelaskan apa yang berubah atau apa yang dilakukan pada tahap ini..." 
+                      className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 resize-none" 
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button type="button" onClick={() => setActiveSession(null)} className="flex-1 py-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 font-bold rounded-xl text-xs hover:bg-slate-200">Batal</button>
+                  <button type="button" onClick={handleDirectSaveFromForm} className="flex-[2] py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black rounded-xl text-xs shadow-md hover:bg-black">Simpan Perubahan</button>
+                </div>
+              </div>
+            )}
+
+            {/* 2. FORM UPDATE / LANJUTKAN TASK (Matches Image 4 & 5) */}
+            {activeSession.type === 'task_update' && (
+              <div className="space-y-3.5 text-xs">
+                {!activeSession.data.selectedTask ? (
+                  /* Step A: Searchbox & Task Selection matching image_a40ae895.png */
+                  <div className="space-y-3">
+                    <div className="text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
+                      Pilih tugas yang ingin dilanjutkan hari ini:
+                    </div>
+
+                    {/* Search input */}
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        value={wizardCustSearch} 
+                        onChange={(e) => setWizardCustSearch(e.target.value)} 
+                        placeholder="Cari tugas / nama perusahaan..." 
+                        className="w-full pl-8 pr-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100 placeholder:font-normal" 
+                      />
+                      <Search size={12} className="absolute left-2.5 top-3 text-slate-400" />
+                    </div>
+
+                    {/* Task Cards List */}
+                    <div className="max-h-56 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                      {userVisibleTasks.filter(t => {
+                        if (!wizardCustSearch.trim()) return true;
+                        const q = wizardCustSearch.toLowerCase();
+                        return (t.title || '').toLowerCase().includes(q) || (t.companyName || '').toLowerCase().includes(q);
+                      }).length > 0 ? (
+                        userVisibleTasks.filter(t => {
+                          if (!wizardCustSearch.trim()) return true;
+                          const q = wizardCustSearch.toLowerCase();
+                          return (t.title || '').toLowerCase().includes(q) || (t.companyName || '').toLowerCase().includes(q);
+                        }).map(task => (
+                          <div key={task.id} className="bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-2xs hover:border-slate-400 transition">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className="text-[9px] font-black uppercase text-slate-400 truncate">{task.companyName || 'PANCA PRIMA WIJAYA'}</span>
+                                <span className="px-1.5 py-0.5 bg-slate-200 dark:bg-zinc-700 text-slate-800 dark:text-zinc-200 rounded-md text-[8px] font-black uppercase">{task.status}</span>
+                              </div>
+                              <div className="font-extrabold text-xs text-slate-900 dark:text-zinc-100 truncate">{task.title}</div>
+                              <div className="text-[10px] text-slate-500 font-semibold mt-0.5">Progress saat ini: <span className="font-extrabold text-slate-800 dark:text-zinc-200">{task.progress}%</span></div>
+                            </div>
+
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                const latestLog = task.logs && task.logs.length > 0 ? task.logs[task.logs.length - 1] : null;
+                                updateActiveData('selectedTask', task);
+                                updateActiveData('title', task.title);
+                                updateActiveData('companyName', task.companyName);
+                                updateActiveData('priority', task.priority || 'Medium');
+                                updateActiveData('status', task.status || 'Proses');
+                                updateActiveData('progress', task.progress !== undefined ? task.progress : 85);
+                                updateActiveData('description', latestLog?.description || `Dilanjutkan pada: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`);
+                              }} 
+                              className="px-3 py-1.5 bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-[10px] font-black rounded-xl shadow-xs hover:bg-black shrink-0 flex items-center gap-1 active:scale-95 transition"
+                            >
+                              <span>Lanjutkan</span>
+                              <span className="text-[11px]">➔</span>
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-4 text-center text-slate-400 text-xs font-semibold">
+                          Tidak ada tugas yang cocok.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Step B: Update Form pre-filled with selectedTask matching image_039fef55.png */
+                  <div className="space-y-3.5">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">JUDUL PEKERJAAN</label>
+                      <input 
+                        type="text" 
+                        disabled 
+                        value={activeSession.data.title || ''} 
+                        className="w-full p-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-200 cursor-not-allowed opacity-90" 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">PERUSAHAAN / KLIEN</label>
+                        <input 
+                          type="text" 
+                          disabled 
+                          value={activeSession.data.companyName || ''} 
+                          className="w-full p-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-200 cursor-not-allowed opacity-90" 
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">PRIORITAS</label>
+                        <select 
+                          value={activeSession.data.priority || 'Medium'} 
+                          onChange={(e) => updateActiveData('priority', e.target.value)} 
+                          className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                        >
+                          <option value="Low">Low</option>
+                          <option value="Medium">Medium</option>
+                          <option value="High">High</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Detail Perubahan Log Container */}
+                    <div className="bg-slate-50 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/80 rounded-2xl p-3.5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-zinc-200">
+                          DETAIL PERUBAHAN LOG ({new Date().toLocaleDateString('id-ID')})
+                        </span>
+                        <span className="px-2 py-0.5 bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-[9px] font-black rounded-md uppercase">AKTIF</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">STATUS PENGERJAAN</label>
+                          <select 
+                            value={activeSession.data.status || 'Proses'} 
+                            onChange={(e) => updateActiveData('status', e.target.value)} 
+                            className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                          >
+                            <option value="Belum Mulai">Belum Mulai</option>
+                            <option value="Proses">Proses</option>
+                            <option value="Selesai">Selesai</option>
+                            <option value="Ulang">Ulang</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">PROGRES CAPAIAN ({activeSession.data.progress || 0}%)</label>
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            step="5" 
+                            value={activeSession.data.progress || 0} 
+                            onChange={(e) => updateActiveData('progress', Number(e.target.value))} 
+                            className="w-full h-2 bg-slate-200 rounded-full cursor-pointer accent-slate-900 dark:accent-white mt-2" 
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">DESKRIPSI PERUBAHAN / CATATAN</label>
+                        <textarea 
+                          rows={3} 
+                          value={activeSession.data.description || ''} 
+                          onChange={(e) => updateActiveData('description', e.target.value)} 
+                          placeholder="Jelaskan apa yang berubah atau apa yang dilakukan pada tahap ini..." 
+                          className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 resize-none" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button type="button" onClick={() => updateActiveData('selectedTask', null)} className="flex-1 py-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 font-bold rounded-xl text-xs hover:bg-slate-200">Ganti Tugas</button>
+                      <button type="button" onClick={handleDirectSaveFromForm} className="flex-[2] py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black rounded-xl text-xs shadow-md hover:bg-black">Simpan Perubahan</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             
             {/* 1. FORM CUSTOMER BARU (Data Kontak - Matches Image 1) */}
             {activeSession.type === 'customer' && (
@@ -1427,6 +1999,154 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                 </div>
 
                 <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg mt-2 transition">Simpan Customer Baru</button>
+              </div>
+            )}
+
+            {/* FORM FOLLOW-UP PENAWARAN (Matches Image 52c70ef9.png) */}
+            {activeSession.type === 'followup' && (
+              <div className="space-y-3.5 text-xs">
+                {!activeSession.data.selectedQuotation ? (
+                  <div className="space-y-3">
+                    <div className="text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
+                      Pilih dokumen Penawaran yang ingin di-followup:
+                    </div>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                        <Search size={14} />
+                      </div>
+                      <input 
+                        type="text" 
+                        value={wizardQuotationSearch} 
+                        onChange={(e) => setWizardQuotationSearch(e.target.value)} 
+                        placeholder="Cari No. Penawaran, Pelanggan..." 
+                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-purple-500" 
+                      />
+                    </div>
+                    <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                      {((transactions || []).filter((t: any) => t.status === 'Penawaran' || t.isQuote || (t.noTrx || '').startsWith('QUO') || (t.noTrx || '').startsWith('PES') || t.type === 'Penawaran')).length === 0 ? (
+                        <div className="p-4 text-center text-slate-400 text-xs font-medium border border-dashed rounded-xl">
+                          Tidak ada dokumen penawaran ditemukan dalam database.
+                        </div>
+                      ) : (
+                        (transactions || []).filter((t: any) => t.status === 'Penawaran' || t.isQuote || (t.noTrx || '').startsWith('QUO') || (t.noTrx || '').startsWith('PES') || t.type === 'Penawaran').filter((q: any) => {
+                          const qStr = `${q.noTrx || q.id || ''} ${q.customerName || q.customer || q.perusahaan || ''} ${q.tanggal || ''}`.toLowerCase();
+                          return qStr.includes((wizardQuotationSearch || '').toLowerCase());
+                        }).slice(0, 10).map((q: any, idx: number) => (
+                          <div 
+                            key={idx} 
+                            onClick={() => {
+                              updateActiveData('selectedQuotation', q);
+                              updateActiveData('followUpDate', new Date().toISOString().split('T')[0]);
+                              updateActiveData('followUpMethod', 'WhatsApp');
+                              updateActiveData('keterangan', '');
+                            }}
+                            className="p-3 bg-slate-50 dark:bg-zinc-800/80 hover:bg-purple-50 dark:hover:bg-purple-950/40 border border-slate-200 dark:border-zinc-700 hover:border-purple-300 dark:hover:border-purple-800 rounded-xl cursor-pointer transition flex items-center justify-between"
+                          >
+                            <div className="space-y-0.5">
+                              <div className="font-extrabold text-slate-800 dark:text-zinc-100 flex items-center gap-2">
+                                <span>{q.noTrx || q.id}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold">PENAWARAN</span>
+                              </div>
+                              <div className="text-[11px] font-medium text-slate-600 dark:text-zinc-300">
+                                👤 {q.customerName || q.customer || q.perusahaan || 'Customer Umum'}
+                              </div>
+                              {q.latestFollowUp && (
+                                <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium truncate max-w-xs">
+                                  📌 FU Terakhir: {q.latestFollowUp}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <div className="font-extrabold text-emerald-600 dark:text-emerald-400 text-xs">
+                                Rp {Number(q.total || q.nilaiProyek || 0).toLocaleString('id-ID')}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-medium">{q.tanggal || ''}</div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Step B: Exact "Tambah Follow-up" Form matching image_52c70ef9.png */
+                  <div className="space-y-3.5">
+                    {/* Selected Penawaran Info */}
+                    <div className="p-3 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-black uppercase text-purple-700 dark:text-purple-300">PENAWARAN TERPILIH</div>
+                        <div className="font-extrabold text-xs text-slate-800 dark:text-zinc-100">
+                          {activeSession.data.selectedQuotation.noTrx || activeSession.data.selectedQuotation.id} - {activeSession.data.selectedQuotation.customerName || activeSession.data.selectedQuotation.customer || 'Customer'}
+                        </div>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => updateActiveData('selectedQuotation', null)}
+                        className="text-[10px] text-purple-600 dark:text-purple-400 hover:underline font-bold"
+                      >
+                        Ganti
+                      </button>
+                    </div>
+
+                    <div className="border-t border-slate-200 dark:border-zinc-800 pt-3 space-y-3">
+                      <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-800 dark:text-zinc-100">
+                        TAMBAH FOLLOW-UP
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">TANGGAL FOLLOW-UP</label>
+                        <input 
+                          type="date" 
+                          value={activeSession.data.followUpDate || new Date().toISOString().split('T')[0]} 
+                          onChange={(e) => updateActiveData('followUpDate', e.target.value)} 
+                          className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100" 
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">METODE FOLLOW-UP</label>
+                        <select 
+                          value={activeSession.data.followUpMethod || 'WhatsApp'} 
+                          onChange={(e) => updateActiveData('followUpMethod', e.target.value)} 
+                          className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100"
+                        >
+                          <option value="WhatsApp">WhatsApp</option>
+                          <option value="Telepon">Telepon</option>
+                          <option value="Email">Email</option>
+                          <option value="Meeting Direct">Meeting Direct</option>
+                          <option value="Kunjungan">Kunjungan</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">KETERANGAN</label>
+                        <textarea 
+                          rows={3} 
+                          value={activeSession.data.keterangan || ''} 
+                          onChange={(e) => updateActiveData('keterangan', e.target.value)} 
+                          placeholder="Masukkan hasil follow-up..." 
+                          className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 resize-none" 
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2">
+                        <button 
+                          type="button" 
+                          onClick={() => setActiveSession(null)} 
+                          className="flex-1 py-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 font-bold rounded-xl text-xs hover:bg-slate-200 transition"
+                        >
+                          BATAL
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={handleDirectSaveFromForm} 
+                          className="flex-[2] py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs shadow-md transition"
+                        >
+                          SIMPAN
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1856,16 +2576,26 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
       {!inputPrompt && !isListening && (
         <div className="px-3 py-1.5 bg-white dark:bg-zinc-950 flex items-center gap-1.5 overflow-x-auto scrollbar-hide shrink-0 border-t border-slate-100 dark:border-zinc-900">
-          {[
-            { label: 'Tambah Customer', prompt: 'tambah customer baru' },
-            { label: 'Transaksi Baru', prompt: 'tambah transaksi baru' },
-            { label: 'Tambah Penawaran', prompt: 'tambah penawaran baru' },
-            { label: 'Stok Menipis', prompt: 'Stok menipis' }
-          ].map((chip, idx) => (
+          {(
+            (isSuperAdmin || (currentUser?.role || '').toLowerCase() === 'sales') ? [
+              { label: '📞 Followup', action: () => setActiveSession({ type: 'followup', step: 1, data: {} }) },
+              { label: '➕ Tugas Baru', action: handleOpenNewTaskModal },
+              { label: '🔄 Lanjutkan Task', action: handleOpenUpdateTaskPicker },
+              { label: '📊 Analisa Pekerjaan', prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
+              { label: 'Tambah Customer', prompt: 'tambah customer baru' },
+              { label: 'Transaksi Baru', prompt: 'tambah transaksi baru' },
+              { label: 'Tambah Penawaran', prompt: 'tambah penawaran baru' },
+              { label: 'Stok Menipis', prompt: 'Stok menipis' }
+            ] : [
+              { label: '➕ Tugas Baru', action: handleOpenNewTaskModal },
+              { label: '🔄 Lanjutkan Task', action: handleOpenUpdateTaskPicker },
+              { label: '📊 Analisa Pekerjaan', prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' }
+            ]
+          ).map((chip, idx) => (
             <button
               key={idx}
-              onClick={() => handleSendMessage(chip.prompt)}
-              className="px-2.5 py-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-full text-[10px] font-bold text-slate-700 dark:text-zinc-300 whitespace-nowrap shadow-2xs active:scale-95 transition-transform"
+              onClick={() => chip.action ? chip.action() : handleSendMessage(chip.prompt)}
+              className="px-2.5 py-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-full text-[10px] font-bold text-slate-700 dark:text-zinc-300 whitespace-nowrap shadow-2xs active:scale-95 transition-transform hover:bg-slate-100 dark:hover:bg-zinc-800"
             >
               {chip.label}
             </button>
