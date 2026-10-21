@@ -579,10 +579,31 @@ ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.coun
   const rawProjects: any[] = ctx.taskAppData?.projects || [];
 
   if (rawTasks.length > 0 || rawProjects.length > 0) {
-    const tasks = rawTasks;
+    let tasks = rawTasks;
     const projects = rawProjects;
 
     if (isTaskQuery || isExplicitGeneralReport) {
+      // Detect if user is asking about a specific team member
+      const knownEmployees = ['arie', 'evan', 'yadi', 'rudi', 'adam', 'maria', 'dwi', 'angel', 'yoga'];
+      let targetEmployeeName: string | null = null;
+      for (const emp of knownEmployees) {
+        if (new RegExp(`\\b${emp}\\b`, 'i').test(queryLower)) {
+          targetEmployeeName = emp;
+          break;
+        }
+      }
+
+      // Filter tasks to specific employee if mentioned
+      if (targetEmployeeName) {
+        const filtered = tasks.filter(t => {
+          const emp = (t.employeeName || t.owner || '').toLowerCase();
+          return emp.includes(targetEmployeeName!);
+        });
+        if (filtered.length > 0) {
+          tasks = filtered;
+        }
+      }
+
       interface TimelineLogEntry {
         taskTitle: string;
         taskId: string;
@@ -663,8 +684,10 @@ ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.coun
         }
       });
 
+      // Limit timeline entries to top 15 most recent entries to prevent token explosion
+      const recentTimelineEntries = allTimelineEntries.sort((a, b) => b.rawDate - a.rawDate).slice(0, 15);
       const groupedByDate: Record<string, { dateFormatted: string; entries: TimelineLogEntry[] }> = {};
-      allTimelineEntries.sort((a, b) => b.rawDate - a.rawDate).forEach(entry => {
+      recentTimelineEntries.forEach(entry => {
         if (!groupedByDate[entry.dateKey]) {
           groupedByDate[entry.dateKey] = { dateFormatted: entry.dateFormatted, entries: [] };
         }
@@ -672,49 +695,40 @@ ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.coun
       });
 
       let timelineSection = `\n--- [MENU 8: TASK APP & PROYEK TIM (TIMELINE & RIWAYAT LOG DETAIL)] ---\n`;
-      timelineSection += `* Total Task: ${tasks.length} task (${tasks.filter(t => t.status === 'Selesai').length} Selesai, ${tasks.filter(t => t.status !== 'Selesai').length} Sedang Berjalan/Proses)\n\n`;
+      timelineSection += `* Filter: ${targetEmployeeName ? `Fokus Anggota Tim: ${targetEmployeeName.toUpperCase()}` : 'Seluruh Tim'} (Total: ${tasks.length} task)\n\n`;
 
-      timelineSection += `### 📅 KRONOLOGI AKTIVITAS HARIAN TIMELINE (TIMELINE LIST VIEW - GROUPED BY DATE):\n`;
-      timelineSection += `(Setiap tanggal mencatat aktivitas pekerjaan spesifik yang dikerjakan oleh pegawai, status, capaian progres, dan catatan log perubahan):\n\n`;
-
+      timelineSection += `### 📅 KRONOLOGI AKTIVITAS HARIAN TIMELINE (AKTIVITAS TERBARU):\n`;
       Object.entries(groupedByDate).forEach(([dateKey, group]) => {
-        timelineSection += `* Tanggal ${dateKey} (${group.dateFormatted}) - ${group.entries.length} aktivitas pekerjaan:\n`;
+        timelineSection += `* Tanggal ${dateKey} (${group.dateFormatted}):\n`;
         group.entries.forEach(e => {
           const deltaStr = typeof e.prevProgress === 'number' ? ` (Perubahan dari ${e.prevProgress}% -> ${e.progress}%)` : '';
           timelineSection += `  - [PIC: ${e.employee}] "${e.taskTitle}" | Klien: ${e.company} | Kategori: ${e.category} | Status: ${e.status} | Progres: ${e.progress}%${deltaStr}\n`;
-          timelineSection += `    Catatan Update Log: "${e.description}" (Waktu Update: ${e.timeStr} WIB)\n`;
+          timelineSection += `    Catatan Log: "${e.description}" (${e.timeStr} WIB)\n`;
         });
-        timelineSection += `\n`;
       });
 
-      timelineSection += `### 👥 PROFIL PENGERJAAN & JEJAK TIMELINE PER ANGGOTA TIM (PIC):\n`;
+      timelineSection += `\n### 👥 DAFTAR TUGAS & JEJAK PROGRES:\n`;
       Object.entries(userTaskMap).forEach(([_, uData]) => {
-        timelineSection += `* Anggota Tim: **${uData.employeeName.toUpperCase()}** (${uData.tasks.length} Tugas Ditugaskan):\n`;
-        uData.tasks.forEach(t => {
+        timelineSection += `* PIC: **${uData.employeeName.toUpperCase()}** (${uData.tasks.length} Tugas):\n`;
+        uData.tasks.slice(0, 8).forEach(t => {
           const logs = Array.isArray(t.logs) ? t.logs : [];
           const sortedLogsAsc = logs.slice().sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
-          const trajectory = sortedLogsAsc.map(l => {
+          const trajectory = sortedLogsAsc.slice(-4).map(l => {
             let dStr = l.date || '-';
             try {
               const d = new Date(l.date);
-              if (!isNaN(d.getTime())) dStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+              if (!isNaN(d.getTime())) dStr = `${d.getDate()}/${d.getMonth()+1}`;
             } catch {}
             return `[${dStr}: ${l.status || 'Proses'} ${l.progress || 0}% - "${l.description || '-'}"`;
           }).join(' -> ') || `(Belum ada riwayat log)`;
 
-          timelineSection += `  - Tugas: "${t.title}" | Klien: ${t.companyName || '-'} | Kategori: ${t.category || t.jobType || '-'} | Prioritas: ${t.priority || 'Medium'}\n`;
-          timelineSection += `    Status Terkini: **${t.status}** | Capaian Progres Total: **${t.progress || 0}%** | Periode: ${t.startDate || '-'} s/d ${t.endDate || '-'}\n`;
-          timelineSection += `    Jejak Kenaikan Progres & Riwayat Catatan:\n`;
-          timelineSection += `    ${trajectory}\n`;
+          timelineSection += `  - Tugas: "${t.title}" | Klien: ${t.companyName || '-'} | Status: **${t.status}** | Progres: **${t.progress || 0}%**\n`;
+          timelineSection += `    Jejak Log Terakhir: ${trajectory}\n`;
         });
-        timelineSection += `\n`;
       });
 
       if (projects.length > 0) {
-        timelineSection += `* Total Proyek Tim: ${projects.length} proyek\n`;
-        projects.forEach(p => {
-          timelineSection += `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.clientName || '-'} | Status: ${p.status} | Lead Engineer: ${p.leadEngineer || '-'}\n`;
-        });
+        timelineSection += `\n* Proyek Tim Terkait: ${projects.slice(0, 5).map(p => `"${p.title}" (${p.status})`).join(', ')}\n`;
       }
 
       digest += timelineSection;
@@ -723,63 +737,56 @@ ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.coun
     }
   }
 
-  // Exact Match Search Normalization for TRX and PP codes
-  const normalizedQuery = queryLower.replace(/[^a-z0-9]/g, '');
-  const matchedTrxExact = agg.compTransactions.filter(t => {
-    const code = (t.noTrx || t.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const cust = (t.customerName || t.customer || '').toLowerCase();
-    return (code && normalizedQuery.includes(code)) || (code && code.includes(normalizedQuery)) || (cust && queryLower.includes(cust));
-  });
+  // Exact Match Search Normalization for TRX and PP codes - ONLY RUN WHEN RELEVANT TO TRANSACTIONS
+  const hasTrxCodeInQuery = /(trx|pp|quo|inv|po)[-_ ]?\d+/i.test(queryLower);
+  if (isTrxQuery || hasTrxCodeInQuery) {
+    const normalizedQuery = queryLower.replace(/[^a-z0-9]/g, '');
+    const matchedTrxExact = agg.compTransactions.filter(t => {
+      const code = (t.noTrx || t.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cust = (t.customerName || t.customer || '').toLowerCase();
+      return (code.length >= 3 && (normalizedQuery.includes(code) || code.includes(normalizedQuery))) || (cust.length >= 4 && queryLower.includes(cust));
+    }).slice(0, 10);
 
-  if (matchedTrxExact.length > 0) {
-    digest += `\n=== PENCARIAN SANGAT SPESIFIK & PRESISI LENGKAP UNTUK TRANSAKSI ("${queryText}") ===\n`;
-    matchedTrxExact.forEach(t => {
-      const amt = getTransactionAmount(t);
-      const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} x Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : 'N/A';
-      let quoteExtra = '';
-      if (t.status === 'Penawaran' || t.isQuote || (t.followUps && t.followUps.length > 0)) {
-        const fuArr = Array.isArray(t.followUps) ? t.followUps : [];
-        const sortedFu = fuArr.slice().sort((a: any, b: any) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
-        const latest = sortedFu[0];
-        quoteExtra = ` | Next Follow-Up: ${t.followUpDate || 'Belum dijadwalkan'} (Metode: ${t.followUpMethod || '-'}) | Latest Follow-Up: "${latest ? `[${latest.tanggal || '-'}${latest.method ? ` via ${latest.method}` : ''}] ${latest.keterangan || ''}` : 'Belum ada'}" | Kronologi Roadmap Follow-Up: [${sortedFu.map((f: any) => `(${f.tanggal || '-'}${f.method ? ` via ${f.method}` : ''}: ${f.keterangan || '-'})`).join(' -> ')}]`;
-      }
-      digest += `* TRANSAKSI KUNCI COCOK [${t.noTrx || t.id}]: Pelanggan: ${t.customerName || t.customer || '-'} | Tanggal: ${t.tanggal || '-'} | Nominal Rp: ${amt.toLocaleString('id-ID')} | Status Pesanan: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales Rep: ${t.sales || t.salesName || '-'}${quoteExtra} | Items: [${itemsStr}]\n`;
-    });
-  }
-
-  // Exact Match Search Normalization for Products (by Code, SKU, or Name)
-  const genericStokWords = ['stok', 'stock', 'cek', 'sisa', 'produk', 'barang', 'persediaan', 'katalog', 'daftar', 'ada', 'berapa', 'info', 'data', 'min', 'tolong', 'di', 'dalam', 'yang', 'semua', 'seluruh', 'all', 'list', 'tampilkan', 'lihat', 'apa', 'saja', 'yg', 'masih', 'punya'];
-  const productSearchTerms = queryLower
-    .split(/\s+/)
-    .map(w => w.replace(/[^a-z0-9]/g, ''))
-    .filter(t => t.length > 0 && !genericStokWords.includes(t));
-
-  if (productSearchTerms.length > 0) {
-    let matchedProductsExact = agg.compProducts.filter(p => {
-      const code = (p.kode || p.id || '').toLowerCase();
-      const name = (p.nama || p.name || '').toLowerCase();
-      const desc = (p.deskripsi || p.specifications || p.description || '').toLowerCase();
-      return productSearchTerms.every(term => code.includes(term) || name.includes(term) || desc.includes(term));
-    });
-
-    if (matchedProductsExact.length === 0) {
-      matchedProductsExact = agg.compProducts.filter(p => {
-        const code = (p.kode || p.id || '').toLowerCase();
-        const name = (p.nama || p.name || '').toLowerCase();
-        const desc = (p.deskripsi || p.specifications || p.description || '').toLowerCase();
-        return productSearchTerms.some(term => code.includes(term) || name.includes(term) || desc.includes(term));
+    if (matchedTrxExact.length > 0) {
+      digest += `\n=== PENCARIAN SANGAT SPESIFIK UNTUK TRANSAKSI ("${queryText}") ===\n`;
+      matchedTrxExact.forEach(t => {
+        const amt = getTransactionAmount(t);
+        const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} x Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : 'N/A';
+        digest += `* TRANSAKSI KUNCI COCOK [${t.noTrx || t.id}]: Pelanggan: ${t.customerName || t.customer || '-'} | Tanggal: ${t.tanggal || '-'} | Nominal: Rp ${amt.toLocaleString('id-ID')} | Status: ${t.status || 'Selesai'} | Items: [${itemsStr}]\n`;
       });
     }
+  }
 
-    if (matchedProductsExact.length > 0) {
-      digest += `\n=== PENCARIAN SANGAT SPESIFIK & PRESISI LENGKAP UNTUK PRODUK ("${queryText}") ===\n`;
-      matchedProductsExact.forEach(p => {
-        const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
-        const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
-        const hasImages = (Array.isArray(p.images) && p.images.length > 0) || Boolean(p.image || p.foto || p.gambar || p.imageUrl);
-        const imgTag = hasImages ? `![Foto ${p.nama || p.name}](product-image:${p.id})` : 'Foto belum ada di sistem';
-        digest += `* PRODUK KUNCI COCOK [SKU: ${p.kode || p.id}]: Nama: "${p.nama || p.name}" | SISA STOK AKURAT DATABASE REAL-TIME: ${stockVal} ${p.satuan || p.unit || 'unit'} | Harga Jual: Rp ${price.toLocaleString('id-ID')} | Foto/Gambar: ${imgTag} | Deskripsi: ${p.deskripsi || p.specifications || 'N/A'}\n`;
-      });
+  // Exact Match Search Normalization for Products - ONLY RUN WHEN QUERY IS PRODUCT RELATED
+  if (isProductQuery) {
+    const genericStokWords = [
+      'stok', 'stock', 'cek', 'sisa', 'produk', 'barang', 'persediaan', 'katalog', 'daftar', 'ada', 
+      'berapa', 'info', 'data', 'min', 'tolong', 'di', 'dalam', 'yang', 'semua', 'seluruh', 'all', 
+      'list', 'tampilkan', 'lihat', 'apa', 'saja', 'yg', 'masih', 'punya', 'ini', 'itu', 'dan', 'dari', 
+      'ke', 'pada', 'untuk', 'tugas', 'minggu', 'bulan', 'hari', 'kemarin', 'besok', 'proyek', 'pekerjaan'
+    ];
+    const productSearchTerms = queryLower
+      .split(/\s+/)
+      .map(w => w.replace(/[^a-z0-9]/g, ''))
+      .filter(t => t.length >= 3 && !genericStokWords.includes(t));
+
+    if (productSearchTerms.length > 0) {
+      const matchedProductsExact = agg.compProducts.filter(p => {
+        const code = (p.kode || p.id || '').toLowerCase();
+        const name = (p.nama || p.name || '').toLowerCase();
+        return productSearchTerms.some(term => code.includes(term) || name.includes(term));
+      }).slice(0, 10);
+
+      if (matchedProductsExact.length > 0) {
+        digest += `\n=== PENCARIAN SPESIFIK UNTUK PRODUK ("${queryText}") ===\n`;
+        matchedProductsExact.forEach(p => {
+          const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
+          const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
+          const hasImages = (Array.isArray(p.images) && p.images.length > 0) || Boolean(p.image || p.foto || p.gambar || p.imageUrl);
+          const imgTag = hasImages ? `![Foto ${p.nama || p.name}](product-image:${p.id})` : 'Foto belum ada';
+          digest += `* PRODUK COCOK [SKU: ${p.kode || p.id}]: Nama: "${p.nama || p.name}" | SISA STOK: ${stockVal} ${p.satuan || p.unit || 'unit'} | Harga: Rp ${price.toLocaleString('id-ID')} | Foto: ${imgTag}\n`;
+        });
+      }
     }
   }
 
