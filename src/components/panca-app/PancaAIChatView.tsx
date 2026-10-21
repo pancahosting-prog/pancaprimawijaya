@@ -3,7 +3,7 @@ import {
   Send, ArrowLeft, Trash2, Copy, Check, Sparkles, 
   Bot, User, Download, Mic, Square, Volume2, VolumeX,
   AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package,
-  ChevronUp, ChevronDown, CheckCircle, MessageSquare
+  ChevronUp, ChevronDown, CheckCircle, MessageSquare, Zap
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -30,6 +30,11 @@ interface Message {
   timestamp: string;
   isNew?: boolean;
   draftData?: DraftData;
+  tokenUsage?: {
+    promptTokens: number;
+    candidateTokens: number;
+    totalTokens: number;
+  };
 }
 
 const TypewriterText: React.FC<{
@@ -1323,12 +1328,15 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     };
 
     try {
-      let responseText = await queryPancaAI({
+      const queryRes = await queryPancaAI({
         userPrompt: query.trim(), 
         messages: historyPayload, 
         ctx: contextPayload,
         preferredModel: selectedModel
       });
+
+      let responseText = typeof queryRes === 'string' ? queryRes : (queryRes?.responseText || '');
+      const tokenUsage = typeof queryRes === 'object' ? queryRes?.usage : undefined;
 
       // Auto-detect if user asks about a product, product photo, or if AI recommends/discusses products with images
       const lowerQ = query.toLowerCase();
@@ -1441,7 +1449,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         role: 'assistant',
         content: responseText,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isNew: true
+        isNew: true,
+        tokenUsage: tokenUsage
       };
       setMessages(prev => [...prev, assistantMessage]);
 
@@ -1562,6 +1571,12 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                         {copiedId === m.id ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
                         <span>Salin</span>
                       </button>
+                      {m.tokenUsage && (
+                        <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80 px-2 py-0.5 rounded-full font-mono text-[9px] font-bold shadow-2xs ml-0.5">
+                          <Zap size={10} className="text-amber-500 fill-amber-500 shrink-0" />
+                          <span>{m.tokenUsage.totalTokens.toLocaleString('id-ID')} token ({m.tokenUsage.promptTokens.toLocaleString('id-ID')} in / {m.tokenUsage.candidateTokens.toLocaleString('id-ID')} out)</span>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

@@ -1,6 +1,4 @@
-// Unified Data Digest & AI Service for Panca AI (Web CRM & Mobile /app)
-// Powered by Google Gemini with Multi-Key Auto-Rolling
-import { callGeminiWithKeyRotation } from './geminiKeyService';
+import { callGeminiWithKeyRotation, callGeminiWithKeyRotationDetails } from './geminiKeyService';
 import { generateWebKnowledgeDigest } from './webKnowledgeService';
 import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl } from './pancaProductCatalog';
 
@@ -849,6 +847,15 @@ export const getConversationalGreetingResponse = (userName: string, query: strin
   return `Halo **${userName}**. Silakan tanyakan data atau informasi yang Anda perlukan, saya siap membantu.\n\nContoh pertanyaan:\n- "Berapa omzet bulan ini?"\n- "Cek transaksi TRX-70" atau "Cek transaksi PP-001"\n- "Produk apa saja yang stoknya menipis?"\n- "Tambah customer baru" atau "Buat transaksi baru"\n\nAda data yang ingin diperiksa sekarang?`;
 };
 
+export interface PancaAIQueryResult {
+  responseText: string;
+  usage?: {
+    promptTokens: number;
+    candidateTokens: number;
+    totalTokens: number;
+  };
+}
+
 // Unified LLM Calling Function with Strict Data Reading Rules and Friendly Tone
 export const queryPancaAI = async ({
   userPrompt,
@@ -860,18 +867,18 @@ export const queryPancaAI = async ({
   messages: { role: 'user' | 'assistant'; content: string }[];
   ctx: PancaAIContext;
   preferredModel?: string;
-}): Promise<string> => {
+}): Promise<PancaAIQueryResult> => {
   const userName = ctx.currentUser?.nama || 'Bapak/Ibu';
 
   // 1. Instant Check: Conversational greeting or opening statement
   if (isConversationalGreeting(userPrompt)) {
-    return getConversationalGreetingResponse(userName, userPrompt);
+    return { responseText: getConversationalGreetingResponse(userName, userPrompt) };
   }
 
   // 2. Instant Check: If query lacks context, ask for clarification first!
   const clarification = detectLackingContext(userPrompt, messages);
   if (clarification) {
-    return `Halo **${userName}**, ${clarification.clarificationQuestion}`;
+    return { responseText: `Halo **${userName}**, ${clarification.clarificationQuestion}` };
   }
 
   const dataDigest = generatePancaDataDigest(ctx, userPrompt);
@@ -1033,7 +1040,7 @@ PENTING: Sekali lagi, jika pertanyaan tidak berkaitan dengan data di atas, TOLAK
     content: m.content
   }));
 
-  return await callGeminiWithKeyRotation({
+  const res = await callGeminiWithKeyRotationDetails({
     systemPrompt,
     messages: recentHistory,
     userPrompt: userPrompt,
@@ -1041,6 +1048,11 @@ PENTING: Sekali lagi, jika pertanyaan tidak berkaitan dengan data di atas, TOLAK
     temperature: 0.15,
     maxTokens: 8192
   });
+
+  return {
+    responseText: res.text,
+    usage: res.usage
+  };
 };
 
 // Comprehensive Local Dynamic Fallback that accurately reads real data

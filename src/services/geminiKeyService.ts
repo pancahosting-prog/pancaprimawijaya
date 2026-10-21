@@ -319,7 +319,16 @@ export const getActiveKeyWithRolling = (
 /**
  * Calls Google Gemini REST API with Multi-Key Rotation and Model Cascading
  */
-export const callGeminiWithKeyRotation = async ({
+export interface GeminiCallResult {
+  text: string;
+  usage?: {
+    promptTokens: number;
+    candidateTokens: number;
+    totalTokens: number;
+  };
+}
+
+export const callGeminiWithKeyRotationDetails = async ({
   systemPrompt,
   messages,
   userPrompt,
@@ -333,11 +342,10 @@ export const callGeminiWithKeyRotation = async ({
   preferredModel?: string;
   temperature?: number;
   maxTokens?: number;
-}): Promise<string> => {
+}): Promise<GeminiCallResult> => {
   let settings = getStoredGeminiSettings();
   let activeKeys = settings.apiKeys.filter(k => k.isActive && k.key.trim().length > 0);
 
-  // If local settings has no keys, try loading from server database once
   if (activeKeys.length === 0) {
     try {
       const srvSettings = await loadGeminiSettingsFromDatabase();
@@ -351,10 +359,11 @@ export const callGeminiWithKeyRotation = async ({
   }
 
   if (activeKeys.length === 0) {
-    return `⚠️ **API Key Gemini Belum Dikonfigurasi**\n\nSilakan buka menu **Settings > Pengaturan Gemini AI** untuk memasukkan API Key Gemini Anda. Sistem mendukung penambahan lebih dari 1 API Key dengan **rotasi otomatis (*auto-rolling*)** jika salah satu API Key kehabisan kuota.`;
+    return {
+      text: `⚠️ **API Key Gemini Belum Dikonfigurasi**\n\nSilakan buka menu **Settings > Pengaturan Gemini AI** untuk memasukkan API Key Gemini Anda.`
+    };
   }
 
-  // Prepare Gemini conversation payload
   const contentsPayload: any[] = [];
   messages.forEach(m => {
     contentsPayload.push({
@@ -372,7 +381,7 @@ export const callGeminiWithKeyRotation = async ({
     'gemini-3-flash',
     'gemini-3.5-flash-lite',
     'gemini-flash-latest'
-  ].filter((v, i, a) => a.indexOf(v) === i); // unique
+  ].filter((v, i, a) => a.indexOf(v) === i);
 
   let attemptCount = 0;
   const maxAttempts = activeKeys.length;
@@ -386,7 +395,6 @@ export const callGeminiWithKeyRotation = async ({
 
     const callStartTime = Date.now();
 
-    // Try models in cascade
     for (const modelName of modelCandidates) {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
@@ -409,13 +417,25 @@ export const callGeminiWithKeyRotation = async ({
           const resData = await response.json();
           const generatedText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
           if (generatedText) {
-            // Update stats
             keyConfig.successCount = (keyConfig.successCount || 0) + 1;
             keyConfig.lastUsedAt = new Date().toISOString();
             keyConfig.lastLatencyMs = Date.now() - callStartTime;
             keyConfig.isExhausted = false;
             saveStoredGeminiSettings(settings);
-            return generatedText;
+
+            const usageMeta = resData.usageMetadata;
+            const promptTokens = usageMeta?.promptTokenCount || Math.ceil((systemPrompt.length + userPrompt.length + JSON.stringify(messages).length) / 3.8);
+            const candidateTokens = usageMeta?.candidatesTokenCount || Math.ceil(generatedText.length / 3.8);
+            const totalTokens = usageMeta?.totalTokenCount || (promptTokens + candidateTokens);
+
+            return {
+              text: generatedText,
+              usage: {
+                promptTokens,
+                candidateTokens,
+                totalTokens
+              }
+            };
           }
         }
 
@@ -457,7 +477,14 @@ export const callGeminiWithKeyRotation = async ({
     }
   }
 
-  return `⚠️ **Semua API Key Gemini Mencapai Batas Kuota**\n\nSeluruh API Key Gemini yang Anda daftarkan (${activeKeys.length} kunci) saat ini telah mencapai batas kuota pemakaian. Silakan tambahkan API key baru di menu **Settings > Pengaturan Gemini AI** atau tunggu beberapa saat agar kuota ter-reset secara otomatis.`;
+  return {
+    text: `⚠️ **Semua API Key Gemini Mencapai Batas Kuota**\n\nSeluruh API Key Gemini yang Anda daftarkan (${activeKeys.length} kunci) saat ini telah mencapai batas kuota pemakaian.`
+  };
+};
+
+export const callGeminiWithKeyRotation = async (params: any): Promise<string> => {
+  const res = await callGeminiWithKeyRotationDetails(params);
+  return res.text;
 };
 
 // ==============================================================================
