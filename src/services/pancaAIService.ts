@@ -347,6 +347,14 @@ export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string =
   const allowedMenus = (ctx.rolePermissions || []).filter(p => p.canView).map(p => p.id);
   const allowedListStr = isSuperAdmin ? "SELURUH AKSES SISTEM (SUPERADMIN)" : (allowedMenus.length > 0 ? allowedMenus.join(', ') : "Akses Menu Sangat Terbatas");
 
+  // Topic Intent Recognition for Smart Context Optimization
+  const isTaskQuery = /\b(tugas|task|pekerjaan|proyek|project|log|progres|progress|pengerjaan|aktivitas|kegiatan|kinerja|prioritas|saran|analisa|analisis|evan|yadi|rudi|arie|adam|maria|dwi|angel|engineer|tim)\b/i.test(queryLower);
+  const isProductQuery = /\b(produk|product|stok|stock|persediaan|katalog|sku|harga|fumiphos|silogard|foto|gambar|photo|image|sisa|lot|satuan)\b/i.test(queryLower);
+  const isTrxQuery = /\b(transaksi|trx|pp|penjualan|omset|omzet|deals|invoice|piutang|tagihan|lunas|bayar|pesanan|order)\b/i.test(queryLower);
+  const isQuoteQuery = /\b(penawaran|quotation|quote|followup|follow-up|follow up|prospek)\b/i.test(queryLower);
+  const isContactQuery = /\b(customer|pelanggan|kontak|contact|klien|client|telepon|wa|whatsapp)\b/i.test(queryLower);
+  const isGeneralReportQuery = /\b(semua|laporan|keseluruhan|ringkasan|overview|database|sistem|perusahaan)\b/i.test(queryLower) || (!isTaskQuery && !isProductQuery && !isTrxQuery && !isQuoteQuery && !isContactQuery);
+
   let digest = `=== DATABASE REAL-TIME SISTEM MYPANCA (PT. PANCA PRIMA WIJAYA) ===
 - Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
 - Status Akses Pengguna: ${allowedListStr}
@@ -367,33 +375,33 @@ ${Object.entries(agg.monthlyOmzetMap).map(([m, data]) => `* Periode ${m}: Total 
 ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.count} trx deals | Total Omzet: Rp ${d.omzet.toLocaleString('id-ID')}`).join('\n') || '  (Akses terbatas atau belum ada data)'}
 
 * Top Pelanggan dengan Belanja Terbesar:
-${Object.entries(agg.customerSpendMap).sort((a, b) => b[1].total - a[1].total).slice(0, 15).map(([c, d], i) => `  ${i + 1}. ${c}: ${d.count} transaksi | Total Belanja: Rp ${d.total.toLocaleString('id-ID')}`).join('\n') || '  (Akses terbatas)'}
+${Object.entries(agg.customerSpendMap).sort((a, b) => b[1].total - a[1].total).slice(0, 10).map(([c, d], i) => `  ${i + 1}. ${c}: ${d.count} transaksi | Total Belanja: Rp ${d.total.toLocaleString('id-ID')}`).join('\n') || '  (Akses terbatas)'}
 
-* Daftar Transaksi Real Database (Setiap Transaksi Terbaca Presisi):
+${(isTrxQuery || isQuoteQuery || isContactQuery || isGeneralReportQuery) ? `* Daftar Transaksi Real Database:
 ${agg.compTransactions.length > 0 ? agg.compTransactions.map(t => {
   const amt = getTransactionAmount(t);
   const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} unit @ Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : '';
   return `  - [${t.noTrx || t.id}] Tanggal: ${t.tanggal || '-'} | Pelanggan: ${t.customerName || t.customer || '-'} | Total Nilai: Rp ${amt.toLocaleString('id-ID')} | Status: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales: ${t.sales || t.salesName || '-'} | Item: [${itemsStr || 'N/A'}]`;
-}).join('\n') : '  (Akses menu Transaksi dibatasi atau data tidak ada)'}
+}).join('\n') : '  (Akses menu Transaksi dibatasi atau data tidak ada)'}` : `* Ringkasan Transaksi: ${agg.compTransactions.length} transaksi terdaftar (Detail transaksi siap dipanggil bila ditanyakan).`}
 
 --- [MENU 2: DAFTAR KONTAK & PELANGGAN LENGKAP] ---
 * Total Kontak: ${agg.compCustomers.length} Pelanggan
-${agg.compCustomers.length > 0 ? agg.compCustomers.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales: ${c.sales || '-'}, Status: ${c.leadType || 'Aktif'})`).join('\n') : '  (Akses menu Contacts dibatasi)'}
+${(isContactQuery || isTrxQuery || isQuoteQuery || isGeneralReportQuery) ? (agg.compCustomers.length > 0 ? agg.compCustomers.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales: ${c.sales || '-'}, Status: ${c.leadType || 'Aktif'})`).join('\n') : '  (Akses menu Contacts dibatasi)') : '  (Ringkasan: Kontak pelanggan tersedia di database)'}
 
 --- [MENU 3: PENAWARAN (QUOTATIONS) & ROADMAP FOLLOW-UP DETAIL] ---
 * Total Penawaran: ${agg.totalQuotes} penawaran (Nilai Total: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')})
-${agg.quoteList.length > 0 ? agg.quoteList.map(q => {
+${(isQuoteQuery || isTrxQuery || isContactQuery || isGeneralReportQuery) ? (agg.quoteList.length > 0 ? agg.quoteList.map(q => {
   const roadmapStr = q.roadmapFollowUps && q.roadmapFollowUps.length > 0
     ? `\n    * Roadmap Follow-Up (${q.roadmapFollowUps.length} tahapan interaksi):\n      - ${q.roadmapFollowUps.join('\n      - ')}`
     : '\n    * Roadmap Follow-Up: Belum ada aktivitas.';
   return `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal Penawaran: ${q.tanggal} | Total Nilai: Rp ${q.total.toLocaleString('id-ID')} | Sales: ${q.sales}
     * Next Follow-Up: ${q.nextFollowUpDate} (Metode: ${q.nextFollowUpMethod})
     * Latest Follow-Up: ${q.latestFollowUp}${roadmapStr}`;
-}).join('\n') : '  (Akses menu Penawaran dibatasi)'}
+}).join('\n') : '  (Akses menu Penawaran dibatasi)') : '  (Ringkasan: Data penawaran & roadmap follow-up tersedia di database)'}
 
 --- [MENU 4: KATALOG & STOK PRODUK LENGKAP] ---
 * Total SKU: ${agg.compProducts.length} Produk
-${agg.compProducts.length > 0 ? agg.compProducts.map(p => {
+${(isProductQuery || isTrxQuery || isQuoteQuery || isGeneralReportQuery) ? (agg.compProducts.length > 0 ? agg.compProducts.map(p => {
   const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
   const specStr = p.specifications || p.deskripsi || p.description || 'Belum diisi';
   const mainFunc = p.mainFunction || p.fungsi || 'Belum diisi';
@@ -405,7 +413,7 @@ ${agg.compProducts.length > 0 ? agg.compProducts.map(p => {
   const imgTag = hasImgUrl ? `![Foto ${p.nama || p.name}](product-image:${p.id || p.kode})` : 'Foto belum ada di sistem';
   return `  - SKU [${p.kode || p.id}] ${p.nama || p.name} (SISA STOK AKURAT: ${stockVal} ${p.satuan || p.unit || 'unit'}) | Harga Jual: Rp ${price.toLocaleString('id-ID')} | Foto/Gambar: ${imgTag}
     * Fungsi: ${mainFunc} | Aplikasi: ${mainApp} | Dimensi: ${dim} | Berat: ${weight} | Spesifikasi: ${specStr}`;
-}).join('\n') : '  (Akses menu Produk dibatasi)'}
+}).join('\n') : '  (Akses menu Produk dibatasi)') : `  (Ringkasan Stok: ${agg.compProducts.length} SKU terdaftar, ${agg.lowStockProducts.length} stok menipis)`}
 
 --- [MENU 5: FINANCE - PIUTANG USAHA (TAGIHAN BELUM LUNAS)] ---
 * Total Piutang: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan)
@@ -452,45 +460,68 @@ ${agg.allEmployees.length > 0 ? agg.allEmployees.map(e => `  - ${e.nama} | Jabat
     const tasks = rawTasks;
     const projects = rawProjects;
 
-    // 1. Compile chronological daily timeline entries (persis seperti tampilan TimelineListView & log harian)
-    interface TimelineLogEntry {
-      taskTitle: string;
-      taskId: string;
-      company: string;
-      category: string;
-      employee: string;
-      priority: string;
-      status: string;
-      progress: number;
-      prevProgress?: number;
-      dateKey: string; // YYYY-MM-DD
-      dateFormatted: string; // e.g. "Sabtu, 17 Oktober 2026"
-      timeStr: string;
-      description: string;
-      rawDate: number;
-    }
+    if (isTaskQuery || isGeneralReportQuery) {
+      interface TimelineLogEntry {
+        taskTitle: string;
+        taskId: string;
+        company: string;
+        category: string;
+        employee: string;
+        priority: string;
+        status: string;
+        progress: number;
+        prevProgress?: number;
+        dateKey: string;
+        dateFormatted: string;
+        timeStr: string;
+        description: string;
+        rawDate: number;
+      }
 
-    const allTimelineEntries: TimelineLogEntry[] = [];
-    const userTaskMap: Record<string, { employeeName: string; tasks: any[] }> = {};
+      const allTimelineEntries: TimelineLogEntry[] = [];
+      const userTaskMap: Record<string, { employeeName: string; tasks: any[] }> = {};
 
-    tasks.forEach(t => {
-      const emp = (t.employeeName || t.owner || 'Tim').trim();
-      const empKey = emp.toLowerCase();
-      if (!userTaskMap[empKey]) userTaskMap[empKey] = { employeeName: emp, tasks: [] };
-      userTaskMap[empKey].tasks.push(t);
+      tasks.forEach(t => {
+        const emp = (t.employeeName || t.owner || 'Tim').trim();
+        const empKey = emp.toLowerCase();
+        if (!userTaskMap[empKey]) userTaskMap[empKey] = { employeeName: emp, tasks: [] };
+        userTaskMap[empKey].tasks.push(t);
 
-      const logs = Array.isArray(t.logs) ? t.logs : [];
-      // Sort logs ascending to calculate progress increments
-      const sortedLogsAsc = logs.slice().sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
+        const logs = Array.isArray(t.logs) ? t.logs : [];
+        const sortedLogsAsc = logs.slice().sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
 
-      if (sortedLogsAsc.length > 0) {
-        sortedLogsAsc.forEach((l: any, idx: number) => {
-          const dObj = new Date(l.date || t.endDate || t.startDate || Date.now());
+        if (sortedLogsAsc.length > 0) {
+          sortedLogsAsc.forEach((l: any, idx: number) => {
+            const dObj = new Date(l.date || t.endDate || t.startDate || Date.now());
+            const validDate = isNaN(dObj.getTime()) ? new Date() : dObj;
+            const dateKey = `${validDate.getFullYear()}-${String(validDate.getMonth() + 1).padStart(2, '0')}-${String(validDate.getDate()).padStart(2, '0')}`;
+            const dateFormatted = validDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+            const timeStr = validDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            const prevLog = idx > 0 ? sortedLogsAsc[idx - 1] : null;
+
+            allTimelineEntries.push({
+              taskTitle: t.title || 'Tugas Tanpa Judul',
+              taskId: t.id,
+              company: t.companyName || 'PT. Panca Prima Wijaya',
+              category: t.category || t.jobType || 'Development',
+              employee: emp,
+              priority: t.priority || 'Medium',
+              status: l.status || t.status || 'Proses',
+              progress: typeof l.progress === 'number' ? l.progress : (t.progress || 0),
+              prevProgress: prevLog ? (typeof prevLog.progress === 'number' ? prevLog.progress : undefined) : undefined,
+              dateKey,
+              dateFormatted,
+              timeStr,
+              description: l.description || 'Tidak ada catatan perubahan.',
+              rawDate: validDate.getTime()
+            });
+          });
+        } else {
+          const dObj = new Date(t.startDate || t.endDate || Date.now());
           const validDate = isNaN(dObj.getTime()) ? new Date() : dObj;
           const dateKey = `${validDate.getFullYear()}-${String(validDate.getMonth() + 1).padStart(2, '0')}-${String(validDate.getDate()).padStart(2, '0')}`;
           const dateFormatted = validDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
           const timeStr = validDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-          const prevLog = idx > 0 ? sortedLogsAsc[idx - 1] : null;
 
           allTimelineEntries.push({
             taskTitle: t.title || 'Tugas Tanpa Judul',
@@ -499,98 +530,75 @@ ${agg.allEmployees.length > 0 ? agg.allEmployees.map(e => `  - ${e.nama} | Jabat
             category: t.category || t.jobType || 'Development',
             employee: emp,
             priority: t.priority || 'Medium',
-            status: l.status || t.status || 'Proses',
-            progress: typeof l.progress === 'number' ? l.progress : (t.progress || 0),
-            prevProgress: prevLog ? (typeof prevLog.progress === 'number' ? prevLog.progress : undefined) : undefined,
+            status: t.status || 'Belum Mulai',
+            progress: t.progress || 0,
             dateKey,
             dateFormatted,
             timeStr,
-            description: l.description || 'Tidak ada catatan perubahan.',
+            description: t.jobType ? `Pekerjaan: ${t.jobType}` : 'Tugas baru dibuat.',
             rawDate: validDate.getTime()
           });
-        });
-      } else {
-        const dObj = new Date(t.startDate || t.endDate || Date.now());
-        const validDate = isNaN(dObj.getTime()) ? new Date() : dObj;
-        const dateKey = `${validDate.getFullYear()}-${String(validDate.getMonth() + 1).padStart(2, '0')}-${String(validDate.getDate()).padStart(2, '0')}`;
-        const dateFormatted = validDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-        const timeStr = validDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        }
+      });
 
-        allTimelineEntries.push({
-          taskTitle: t.title || 'Tugas Tanpa Judul',
-          taskId: t.id,
-          company: t.companyName || 'PT. Panca Prima Wijaya',
-          category: t.category || t.jobType || 'Development',
-          employee: emp,
-          priority: t.priority || 'Medium',
-          status: t.status || 'Belum Mulai',
-          progress: t.progress || 0,
-          dateKey,
-          dateFormatted,
-          timeStr,
-          description: t.jobType ? `Pekerjaan: ${t.jobType}` : 'Tugas baru dibuat.',
-          rawDate: validDate.getTime()
+      const groupedByDate: Record<string, { dateFormatted: string; entries: TimelineLogEntry[] }> = {};
+      allTimelineEntries.sort((a, b) => b.rawDate - a.rawDate).forEach(entry => {
+        if (!groupedByDate[entry.dateKey]) {
+          groupedByDate[entry.dateKey] = { dateFormatted: entry.dateFormatted, entries: [] };
+        }
+        groupedByDate[entry.dateKey].entries.push(entry);
+      });
+
+      let timelineSection = `\n--- [MENU 8: TASK APP & PROYEK TIM (TIMELINE & RIWAYAT LOG DETAIL)] ---\n`;
+      timelineSection += `* Total Task: ${tasks.length} task (${tasks.filter(t => t.status === 'Selesai').length} Selesai, ${tasks.filter(t => t.status !== 'Selesai').length} Sedang Berjalan/Proses)\n\n`;
+
+      timelineSection += `### 📅 KRONOLOGI AKTIVITAS HARIAN TIMELINE (TIMELINE LIST VIEW - GROUPED BY DATE):\n`;
+      timelineSection += `(Setiap tanggal mencatat aktivitas pekerjaan spesifik yang dikerjakan oleh pegawai, status, capaian progres, dan catatan log perubahan):\n\n`;
+
+      Object.entries(groupedByDate).forEach(([dateKey, group]) => {
+        timelineSection += `* Tanggal ${dateKey} (${group.dateFormatted}) - ${group.entries.length} aktivitas pekerjaan:\n`;
+        group.entries.forEach(e => {
+          const deltaStr = typeof e.prevProgress === 'number' ? ` (Perubahan dari ${e.prevProgress}% -> ${e.progress}%)` : '';
+          timelineSection += `  - [PIC: ${e.employee}] "${e.taskTitle}" | Klien: ${e.company} | Kategori: ${e.category} | Status: ${e.status} | Progres: ${e.progress}%${deltaStr}\n`;
+          timelineSection += `    Catatan Update Log: "${e.description}" (Waktu Update: ${e.timeStr} WIB)\n`;
+        });
+        timelineSection += `\n`;
+      });
+
+      timelineSection += `### 👥 PROFIL PENGERJAAN & JEJAK TIMELINE PER ANGGOTA TIM (PIC):\n`;
+      Object.entries(userTaskMap).forEach(([_, uData]) => {
+        timelineSection += `* Anggota Tim: **${uData.employeeName.toUpperCase()}** (${uData.tasks.length} Tugas Ditugaskan):\n`;
+        uData.tasks.forEach(t => {
+          const logs = Array.isArray(t.logs) ? t.logs : [];
+          const sortedLogsAsc = logs.slice().sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
+          const trajectory = sortedLogsAsc.map(l => {
+            let dStr = l.date || '-';
+            try {
+              const d = new Date(l.date);
+              if (!isNaN(d.getTime())) dStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+            } catch {}
+            return `[${dStr}: ${l.status || 'Proses'} ${l.progress || 0}% - "${l.description || '-'}"`;
+          }).join(' -> ') || `(Belum ada riwayat log)`;
+
+          timelineSection += `  - Tugas: "${t.title}" | Klien: ${t.companyName || '-'} | Kategori: ${t.category || t.jobType || '-'} | Prioritas: ${t.priority || 'Medium'}\n`;
+          timelineSection += `    Status Terkini: **${t.status}** | Capaian Progres Total: **${t.progress || 0}%** | Periode: ${t.startDate || '-'} s/d ${t.endDate || '-'}\n`;
+          timelineSection += `    Jejak Kenaikan Progres & Riwayat Catatan:\n`;
+          timelineSection += `    ${trajectory}\n`;
+        });
+        timelineSection += `\n`;
+      });
+
+      if (projects.length > 0) {
+        timelineSection += `* Total Proyek Tim: ${projects.length} proyek\n`;
+        projects.forEach(p => {
+          timelineSection += `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.clientName || '-'} | Status: ${p.status} | Lead Engineer: ${p.leadEngineer || '-'}\n`;
         });
       }
-    });
 
-    // Group timeline entries by dateKey (descending order)
-    const groupedByDate: Record<string, { dateFormatted: string; entries: TimelineLogEntry[] }> = {};
-    allTimelineEntries.sort((a, b) => b.rawDate - a.rawDate).forEach(entry => {
-      if (!groupedByDate[entry.dateKey]) {
-        groupedByDate[entry.dateKey] = { dateFormatted: entry.dateFormatted, entries: [] };
-      }
-      groupedByDate[entry.dateKey].entries.push(entry);
-    });
-
-    let timelineSection = `\n--- [MENU 8: TASK APP & PROYEK TIM (TIMELINE & RIWAYAT LOG DETAIL)] ---\n`;
-    timelineSection += `* Total Task: ${tasks.length} task (${tasks.filter(t => t.status === 'Selesai').length} Selesai, ${tasks.filter(t => t.status !== 'Selesai').length} Sedang Berjalan/Proses)\n\n`;
-
-    timelineSection += `### 📅 KRONOLOGI AKTIVITAS HARIAN TIMELINE (TIMELINE LIST VIEW - GROUPED BY DATE):\n`;
-    timelineSection += `(Setiap tanggal mencatat aktivitas pekerjaan spesifik yang dikerjakan oleh pegawai, status, capaian progres, dan catatan log perubahan):\n\n`;
-
-    Object.entries(groupedByDate).forEach(([dateKey, group]) => {
-      timelineSection += `* Tanggal ${dateKey} (${group.dateFormatted}) - ${group.entries.length} aktivitas pekerjaan:\n`;
-      group.entries.forEach(e => {
-        const deltaStr = typeof e.prevProgress === 'number' ? ` (Perubahan dari ${e.prevProgress}% -> ${e.progress}%)` : '';
-        timelineSection += `  - [PIC: ${e.employee}] "${e.taskTitle}" | Klien: ${e.company} | Kategori: ${e.category} | Status: ${e.status} | Progres: ${e.progress}%${deltaStr}\n`;
-        timelineSection += `    Catatan Update Log: "${e.description}" (Waktu Update: ${e.timeStr} WIB)\n`;
-      });
-      timelineSection += `\n`;
-    });
-
-    timelineSection += `### 👥 PROFIL PENGERJAAN & JEJAK TIMELINE PER ANGGOTA TIM (PIC):\n`;
-    Object.entries(userTaskMap).forEach(([_, uData]) => {
-      timelineSection += `* Anggota Tim: **${uData.employeeName.toUpperCase()}** (${uData.tasks.length} Tugas Ditugaskan):\n`;
-      uData.tasks.forEach(t => {
-        const logs = Array.isArray(t.logs) ? t.logs : [];
-        const sortedLogsAsc = logs.slice().sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
-        const trajectory = sortedLogsAsc.map(l => {
-          let dStr = l.date || '-';
-          try {
-            const d = new Date(l.date);
-            if (!isNaN(d.getTime())) dStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
-          } catch {}
-          return `[${dStr}: ${l.status || 'Proses'} ${l.progress || 0}% - "${l.description || '-'}"`;
-        }).join(' -> ') || `(Belum ada riwayat log)`;
-
-        timelineSection += `  - Tugas: "${t.title}" | Klien: ${t.companyName || '-'} | Kategori: ${t.category || t.jobType || '-'} | Prioritas: ${t.priority || 'Medium'}\n`;
-        timelineSection += `    Status Terkini: **${t.status}** | Capaian Progres Total: **${t.progress || 0}%** | Periode: ${t.startDate || '-'} s/d ${t.endDate || '-'}\n`;
-        timelineSection += `    Jejak Kenaikan Progres & Riwayat Catatan:\n`;
-        timelineSection += `    ${trajectory}\n`;
-      });
-      timelineSection += `\n`;
-    });
-
-    if (projects.length > 0) {
-      timelineSection += `* Total Proyek Tim: ${projects.length} proyek\n`;
-      projects.forEach(p => {
-        const totalFiles = (p.files?.engineering?.length || 0) + (p.files?.commercial?.length || 0) + (p.files?.finance?.length || 0) + (p.files?.documentation?.length || 0);
-        timelineSection += `  - Proyek [${p.code || 'PRJ'}]: "${p.title}" | Klien: ${p.clientName || '-'} | Status: ${p.status} | Lead Engineer: ${p.leadEngineer || '-'}\n`;
-      });
+      digest += timelineSection;
+    } else {
+      digest += `\n--- [MENU 8: TASK APP & PROYEK TIM (RINGKASAN)] ---\n* Total Task: ${tasks.length} task (${tasks.filter(t => t.status === 'Selesai').length} Selesai, ${tasks.filter(t => t.status !== 'Selesai').length} Berjalan). Detail tugas siap ditampilkan bila ditanyakan.\n`;
     }
-
-    digest += timelineSection;
   }
 
   // Exact Match Search Normalization for TRX and PP codes

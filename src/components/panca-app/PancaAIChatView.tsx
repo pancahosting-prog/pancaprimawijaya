@@ -1299,7 +1299,15 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
     setIsLoading(true);
 
-    const historyPayload = messages.map(m => ({ role: m.role, content: m.content }));
+    const historyPayload = messages.slice(-8).map(m => {
+      if (m.role === 'assistant' && m.content.length > 800) {
+        return {
+          role: m.role,
+          content: m.content.substring(0, 800) + '\n... [Ringkasan respon sebelumnya]'
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
     const contextPayload: PancaAIContext = {
       currentUser,
       activeCompany,
