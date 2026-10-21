@@ -131,7 +131,7 @@ class WAService {
 
   public isQRExpired(): boolean {
     if (this.connectionState === "connected") return false;
-    if (!this.qrCodeBase64) return true;
+    if (!this.qrCodeBase64 || !this.qrTimestamp) return false;
     // Beri batas waktu realistis 60 detik bagi pengguna untuk membuka WA HP, membuka Perangkat Tertaut, dan men-scan barcode
     return (Date.now() - this.qrTimestamp) > 60000;
   }
@@ -843,13 +843,31 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
    */
   public sanitizePhoneAndName(jidOrPhone?: string, name?: string, altJid?: string, pushName?: string): { phone: string; name: string } {
     let target = jidOrPhone || "";
-    if (target.endsWith("@lid") && altJid && altJid.endsWith("@s.whatsapp.net")) {
+    if (altJid && (altJid.endsWith("@s.whatsapp.net") || altJid.includes("62") || altJid.replace(/[^0-9]/g, "").length >= 8)) {
       target = altJid;
     }
 
-    const rawDigits = target.split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
+    let rawDigits = target.split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 
-    if (rawDigits && !target.endsWith("@lid") && rawDigits.length >= 8 && rawDigits.length <= 15) {
+    // Check fallback sources for digits if target was LID or empty
+    if (!rawDigits || rawDigits.length < 8) {
+      if (jidOrPhone) {
+        const jDigits = jidOrPhone.split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
+        if (jDigits.length >= 8) rawDigits = jDigits;
+      }
+    }
+    if (!rawDigits || rawDigits.length < 8) {
+      if (name) {
+        const nDigits = name.replace(/[^0-9]/g, "");
+        if (nDigits.length >= 8 && nDigits.length <= 15) rawDigits = nDigits;
+      }
+      if ((!rawDigits || rawDigits.length < 8) && pushName) {
+        const pDigits = pushName.replace(/[^0-9]/g, "");
+        if (pDigits.length >= 8 && pDigits.length <= 15) rawDigits = pDigits;
+      }
+    }
+
+    if (rawDigits && rawDigits.length >= 8 && rawDigits.length <= 15) {
       let formattedPhone = rawDigits;
       if (formattedPhone.startsWith("62")) {
         formattedPhone = "0" + formattedPhone.slice(2);
@@ -857,18 +875,17 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
         formattedPhone = "0" + formattedPhone;
       }
 
-      const displayName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net")) 
-        ? name 
-        : (pushName && !pushName.includes("@lid") ? pushName : formattedPhone);
+      const isCleanName = (str?: string) => str && !str.includes("@lid") && !str.includes("@s.whatsapp.net") && !str.includes("@g.us");
+      const displayName = isCleanName(name) ? name! : (isCleanName(pushName) ? pushName! : formattedPhone);
 
       return { phone: formattedPhone, name: displayName };
     }
 
-    const fallbackName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net"))
-      ? name
-      : (pushName && !pushName.includes("@lid") ? pushName : "Pengguna WhatsApp");
+    const isCleanName = (str?: string) => str && !str.includes("@lid") && !str.includes("@s.whatsapp.net") && !str.includes("@g.us");
+    const fallbackName = isCleanName(name) ? name! : (isCleanName(pushName) ? pushName! : (jidOrPhone || "Pengguna WhatsApp"));
+    const fallbackPhone = rawDigits && rawDigits.length >= 6 ? rawDigits : fallbackName;
 
-    return { phone: fallbackName, name: fallbackName };
+    return { phone: fallbackPhone, name: fallbackName };
   }
 
   public async initBaileys(force = false) {
@@ -1125,7 +1142,18 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
             media: incomingMedia
           };
 
-          chat.messages.push(newMsg);
+          const isDup = chat.messages.some(existing => {
+            if (msg.key?.id && existing.id === msg.key.id) return true;
+            if (existing.fromMe === isFromMe && existing.text === text) {
+              const diff = Math.abs((existing.timestamp || Date.now()) - Date.now());
+              if (diff < 8000) return true;
+            }
+            return false;
+          });
+
+          if (!isDup) {
+            chat.messages.push(newMsg);
+          }
           chat.lastMessage = text;
           chat.lastMessageTime = Date.now();
           if (!isFromMe) chat.unreadCount += 1;
@@ -1844,7 +1872,17 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
       media
     };
 
-    chat.messages.push(msg);
+    const isDup = chat.messages.some(m => {
+      if (m.fromMe && m.text === (text || displaySummary)) {
+        const diff = Math.abs((m.timestamp || Date.now()) - Date.now());
+        if (diff < 8000) return true;
+      }
+      return false;
+    });
+
+    if (!isDup) {
+      chat.messages.push(msg);
+    }
     chat.lastMessage = displaySummary;
     chat.lastMessageTime = Date.now();
     chat.unreadCount = 0;

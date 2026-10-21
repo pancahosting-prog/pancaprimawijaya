@@ -28,6 +28,7 @@ import TaskApp from './task/App';
 import KPIModule from './src/components/KPIModule';
 import { GeminiAIAssistant } from './src/components/GeminiAIAssistant';
 import { PancaMobileApp } from './src/components/panca-app/PancaMobileApp';
+import { SharedPostView } from './task/components/SharedPostView';
 import { GeminiSettingsSection } from './src/components/GeminiSettingsSection';
 import { WANotifSettingsSection } from './src/components/WANotifSettingsSection';
 import { WhatsAppView } from './src/components/WhatsAppView';
@@ -2934,6 +2935,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
       // Group messages strictly by the responsible sales rep's phone number
       const salesMessages: Record<string, string[]> = {};
       const salesUpdateRecords: Record<string, { i: number, t: any, lastNotDate: string }[]> = {};
+      const superadminSystemNotifs: { taskId: string; title: string; message: string; priority: string }[] = [];
 
       for (let i = 0; i < newTransactions.length; i++) {
         const t = newTransactions[i];
@@ -2979,6 +2981,14 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
               salesMessages[targetPhone].push(message);
               salesUpdateRecords[targetPhone].push({ i, t, lastNotDate: `FU_${fuDateStr}` });
             }
+
+            // Simpan juga untuk notifikasi sistem Superadmin
+            superadminSystemNotifs.push({
+              taskId: t.noTrx || t.id,
+              title: `Pengingat Follow-up Penawaran (${t.noTrx})`,
+              message: `Customer: ${t.customerName}\nSales: ${salesName || '-'}\nTotal: ${formatRupiah(totalVal)}\nStatus: Belum di-follow-up selama ${diffDays} hari.`,
+              priority: 'high'
+            });
           }
         }
 
@@ -3010,6 +3020,14 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
               salesMessages[targetPhone].push(message);
               salesUpdateRecords[targetPhone].push({ i, t, lastNotDate: `DUE_${rawDue}` });
             }
+
+            // Simpan juga untuk notifikasi sistem Superadmin
+            superadminSystemNotifs.push({
+              taskId: t.noTrx || t.id,
+              title: `Peringatan Jatuh Tempo Piutang (${t.noTrx})`,
+              message: `Customer: ${t.customerName}\nSales: ${salesName || '-'}\nSisa Piutang: ${formatRupiah(t.sisaPembayaran || 0)}\nJatuh Tempo: ${rawDue} (${isOverdue ? 'Lewat Jatuh Tempo' : 'Jatuh Tempo Hari Ini'})`,
+              priority: 'high'
+            });
           }
         }
       }
@@ -3069,6 +3087,31 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
               });
             } catch (err) {
               console.error("Superadmin notify copy error:", err);
+            }
+          }
+        }
+      }
+
+      // Kirimkan notifikasi ke sistem internal Superadmin (agar muncul di notifikasi aplikasi dan bisa lihat detail transaksinya)
+      if (superadminSystemNotifs.length > 0) {
+        const superadminUsernames = Array.from(new Set([
+          'superadmin',
+          ...appUsers.filter(u => u.role === 'superadmin' || u.username === 'superadmin').map(u => u.username)
+        ])).filter(Boolean);
+
+        for (const notifItem of superadminSystemNotifs) {
+          for (const sUser of superadminUsernames) {
+            try {
+              await taskSupabaseService.sendNotification({
+                recipient_username: sUser,
+                type: 'alert',
+                taskId: notifItem.taskId,
+                title: notifItem.title,
+                message: notifItem.message,
+                priority: notifItem.priority
+              });
+            } catch (errNotif) {
+              console.warn("Gagal menyimpan notifikasi sistem superadmin:", errNotif);
             }
           }
         }
@@ -4901,6 +4944,27 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
             <div className="w-2 h-2 bg-zinc-900 dark:bg-zinc-100 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
             <div className="w-2 h-2 bg-zinc-900 dark:bg-zinc-100 rounded-full animate-bounce"></div>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Public Shared Drive Link Access (allows any user with the link to view without login)
+  const sharedDriveToken = typeof window !== 'undefined'
+    ? (new URLSearchParams(window.location.search).get('shareDrive') || new URLSearchParams(window.location.search).get('share_token'))
+    : null;
+
+  if (sharedDriveToken) {
+    return (
+      <div className="min-h-screen w-full bg-slate-900 flex items-center justify-center p-0 sm:p-4 font-sans">
+        <div className="w-full max-w-4xl h-screen sm:h-auto sm:max-h-[92vh] overflow-y-auto bg-white rounded-none sm:rounded-3xl shadow-2xl">
+          <SharedPostView
+            shareToken={sharedDriveToken}
+            onBackToApp={() => {
+              window.history.replaceState({}, document.title, window.location.pathname.startsWith('/app') ? '/app' : '/');
+              window.location.reload();
+            }}
+          />
         </div>
       </div>
     );
