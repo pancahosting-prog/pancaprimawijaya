@@ -45,7 +45,7 @@ async function startServer() {
   waService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp CS failed:", err));
   waNotifService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp Notifikasi failed:", err));
 
-  // WhatsApp Sender Endpoint (Perangkat 2 Baileys Gateway primary, Fonnte fallback)
+  // WhatsApp Notification Sender Endpoint (Eksklusif Perangkat 2 / Baileys Gateway)
   app.post("/api/send-whatsapp", async (req, res) => {
     const { phone, message, text } = req.body;
     const content = message || text;
@@ -54,47 +54,26 @@ async function startServer() {
       return res.status(400).json({ success: false, error: "Nomor tujuan (phone) dan pesan (message/text) diperlukan." });
     }
 
-    // 1. Prioritaskan WhatsApp Perangkat 2 (Baileys Gateway)
-    if (waNotifService.connectionState === "connected") {
-      try {
-        const result = await waNotifService.sendMessage(phone, content);
-        if (result.success) {
-          return res.json({ success: true, via: "Perangkat 2 (Baileys)", ...result });
-        }
-      } catch (err: any) {
-        console.warn("Gagal kirim via Perangkat 2:", err);
-      }
+    // Perangkat 2 (Baileys WhatsApp Gateway)
+    if (waNotifService.connectionState !== "connected") {
+      return res.status(503).json({ 
+        success: false, 
+        error: "WhatsApp Notifikasi (Perangkat 2 / Baileys) belum terhubung. Silakan buka menu Pengaturan WhatsApp Notifikasi dan scan QR Code untuk menghubungkan perangkat.",
+        connectionState: waNotifService.connectionState
+      });
     }
 
-    // 2. Fallback ke Fonnte jika token terkonfigurasi
-    const token = process.env.FONNTE_TOKEN;
-    if (token) {
-      try {
-        const response = await fetch("https://api.fonnte.com/send", {
-          method: "POST",
-          headers: {
-            "Authorization": token,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            target: phone,
-            message: content,
-          }),
-        });
-
-        const data = await response.json();
-        return res.json({ success: true, via: "Fonnte API", ...data });
-      } catch (error) {
-        return res.status(500).json({ success: false, error: "Gagal mengirim pesan WhatsApp via Fonnte" });
+    try {
+      const result = await waNotifService.sendMessage(phone, content);
+      if (result.success) {
+        return res.json({ success: true, via: "Perangkat 2 (Baileys)", ...result });
+      } else {
+        return res.status(500).json({ success: false, error: result.error || "Gagal mengirim pesan melalui Perangkat 2 (Baileys)." });
       }
+    } catch (err: any) {
+      console.error("Gagal kirim via Perangkat 2:", err);
+      return res.status(500).json({ success: false, error: err.message || "Gagal mengirim melalui WhatsApp Gateway Perangkat 2." });
     }
-
-    // Jika Perangkat 2 belum tersambung dan tidak ada token Fonnte
-    return res.status(503).json({ 
-      success: false, 
-      error: "WhatsApp Notifikasi (Perangkat 2) belum terhubung. Silakan buka tab Pengaturan WhatsApp Notifikasi dan scan QR code terlebih dahulu.",
-      connectionState: waNotifService.connectionState
-    });
   });
 
   // --- WhatsApp Notifikasi (Perangkat 2) Endpoints ---
