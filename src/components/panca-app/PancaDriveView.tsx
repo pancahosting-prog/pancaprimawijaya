@@ -265,13 +265,20 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
     }
   };
 
-  // Open Share Modal (matching task/components/DriveView)
+  // Open Share Modal (matching task/components/DriveView & user request)
   const openShare = (post: DrivePost) => {
     setSharingPost(post);
     setShareValue(1);
     setShareUnit('hours');
     setCopiedLink(false);
+    // Always start with duration rules form to generate a fresh new link
+    setGeneratedShareLink('');
+  };
 
+  // Open existing active share link detail
+  const openActiveShare = (post: DrivePost) => {
+    setSharingPost(post);
+    setCopiedLink(false);
     if (post.share_token) {
       const link = `${window.location.origin}/app?shareDrive=${post.share_token}`;
       setGeneratedShareLink(link);
@@ -474,33 +481,22 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
                   </p>
                 )}
 
-                {/* Shared State Status Banner */}
-                {isShared && (
-                  <div className={`p-3 rounded-xl border text-xs font-semibold flex flex-wrap items-center justify-between gap-2 ${
-                    hasExpired 
-                      ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300' 
-                      : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300'
-                  }`}>
+                {/* Shared State Status Banner - Hanya tampil jika link masih aktif, TIDAK tampil jika sudah kedaluwarsa */}
+                {isShared && !hasExpired && (
+                  <div className="p-3 rounded-xl border text-xs font-semibold flex flex-wrap items-center justify-between gap-2 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${hasExpired ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                       <span>
-                        {hasExpired 
-                          ? 'Link share sudah kedaluwarsa' 
-                          : `Link share aktif s.d: ${new Date(post.share_expires_at!).toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}`
-                        }
+                        Link share aktif s.d: {new Date(post.share_expires_at!).toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {!hasExpired && (
-                        <button
-                          onClick={() => {
-                            openShare(post);
-                          }}
-                          className="px-2.5 py-1 bg-white dark:bg-zinc-800 hover:bg-slate-50 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 rounded-lg text-[10px] font-bold uppercase tracking-wider"
-                        >
-                          Detail Link
-                        </button>
-                      )}
+                      <button
+                        onClick={() => openActiveShare(post)}
+                        className="px-2.5 py-1 bg-white dark:bg-zinc-800 hover:bg-slate-50 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 rounded-lg text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        Detail Link
+                      </button>
                       <button
                         onClick={() => handleCancelShare(post.id)}
                         className="px-2.5 py-1 bg-white dark:bg-zinc-800 hover:bg-rose-50 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 rounded-lg text-[10px] font-bold uppercase tracking-wider"
@@ -728,48 +724,56 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
       {sharingPost && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-3xl bg-white dark:bg-zinc-900 p-6 shadow-2xl relative text-slate-800 dark:text-zinc-100 border border-slate-200 dark:border-zinc-800">
-            <button
-              onClick={() => setSharingPost(null)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white flex items-center justify-center mb-3">
-              <Share2 className="w-6 h-6" />
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-800">
+              <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">
+                BAGIKAN POSTINGAN DRIVE
+              </h3>
+              <button
+                onClick={() => setSharingPost(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">Bagikan Postingan Drive</h3>
-            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Tautan publik sementara untuk <strong>{sharingPost.title}</strong>.</p>
-
             <div className="mt-4 space-y-4">
+              {/* Judul Postingan box matching screenshot */}
+              <div className="bg-slate-50 dark:bg-zinc-800/60 p-4 rounded-2xl border border-slate-100 dark:border-zinc-800/80">
+                <span className="text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-widest block mb-1">
+                  JUDUL POSTINGAN
+                </span>
+                <p className="text-sm font-bold text-slate-900 dark:text-zinc-100 leading-snug">
+                  {sharingPost.title}
+                </p>
+              </div>
+
               {!generatedShareLink ? (
                 <div className="space-y-4">
-                  <p className="text-xs text-slate-500 dark:text-zinc-400">
-                    Tentukan masa aktif berlakunya link sharing. Setelah durasi berakhir, link otomatis tidak dapat dibuka lagi.
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium leading-relaxed">
+                    Tentukan masa aktif durasi berlakunya link sharing di bawah ini. Setelah durasi berakhir, link otomatis tidak dapat diakses.
                   </p>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1 block">
-                        Masa Berlaku
+                      <label className="text-[10px] font-black text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1 block">
+                        MASA BERLAKU
                       </label>
                       <input
                         type="number"
                         min="1"
                         value={shareValue}
                         onChange={e => setShareValue(parseInt(e.target.value) || 1)}
-                        className="w-full p-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl outline-none text-xs font-bold text-slate-800 dark:text-zinc-100"
+                        className="w-full p-3 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl outline-none text-xs font-bold text-slate-800 dark:text-zinc-100 focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1 block">
-                        Satuan Waktu
+                      <label className="text-[10px] font-black text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1 block">
+                        SATUAN WAKTU
                       </label>
                       <select
                         value={shareUnit}
                         onChange={e => setShareUnit(e.target.value as any)}
-                        className="w-full p-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl outline-none text-xs font-bold text-slate-800 dark:text-zinc-100"
+                        className="w-full p-3 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl outline-none text-xs font-bold text-slate-800 dark:text-zinc-100 focus:ring-2 focus:ring-indigo-500"
                       >
                         <option value="hours">Jam (Hours)</option>
                         <option value="days">Hari (Days)</option>
@@ -780,14 +784,14 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
 
                   <button
                     onClick={handleGenerateShareLink}
-                    className="w-full py-3 bg-slate-900 dark:bg-white hover:bg-black dark:hover:bg-zinc-200 text-white dark:text-slate-900 font-bold rounded-2xl shadow-sm transition text-xs active:scale-95"
+                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-2xl shadow-md transition text-xs uppercase tracking-wider active:scale-98"
                   >
-                    Dapatkan Link Temporary
+                    DAPATKAN LINK TEMPORARY
                   </button>
                 </div>
               ) : (
                 <div className="space-y-3.5">
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
+                  <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
                     Link Share Temporary (Siap Dibagikan)
                   </label>
                   
@@ -801,7 +805,7 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
                     <button
                       onClick={copyShareLink}
                       className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 active:scale-95 ${
-                        copiedLink ? 'bg-emerald-600 text-white' : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-black'
+                        copiedLink ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'
                       }`}
                     >
                       {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -821,6 +825,13 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
                       Tarik Akses
                     </button>
                   </div>
+
+                  <button
+                    onClick={() => setGeneratedShareLink('')}
+                    className="w-full py-2.5 border border-dashed border-slate-300 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 font-bold rounded-xl text-xs transition"
+                  >
+                    + Buat Link Baru dengan Durasi Lain
+                  </button>
                 </div>
               )}
             </div>
