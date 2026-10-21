@@ -52,6 +52,8 @@ export const PancaWhatsAppMobileView: React.FC<PancaWhatsAppMobileViewProps> = (
   const [selectedNumber, setSelectedNumber] = useState<string>('active');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevChatJidRef = useRef<string | null>(null);
+  const isUserScrollingUpRef = useRef<boolean>(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch connection status
@@ -67,6 +69,11 @@ export const PancaWhatsAppMobileView: React.FC<PancaWhatsAppMobileViewProps> = (
           userName: data.userName || null,
           qrExpired: data.qrExpired
         });
+
+        // Auto-initiate WA connection if disconnected and no QR available
+        if (data.connectionState === 'disconnected' && !data.qrCodeBase64 && !isConnecting) {
+          fetch('/api/wa/connect?force=true', { method: 'POST' }).catch(() => {});
+        }
       }
     } catch (err) {
       console.warn('Error fetching WA status:', err);
@@ -178,6 +185,7 @@ export const PancaWhatsAppMobileView: React.FC<PancaWhatsAppMobileViewProps> = (
     if (e) e.preventDefault();
     if (!selectedChatJid || !replyText.trim() || isSending) return;
 
+    isUserScrollingUpRef.current = false;
     const textToSend = replyText.trim();
     const chatJid = selectedChatJid;
     setIsSending(true);
@@ -243,7 +251,16 @@ export const PancaWhatsAppMobileView: React.FC<PancaWhatsAppMobileViewProps> = (
 
   // Scroll to bottom when active chat updates
   useEffect(() => {
-    if (selectedChatJid) {
+    if (!selectedChatJid) return;
+
+    if (selectedChatJid !== prevChatJidRef.current) {
+      prevChatJidRef.current = selectedChatJid;
+      isUserScrollingUpRef.current = false;
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
+    if (!isUserScrollingUpRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [selectedChatJid, chats]);
@@ -306,7 +323,14 @@ export const PancaWhatsAppMobileView: React.FC<PancaWhatsAppMobileViewProps> = (
         </div>
 
         {/* Messages List Area */}
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5 bg-[#efeae2]/50 dark:bg-zinc-950/90">
+        <div 
+          className="flex-1 overflow-y-auto p-3.5 space-y-2.5 bg-[#efeae2]/50 dark:bg-zinc-950/90"
+          onScroll={(e) => {
+            const target = e.currentTarget;
+            const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 120;
+            isUserScrollingUpRef.current = !isNearBottom;
+          }}
+        >
           {(!activeChat.messages || activeChat.messages.length === 0) ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 dark:text-zinc-500 py-12">
               <MessageCircle className="w-10 h-10 stroke-[1.2] opacity-30 mb-2" />
@@ -314,7 +338,17 @@ export const PancaWhatsAppMobileView: React.FC<PancaWhatsAppMobileViewProps> = (
               <p className="text-[10px] text-slate-400 mt-0.5">Ketik pesan di bawah untuk memulai percakapan</p>
             </div>
           ) : (
-            activeChat.messages.map((m, idx) => {
+            activeChat.messages.filter((m, idx, arr) => {
+              const firstIdx = arr.findIndex(x => (x.id && m.id && x.id === m.id));
+              if (firstIdx !== -1 && firstIdx !== idx) return false;
+              const dupIdx = arr.findIndex((x, i) => 
+                i < idx && 
+                x.fromMe === m.fromMe && 
+                x.text === m.text && 
+                Math.abs((x.timestamp || 0) - (m.timestamp || 0)) < 5000
+              );
+              return dupIdx === -1;
+            }).map((m, idx) => {
               const isOutgoing = m.fromMe;
               const timeStr = m.timestamp
                 ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
