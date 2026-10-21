@@ -387,7 +387,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         startDate: nowIso,
         endDate: nowIso,
         employeeName: currentUser?.nama || 'Superadmin',
-        owner_username: currentUser?.username || 'superadmin',
+        owner: currentUser?.username || 'superadmin',
         collaborators: [],
         pendingCollaborators: [],
         logs: [{
@@ -725,7 +725,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     const currentUsername = (currentUser?.username || '').toLowerCase();
     return taskAppData.tasks.filter(t => {
       const emp = (t.employeeName || '').toLowerCase();
-      const owner = (t.owner_username || '').toLowerCase();
+      const owner = ((t as any).owner_username || (t as any).owner || '').toLowerCase();
       const isCollab = Array.isArray(t.collaborators) && t.collaborators.some(c => String(c).toLowerCase() === currentUsername || String(c).toLowerCase() === currentName);
       return emp === currentName || emp === currentUsername || owner === currentUsername || owner === currentName || isCollab;
     });
@@ -1304,11 +1304,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
     setIsLoading(true);
 
-    const historyPayload = messages.slice(-8).map(m => {
-      if (m.role === 'assistant' && m.content.length > 800) {
+    const historyPayload = messages.slice(-6).map(m => {
+      if (m.role === 'assistant' && m.content.length > 600) {
         return {
           role: m.role,
-          content: m.content.substring(0, 800) + '\n... [Ringkasan respon sebelumnya]'
+          content: m.content.substring(0, 600) + '\n... [Ringkasan respon sebelumnya]'
         };
       }
       return { role: m.role, content: m.content };

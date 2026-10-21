@@ -341,17 +341,68 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
 export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string = ''): string => {
   const agg = compileSystemAggregations(ctx, queryText);
   const isSuperAdmin = ctx.currentUser?.role?.toLowerCase() === 'superadmin';
-  const queryLower = queryText.toLowerCase();
+  const queryLower = queryText.toLowerCase().trim();
   const allowedMenus = (ctx.rolePermissions || []).filter(p => p.canView).map(p => p.id);
   const allowedListStr = isSuperAdmin ? "SELURUH AKSES SISTEM (SUPERADMIN)" : (allowedMenus.length > 0 ? allowedMenus.join(', ') : "Akses Menu Sangat Terbatas");
 
-  // Topic Intent Recognition for Smart Context Optimization
-  const isTaskQuery = /\b(tugas|task|pekerjaan|proyek|project|log|progres|progress|pengerjaan|aktivitas|kegiatan|kinerja|prioritas|saran|analisa|analisis|evan|yadi|rudi|arie|adam|maria|dwi|angel|engineer|tim)\b/i.test(queryLower);
-  const isProductQuery = /\b(produk|product|stok|stock|persediaan|katalog|sku|harga|fumiphos|silogard|foto|gambar|photo|image|sisa|lot|satuan)\b/i.test(queryLower);
-  const isTrxQuery = /\b(transaksi|trx|pp|penjualan|omset|omzet|deals|invoice|piutang|tagihan|lunas|bayar|pesanan|order)\b/i.test(queryLower);
-  const isQuoteQuery = /\b(penawaran|quotation|quote|followup|follow-up|follow up|prospek)\b/i.test(queryLower);
-  const isContactQuery = /\b(customer|pelanggan|kontak|contact|klien|client|telepon|wa|whatsapp)\b/i.test(queryLower);
-  const isGeneralReportQuery = /\b(semua|laporan|keseluruhan|ringkasan|overview|database|sistem|perusahaan)\b/i.test(queryLower) || (!isTaskQuery && !isProductQuery && !isTrxQuery && !isQuoteQuery && !isContactQuery);
+  // Topic Intent Recognition with Typo & Stemming Resilience
+  const isTaskQuery = /\b(tugas|task|pekerjaan|proyek|project|log|progres|progress|pengerjaan|aktivitas|kegiatan|kinerja|prioritas|saran|analisa|analisis|evan|yadi|rudi|arie|adam|maria|dwi|angel|engineer|tim)\b/i.test(queryLower) ||
+    queryLower.includes('tugas') || queryLower.includes('task') || queryLower.includes('evan') || queryLower.includes('dikerjakan');
+
+  const isProductQuery = /\b(produk|product|stok|stock|persediaan|katalog|sku|harga|fumiphos|silogard|foto|gambar|photo|image|sisa|lot|satuan)\b/i.test(queryLower) ||
+    queryLower.includes('produk') || queryLower.includes('stok');
+
+  const isTrxQuery = /\b(transaksi|trasaksi|transsi|transaki|trx|pp|penjualan|omset|omzet|deals|invoice|inv|piutang|tagihan|lunas|bayar|pesanan|order|jual|beli)\b/i.test(queryLower) ||
+    queryLower.includes('transaksi') || queryLower.includes('trasaksi') || queryLower.includes('omset') || queryLower.includes('omzet') || queryLower.includes('trx');
+
+  const isQuoteQuery = /\b(penawaran|quotation|quote|quo|followup|follow-up|follow up|prospek)\b/i.test(queryLower) ||
+    queryLower.includes('penawaran') || queryLower.includes('followup');
+
+  const isContactQuery = /\b(customer|pelanggan|kontak|contact|klien|client|telepon|wa|whatsapp)\b/i.test(queryLower) ||
+    queryLower.includes('pelanggan') || queryLower.includes('customer') || queryLower.includes('klien');
+
+  const isFinanceQuery = /\b(piutang|hutang|po|purchasing|supplier|vendor|tagihan|finance)\b/i.test(queryLower) ||
+    queryLower.includes('piutang') || queryLower.includes('hutang') || queryLower.includes('purchasing');
+
+  const isQAQuery = /\b(qa|tanya|jawab|forum|diskusi|teknis|mitigasi|efek|dosis|instruksi|kendala|problem|solusi|geohazard|seismik|fumigasi)\b/i.test(queryLower);
+
+  // Explicit request for a full uncompressed system report
+  const isExplicitGeneralReport = /\b(semua data|keseluruhan data|overview database|laporan lengkap database|seluruh data)\b/i.test(queryLower);
+
+  // Month & Period Detection Helper for Precise Filtering
+  const monthNamesId = ['januari', 'februari', 'maret', 'april', 'mei', 'juni', 'juli', 'agustus', 'september', 'oktober', 'november', 'desember'];
+  const monthAbbrId = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'ags', 'agu', 'sep', 'okt', 'nov', 'des'];
+  let targetMonthIdx: number | null = null;
+  monthNamesId.forEach((m, idx) => {
+    if (queryLower.includes(m)) targetMonthIdx = idx;
+  });
+  if (targetMonthIdx === null) {
+    monthAbbrId.forEach((m, idx) => {
+      if (queryLower.includes(m)) targetMonthIdx = idx;
+    });
+  }
+
+  // Filter transactions by target month if specified
+  let targetTransactions = agg.compTransactions;
+  if (targetMonthIdx !== null) {
+    const monthMatched = agg.compTransactions.filter(t => {
+      if (!t.tanggal) return false;
+      const d = new Date(t.tanggal);
+      return !isNaN(d.getTime()) && d.getMonth() === targetMonthIdx;
+    });
+    if (monthMatched.length > 0) targetTransactions = monthMatched;
+  }
+
+  // Filter quotes by target month if specified
+  let targetQuotes = agg.quoteList;
+  if (targetMonthIdx !== null) {
+    const monthMatched = agg.quoteList.filter(q => {
+      if (!q.tanggal) return false;
+      const d = new Date(q.tanggal);
+      return !isNaN(d.getTime()) && d.getMonth() === targetMonthIdx;
+    });
+    if (monthMatched.length > 0) targetQuotes = monthMatched;
+  }
 
   let digest = `=== DATABASE REAL-TIME SISTEM MYPANCA (PT. PANCA PRIMA WIJAYA) ===
 - Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
@@ -366,83 +417,156 @@ export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string =
 --- [REKAP OMZET PER BULAN] ---
 ${Object.entries(agg.monthlyOmzetMap).map(([m, data]) => `* Periode ${m}: Total Omzet Selesai Rp ${data.omzetSelesai.toLocaleString('id-ID')} (${data.totalDeals} transaksi: ${data.customers.join(', ')})`).join('\n') || '* (Akses terbatas atau belum ada data)'}
 
---- [MENU 1: TRANSAKSI PENJUALAN LENGKAP (LAMA TRX & BARU PP)] ---
+--- [MENU 1: TRANSAKSI PENJUALAN (TRX & PP)] ---
 * Status Pesanan Breakdown: ${Object.entries(agg.tradeStatusCounts).map(([k, v]) => `${k}: ${v} transaksi`).join(' | ')}
 * Status Pembayaran: ${Object.entries(agg.paymentStatusCounts).map(([k, v]) => `${k}: ${v} transaksi`).join(' | ')}
 * Performa Sales Rep:
 ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.count} trx deals | Total Omzet: Rp ${d.omzet.toLocaleString('id-ID')}`).join('\n') || '  (Akses terbatas atau belum ada data)'}
 
-* Top Pelanggan dengan Belanja Terbesar:
-${Object.entries(agg.customerSpendMap).sort((a, b) => b[1].total - a[1].total).slice(0, 10).map(([c, d], i) => `  ${i + 1}. ${c}: ${d.count} transaksi | Total Belanja: Rp ${d.total.toLocaleString('id-ID')}`).join('\n') || '  (Akses terbatas)'}
-
-${(isTrxQuery || isQuoteQuery || isContactQuery || isGeneralReportQuery) ? `* Daftar Transaksi Real Database:
-${agg.compTransactions.length > 0 ? agg.compTransactions.map(t => {
-  const amt = getTransactionAmount(t);
-  const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} unit @ Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : '';
-  return `  - [${t.noTrx || t.id}] Tanggal: ${t.tanggal || '-'} | Pelanggan: ${t.customerName || t.customer || '-'} | Total Nilai: Rp ${amt.toLocaleString('id-ID')} | Status: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales: ${t.sales || t.salesName || '-'} | Item: [${itemsStr || 'N/A'}]`;
-}).join('\n') : '  (Akses menu Transaksi dibatasi atau data tidak ada)'}` : `* Ringkasan Transaksi: ${agg.compTransactions.length} transaksi terdaftar (Detail transaksi siap dipanggil bila ditanyakan).`}
-
---- [MENU 2: DAFTAR KONTAK & PELANGGAN LENGKAP] ---
-* Total Kontak: ${agg.compCustomers.length} Pelanggan
-${(isContactQuery || isTrxQuery || isQuoteQuery || isGeneralReportQuery) ? (agg.compCustomers.length > 0 ? agg.compCustomers.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales: ${c.sales || '-'}, Status: ${c.leadType || 'Aktif'})`).join('\n') : '  (Akses menu Contacts dibatasi)') : '  (Ringkasan: Kontak pelanggan tersedia di database)'}
-
---- [MENU 3: PENAWARAN (QUOTATIONS) & ROADMAP FOLLOW-UP DETAIL] ---
-* Total Penawaran: ${agg.totalQuotes} penawaran (Nilai Total: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')})
-${(isQuoteQuery || isTrxQuery || isContactQuery || isGeneralReportQuery) ? (agg.quoteList.length > 0 ? agg.quoteList.map(q => {
-  const roadmapStr = q.roadmapFollowUps && q.roadmapFollowUps.length > 0
-    ? `\n    * Roadmap Follow-Up (${q.roadmapFollowUps.length} tahapan interaksi):\n      - ${q.roadmapFollowUps.join('\n      - ')}`
-    : '\n    * Roadmap Follow-Up: Belum ada aktivitas.';
-  return `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal Penawaran: ${q.tanggal} | Total Nilai: Rp ${q.total.toLocaleString('id-ID')} | Sales: ${q.sales}
-    * Next Follow-Up: ${q.nextFollowUpDate} (Metode: ${q.nextFollowUpMethod})
-    * Latest Follow-Up: ${q.latestFollowUp}${roadmapStr}`;
-}).join('\n') : '  (Akses menu Penawaran dibatasi)') : '  (Ringkasan: Data penawaran & roadmap follow-up tersedia di database)'}
-
---- [MENU 4: KATALOG & STOK PRODUK LENGKAP] ---
-* Total SKU: ${agg.compProducts.length} Produk
-${(isProductQuery || isTrxQuery || isQuoteQuery || isGeneralReportQuery) ? (agg.compProducts.length > 0 ? agg.compProducts.map(p => {
-  const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
-  const specStr = p.specifications || p.deskripsi || p.description || 'Belum diisi';
-  const mainFunc = p.mainFunction || p.fungsi || 'Belum diisi';
-  const mainApp = p.mainApplication || p.aplikasi || 'Belum diisi';
-  const dim = (p.panjang || p.lebar || p.tinggi) ? `${p.panjang || 0} x ${p.lebar || 0} x ${p.tinggi || 0} cm` : (p.dimensi || 'Belum diisi');
-  const weight = p.berat ? `${p.berat} kg` : 'Belum diisi';
-  const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
-  const hasImgUrl = Boolean(getProductImageUrl(p, agg.compProducts));
-  const imgTag = hasImgUrl ? `![Foto ${p.nama || p.name}](product-image:${p.id || p.kode})` : 'Foto belum ada di sistem';
-  return `  - SKU [${p.kode || p.id}] ${p.nama || p.name} (SISA STOK AKURAT: ${stockVal} ${p.satuan || p.unit || 'unit'}) | Harga Jual: Rp ${price.toLocaleString('id-ID')} | Foto/Gambar: ${imgTag}
-    * Fungsi: ${mainFunc} | Aplikasi: ${mainApp} | Dimensi: ${dim} | Berat: ${weight} | Spesifikasi: ${specStr}`;
-}).join('\n') : '  (Akses menu Produk dibatasi)') : `  (Ringkasan Stok: ${agg.compProducts.length} SKU terdaftar, ${agg.lowStockProducts.length} stok menipis)`}
-
---- [MENU 5: FINANCE - PIUTANG USAHA (TAGIHAN BELUM LUNAS)] ---
-* Total Piutang: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan)
-${agg.unpaidInvoicesList.length > 0 ? agg.unpaidInvoicesList.map(u => `  - Invoice [${u.noTrx}] Pelanggan: ${u.customer} | Tanggal: ${u.tanggal} | Total: Rp ${u.total.toLocaleString('id-ID')} | Sisa: Rp ${u.sisa.toLocaleString('id-ID')} | Sales: ${u.sales}`).join('\n') : '  - ✅ Tidak ada piutang tertunggak atau akses dibatasi.'}
-
---- [MENU 6: PURCHASING & SUPPLIER] ---
-* Total Supplier: ${agg.allSuppliers.length} vendor | PO: ${agg.allPOs.length} PO (Total: Rp ${agg.totalPOAmount.toLocaleString('id-ID')})
-${agg.allPOs.length > 0 ? agg.allPOs.map(po => `  - PO [${po.noPO || po.id}] Vendor: ${po.supplierName || '-'} | Tanggal: ${po.tanggal || po.tanggalPembelian || '-'} | Total: Rp ${(Number(po.total) || 0).toLocaleString('id-ID')} | Status: ${po.status || 'Draft'}`).join('\n') : '  (Akses menu Purchasing dibatasi)'}
-
---- [MENU 7: HR - KARYAWAN & TIM] ---
-* Total Karyawan: ${agg.allEmployees.length} staf
-${agg.allEmployees.length > 0 ? agg.allEmployees.map(e => `  - ${e.nama} | Jabatan: ${e.role || '-'} | WA: ${e.whatsapp || '-'}${isSuperAdmin && e.gaji ? ` | Gaji: Rp ${Number(e.gaji).toLocaleString('id-ID')}` : ''}`).join('\n') : '  (Akses menu Karyawan dibatasi)'}
 `;
 
-  // Include Q&A Forum data from taskAppDataExt (Real-Time Knowledge Base)
-  if (ctx.taskAppDataExt?.qaQuestions && ctx.taskAppDataExt.qaQuestions.length > 0) {
-    digest += `\n--- [MENU 9: Q&A FORUM & TECHNICAL KNOWLEDGE BASE] ---\n`;
-    ctx.taskAppDataExt.qaQuestions.forEach(q => {
-      digest += `* TOPIK DISKUSI: "${q.title}" (${q.category})\n`;
-      digest += `  - PERTANYAAN/ISI: ${q.content}\n`;
-      if (q.answers && q.answers.length > 0) {
-        q.answers.forEach((ans: any, idx: number) => {
-          digest += `  - JAWABAN #${idx + 1} (${ans.author_name}): ${ans.content}\n`;
-        });
-      } else {
-        digest += `  - STATUS: Belum ada jawaban dari tim teknis.\n`;
-      }
-    });
+  // Menu 1: Transactions
+  const showTrxList = isTrxQuery || isExplicitGeneralReport || (!isTaskQuery && !isProductQuery && !isQuoteQuery && !isContactQuery && !isFinanceQuery && !isQAQuery);
+  if (showTrxList) {
+    const sliceTrx = targetTransactions.slice(0, 30);
+    digest += `* Daftar Transaksi Real Database (${targetMonthIdx !== null ? `Terfilter Bulan ${monthNamesId[targetMonthIdx]}` : `Menampilkan ${sliceTrx.length} Transaksi Terbaru`}):\n`;
+    if (sliceTrx.length > 0) {
+      digest += sliceTrx.map(t => {
+        const amt = getTransactionAmount(t);
+        const itemsStr = Array.isArray(t.items) ? t.items.map((it: any) => `${it.nama || it.productName || 'Barang'} (${it.qty || 1} unit @ Rp ${(Number(it.harga) || 0).toLocaleString('id-ID')})`).join(', ') : '';
+        return `  - [${t.noTrx || t.id}] Tanggal: ${t.tanggal || '-'} | Pelanggan: ${t.customerName || t.customer || '-'} | Total Nilai: Rp ${amt.toLocaleString('id-ID')} | Status: ${t.status || 'Selesai'} | Pembayaran: ${t.paymentStatus || 'Lunas'} | Sales: ${t.sales || t.salesName || '-'} | Item: [${itemsStr || 'N/A'}]`;
+      }).join('\n') + '\n';
+    } else {
+      digest += `  (Akses menu Transaksi dibatasi atau data tidak ada)\n`;
+    }
+  } else {
+    digest += `* Ringkasan Transaksi: ${agg.compTransactions.length} transaksi terdaftar.\n`;
   }
 
-  digest += generateWebKnowledgeDigest(ctx.currentUser?.role || '');
+  // Menu 2: Contacts
+  digest += `\n--- [MENU 2: DAFTAR KONTAK & PELANGGAN] ---\n`;
+  digest += `* Total Kontak: ${agg.compCustomers.length} Pelanggan\n`;
+  if (isContactQuery || isExplicitGeneralReport) {
+    const sliceCust = agg.compCustomers.slice(0, 25);
+    if (sliceCust.length > 0) {
+      digest += sliceCust.map(c => `  - ${c.nama} (Perusahaan: ${c.perusahaan || '-'}, PIC: ${c.pic || '-'}, Kota: ${c.kota || '-'}, Telp/WA: ${c.whatsapp || c.phone || '-'}, Sales: ${c.sales || '-'}, Status: ${c.leadType || 'Aktif'})`).join('\n') + '\n';
+    } else {
+      digest += `  (Akses menu Contacts dibatasi)\n`;
+    }
+  } else {
+    digest += `  (Ringkasan: Kontak pelanggan tersedia di database)\n`;
+  }
+
+  // Menu 3: Quotations
+  digest += `\n--- [MENU 3: PENAWARAN (QUOTATIONS) & ROADMAP FOLLOW-UP] ---\n`;
+  digest += `* Total Penawaran: ${agg.totalQuotes} penawaran (Nilai Total: Rp ${agg.totalNilaiPenawaran.toLocaleString('id-ID')})\n`;
+  if (isQuoteQuery || isExplicitGeneralReport) {
+    const sliceQuotes = targetQuotes.slice(0, 25);
+    if (sliceQuotes.length > 0) {
+      digest += sliceQuotes.map(q => {
+        const roadmapStr = q.roadmapFollowUps && q.roadmapFollowUps.length > 0
+          ? `\n    * Roadmap Follow-Up (${q.roadmapFollowUps.length} tahapan interaksi):\n      - ${q.roadmapFollowUps.join('\n      - ')}`
+          : '\n    * Roadmap Follow-Up: Belum ada aktivitas.';
+        return `  - [${q.noTrx}] Pelanggan: ${q.customer} | Tanggal Penawaran: ${q.tanggal} | Total Nilai: Rp ${q.total.toLocaleString('id-ID')} | Sales: ${q.sales}
+    * Next Follow-Up: ${q.nextFollowUpDate} (Metode: ${q.nextFollowUpMethod})
+    * Latest Follow-Up: ${q.latestFollowUp}${roadmapStr}`;
+      }).join('\n') + '\n';
+    } else {
+      digest += `  (Akses menu Penawaran dibatasi)\n`;
+    }
+  } else {
+    digest += `  (Ringkasan: Data penawaran & roadmap follow-up tersedia di database)\n`;
+  }
+
+  // Menu 4: Products
+  digest += `\n--- [MENU 4: KATALOG & STOK PRODUK] ---\n`;
+  digest += `* Total SKU: ${agg.compProducts.length} Produk\n`;
+  if (isProductQuery || isExplicitGeneralReport) {
+    const sliceProds = agg.compProducts.slice(0, 25);
+    if (sliceProds.length > 0) {
+      digest += sliceProds.map(p => {
+        const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
+        const specStr = p.specifications || p.deskripsi || p.description || 'Belum diisi';
+        const mainFunc = p.mainFunction || p.fungsi || 'Belum diisi';
+        const mainApp = p.mainApplication || p.aplikasi || 'Belum diisi';
+        const dim = (p.panjang || p.lebar || p.tinggi) ? `${p.panjang || 0} x ${p.lebar || 0} x ${p.tinggi || 0} cm` : (p.dimensi || 'Belum diisi');
+        const weight = p.berat ? `${p.berat} kg` : 'Belum diisi';
+        const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
+        const hasImgUrl = Boolean(getProductImageUrl(p, agg.compProducts));
+        const imgTag = hasImgUrl ? `![Foto ${p.nama || p.name}](product-image:${p.id || p.kode})` : 'Foto belum ada di sistem';
+        return `  - SKU [${p.kode || p.id}] ${p.nama || p.name} (SISA STOK AKURAT: ${stockVal} ${p.satuan || p.unit || 'unit'}) | Harga Jual: Rp ${price.toLocaleString('id-ID')} | Foto/Gambar: ${imgTag}
+    * Fungsi: ${mainFunc} | Aplikasi: ${mainApp} | Dimensi: ${dim} | Berat: ${weight} | Spesifikasi: ${specStr}`;
+      }).join('\n') + '\n';
+    } else {
+      digest += `  (Akses menu Produk dibatasi)\n`;
+    }
+  } else {
+    digest += `  (Ringkasan Stok: ${agg.compProducts.length} SKU terdaftar, ${agg.lowStockProducts.length} stok menipis)\n`;
+  }
+
+  // Menu 5: Finance / Piutang
+  digest += `\n--- [MENU 5: FINANCE - PIUTANG USAHA (TAGIHAN BELUM LUNAS)] ---\n`;
+  digest += `* Total Piutang: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan)\n`;
+  if (isFinanceQuery || isExplicitGeneralReport) {
+    const sliceUnpaid = agg.unpaidInvoicesList.slice(0, 15);
+    if (sliceUnpaid.length > 0) {
+      digest += sliceUnpaid.map(u => `  - Invoice [${u.noTrx}] Pelanggan: ${u.customer} | Tanggal: ${u.tanggal} | Total: Rp ${u.total.toLocaleString('id-ID')} | Sisa: Rp ${u.sisa.toLocaleString('id-ID')} | Sales: ${u.sales}`).join('\n') + '\n';
+    } else {
+      digest += `  - ✅ Tidak ada piutang tertunggak atau akses dibatasi.\n`;
+    }
+  } else {
+    digest += `  (Ringkasan: Piutang usaha tersedia di database)\n`;
+  }
+
+  // Menu 6: Purchasing & POs
+  digest += `\n--- [MENU 6: PURCHASING & SUPPLIER] ---\n`;
+  digest += `* Total Supplier: ${agg.allSuppliers.length} vendor | PO: ${agg.allPOs.length} PO (Total: Rp ${agg.totalPOAmount.toLocaleString('id-ID')})\n`;
+  if (isFinanceQuery || isExplicitGeneralReport) {
+    const slicePOs = agg.allPOs.slice(0, 15);
+    if (slicePOs.length > 0) {
+      digest += slicePOs.map(po => `  - PO [${po.noPO || po.id}] Vendor: ${po.supplierName || '-'} | Tanggal: ${po.tanggal || po.tanggalPembelian || '-'} | Total: Rp ${(Number(po.total) || 0).toLocaleString('id-ID')} | Status: ${po.status || 'Draft'}`).join('\n') + '\n';
+    } else {
+      digest += `  (Akses menu Purchasing dibatasi)\n`;
+    }
+  } else {
+    digest += `  (Ringkasan: Data PO & Purchasing tersedia di database)\n`;
+  }
+
+  // Menu 7: HR Karyawan
+  digest += `\n--- [MENU 7: HR - KARYAWAN & TIM] ---\n`;
+  digest += `* Total Karyawan: ${agg.allEmployees.length} staf\n`;
+  if (isTaskQuery || isExplicitGeneralReport) {
+    if (agg.allEmployees.length > 0) {
+      digest += agg.allEmployees.map(e => `  - ${e.nama} | Jabatan: ${e.role || '-'} | WA: ${e.whatsapp || '-'}${isSuperAdmin && e.gaji ? ` | Gaji: Rp ${Number(e.gaji).toLocaleString('id-ID')}` : ''}`).join('\n') + '\n';
+    } else {
+      digest += `  (Akses menu Karyawan dibatasi)\n`;
+    }
+  } else {
+    digest += `  (Ringkasan: Data karyawan tersedia di database)\n`;
+  }
+
+  // Menu 9: Q&A Forum
+  if (isQAQuery || isExplicitGeneralReport) {
+    if (ctx.taskAppDataExt?.qaQuestions && ctx.taskAppDataExt.qaQuestions.length > 0) {
+      digest += `\n--- [MENU 9: Q&A FORUM & TECHNICAL KNOWLEDGE BASE] ---\n`;
+      ctx.taskAppDataExt.qaQuestions.slice(0, 10).forEach(q => {
+        digest += `* TOPIK DISKUSI: "${q.title}" (${q.category})\n`;
+        digest += `  - PERTANYAAN/ISI: ${q.content}\n`;
+        if (q.answers && q.answers.length > 0) {
+          q.answers.forEach((ans: any, idx: number) => {
+            digest += `  - JAWABAN #${idx + 1} (${ans.author_name}): ${ans.content}\n`;
+          });
+        } else {
+          digest += `  - STATUS: Belum ada jawaban dari tim teknis.\n`;
+        }
+      });
+    }
+  }
+
+  // External Web Knowledge
+  if (isProductQuery || isQAQuery || isExplicitGeneralReport) {
+    digest += generateWebKnowledgeDigest(ctx.currentUser?.role || '');
+  }
 
   // Include Task App data if available (SuperAdmin / Team / AI)
   let rawTasks: any[] = ctx.taskAppData?.tasks || [];
@@ -458,7 +582,7 @@ ${agg.allEmployees.length > 0 ? agg.allEmployees.map(e => `  - ${e.nama} | Jabat
     const tasks = rawTasks;
     const projects = rawProjects;
 
-    if (isTaskQuery || isGeneralReportQuery) {
+    if (isTaskQuery || isExplicitGeneralReport) {
       interface TimelineLogEntry {
         taskTitle: string;
         taskId: string;
@@ -1035,9 +1159,9 @@ ${dataDigest}
 PENTING: Sekali lagi, jika pertanyaan tidak berkaitan dengan data di atas, TOLAK dengan jawaban penolakan standar.
 `;
 
-  const recentHistory = messages.slice(-8).map(m => ({
+  const recentHistory = messages.slice(-6).map(m => ({
     role: m.role as 'user' | 'assistant',
-    content: m.content
+    content: m.role === 'assistant' && m.content.length > 800 ? m.content.substring(0, 800) + '\n... [Ringkasan]' : m.content
   }));
 
   const res = await callGeminiWithKeyRotationDetails({
