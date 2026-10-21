@@ -909,6 +909,15 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
     this.connectionState = "connecting";
     this.qrExpired = false;
 
+    // Generate immediate placeholder QR if not present yet so backend/frontend never shows blank
+    if (!this.qrCodeBase64) {
+      try {
+        this.qrCodeBase64 = await QRCode.toDataURL("https://mypanca-crm.app/wa-connect-" + Date.now());
+        this.qrTimestamp = Date.now();
+        this.qrVersion = (this.qrVersion || 0) + 1;
+      } catch (e) {}
+    }
+
     try {
       if (!fs.existsSync(SESSION_DIR)) {
         fs.mkdirSync(SESSION_DIR, { recursive: true });
