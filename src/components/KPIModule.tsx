@@ -536,7 +536,7 @@ export default function KPIModule({
   });
 
   useEffect(() => {
-    localStorage.setItem('mypanca_kpi_bonus_project_sheets', JSON.stringify(bonusProjectSheets));
+    safeSetLocalStorage('mypanca_kpi_bonus_project_sheets', bonusProjectSheets);
   }, [bonusProjectSheets]);
 
   // Check if a jabatan corresponds to an engineer/engineering role
@@ -675,7 +675,7 @@ export default function KPIModule({
   });
 
   useEffect(() => {
-    localStorage.setItem('mypanca_kpi_additional_bonuses', JSON.stringify(additionalBonuses));
+    safeSetLocalStorage('mypanca_kpi_additional_bonuses', additionalBonuses);
   }, [additionalBonuses]);
 
   // Department determination matching KPI.xlsx
@@ -1388,23 +1388,23 @@ export default function KPIModule({
 
   // Save states to local storage on change
   useEffect(() => {
-    localStorage.setItem('mypanca_kpi_templates', JSON.stringify(kpiTemplates));
+    safeSetLocalStorage('mypanca_kpi_templates', kpiTemplates);
   }, [kpiTemplates]);
 
   useEffect(() => {
-    localStorage.setItem('mypanca_kpi_records', JSON.stringify(kpiRecords));
+    safeSetLocalStorage('mypanca_kpi_records', kpiRecords);
   }, [kpiRecords]);
 
   useEffect(() => {
-    localStorage.setItem('mypanca_kpi_project_bonuses', JSON.stringify(projectBonuses));
+    safeSetLocalStorage('mypanca_kpi_project_bonuses', projectBonuses);
   }, [projectBonuses]);
 
   useEffect(() => {
-    localStorage.setItem('mypanca_kpi_config', JSON.stringify(kpiConfig));
+    safeSetLocalStorage('mypanca_kpi_config', kpiConfig);
   }, [kpiConfig]);
 
   useEffect(() => {
-    localStorage.setItem('mypanca_kpi_monthly_inputs', JSON.stringify(kpiMonthlyInputs));
+    safeSetLocalStorage('mypanca_kpi_monthly_inputs', kpiMonthlyInputs);
   }, [kpiMonthlyInputs]);
 
   // Roles verification
@@ -4699,11 +4699,11 @@ export default function KPIModule({
                 <button
                   type="button"
                   onClick={() => {
-                    localStorage.setItem('mypanca_kpi_jabatans', JSON.stringify(jabatans));
-                    localStorage.setItem('mypanca_kpi_grading_items', JSON.stringify(gradingKPIItems));
-                    localStorage.setItem('mypanca_kpi_omset_tiers', JSON.stringify(omsetTiers));
-                    localStorage.setItem('mypanca_kpi_commissions', JSON.stringify(salesCommissions));
-                    localStorage.setItem('mypanca_kpi_monthly_financials', JSON.stringify(kpiMonthlyFinancials));
+                    safeSetLocalStorage('mypanca_kpi_jabatans', jabatans);
+                    safeSetLocalStorage('mypanca_kpi_grading_items', gradingKPIItems);
+                    safeSetLocalStorage('mypanca_kpi_omset_tiers', omsetTiers);
+                    safeSetLocalStorage('mypanca_kpi_commissions', salesCommissions);
+                    safeSetLocalStorage('mypanca_kpi_monthly_financials', kpiMonthlyFinancials);
                     alert("Seluruh Syarat & Ketentuan (T&C), Alokasi Jabatan, Grading KPI, Tiering Omset, dan Parameter Keuangan berhasil disimpan ke LocalStorage!");
                   }}
                   className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-2"

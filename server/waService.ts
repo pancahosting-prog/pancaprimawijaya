@@ -131,9 +131,93 @@ class WAService {
 
   public isQRExpired(): boolean {
     if (this.connectionState === "connected") return false;
-    if (!this.qrCodeBase64) return true;
+    if (!this.qrCodeBase64 || !this.qrTimestamp) return false;
     // Beri batas waktu realistis 60 detik bagi pengguna untuk membuka WA HP, membuka Perangkat Tertaut, dan men-scan barcode
     return (Date.now() - this.qrTimestamp) > 60000;
+  }
+
+  public async persistStatus() {
+    try {
+      const data = {
+        connectionState: this.connectionState,
+        qrCodeBase64: this.qrCodeBase64,
+        qrTimestamp: this.qrTimestamp,
+        qrVersion: this.qrVersion,
+        qrExpired: this.qrExpired,
+        userJid: this.userJid,
+        userPhone: this.userPhone,
+        userName: this.userName,
+        updatedAt: new Date().toISOString()
+      };
+      // Save locally
+      fs.writeFileSync(path.join(process.cwd(), "wa-status.json"), JSON.stringify(data, null, 2), "utf-8");
+
+      // Save to Supabase app_settings
+      if (supabaseServer) {
+        await supabaseServer.from("app_settings").upsert({
+          key: "wa_connection_status",
+          value: data,
+          updated_at: new Date().toISOString()
+        });
+      }
+    } catch (e) {}
+  }
+
+  public async loadPersistedStatus() {
+    try {
+      let data: any = null;
+      const filePath = path.join(process.cwd(), "wa-status.json");
+      if (fs.existsSync(filePath)) {
+        try {
+          data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+        } catch (e) {}
+      }
+
+      if (!data && supabaseServer) {
+        try {
+          const { data: dbData } = await supabaseServer.from("app_settings").select("value").eq("key", "wa_connection_status").maybeSingle();
+          if (dbData?.value) {
+            data = dbData.value;
+          }
+        } catch (e) {}
+      }
+
+      if (data) {
+        if (!this.qrCodeBase64 && data.qrCodeBase64 && (Date.now() - (data.qrTimestamp || 0) < 180000)) {
+          this.qrCodeBase64 = data.qrCodeBase64;
+          this.qrTimestamp = data.qrTimestamp || Date.now();
+          this.qrVersion = data.qrVersion || 1;
+        }
+        if (data.connectionState && this.connectionState === "disconnected") {
+          this.connectionState = data.connectionState;
+        }
+        if (data.userPhone && !this.userPhone) this.userPhone = data.userPhone;
+        if (data.userJid && !this.userJid) this.userJid = data.userJid;
+        if (data.userName && !this.userName) this.userName = data.userName;
+      }
+    } catch (e) {}
+  }
+
+  public async getStatus() {
+    await this.loadPersistedStatus();
+
+    if (this.connectionState === "disconnected" || (this.connectionState === "connecting" && !this.qrCodeBase64 && !this.socket)) {
+      this.initBaileys(false).catch(() => {});
+    }
+
+    const isExpired = this.qrExpired || (this.connectionState === "disconnected" && this.isQRExpired());
+    return {
+      connectionState: this.connectionState,
+      qrCodeBase64: this.qrCodeBase64,
+      rawQrCodeBase64: this.qrCodeBase64,
+      qrTimestamp: this.qrTimestamp,
+      qrVersion: this.qrVersion,
+      qrExpired: isExpired && this.connectionState !== "connected",
+      userJid: this.userJid,
+      userPhone: this.userPhone,
+      userName: this.userName,
+      knownNumbers: this.getKnownNumbers()
+    };
   }
 
   // Chats organized by connected phone number: Map<connectedPhone, Map<jid, WAChat>>
@@ -843,13 +927,31 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
    */
   public sanitizePhoneAndName(jidOrPhone?: string, name?: string, altJid?: string, pushName?: string): { phone: string; name: string } {
     let target = jidOrPhone || "";
-    if (target.endsWith("@lid") && altJid && altJid.endsWith("@s.whatsapp.net")) {
+    if (altJid && (altJid.endsWith("@s.whatsapp.net") || altJid.includes("62") || altJid.replace(/[^0-9]/g, "").length >= 8)) {
       target = altJid;
     }
 
-    const rawDigits = target.split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
+    let rawDigits = target.split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 
-    if (rawDigits && !target.endsWith("@lid") && rawDigits.length >= 8 && rawDigits.length <= 15) {
+    // Check fallback sources for digits if target was LID or empty
+    if (!rawDigits || rawDigits.length < 8) {
+      if (jidOrPhone) {
+        const jDigits = jidOrPhone.split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
+        if (jDigits.length >= 8) rawDigits = jDigits;
+      }
+    }
+    if (!rawDigits || rawDigits.length < 8) {
+      if (name) {
+        const nDigits = name.replace(/[^0-9]/g, "");
+        if (nDigits.length >= 8 && nDigits.length <= 15) rawDigits = nDigits;
+      }
+      if ((!rawDigits || rawDigits.length < 8) && pushName) {
+        const pDigits = pushName.replace(/[^0-9]/g, "");
+        if (pDigits.length >= 8 && pDigits.length <= 15) rawDigits = pDigits;
+      }
+    }
+
+    if (rawDigits && rawDigits.length >= 8 && rawDigits.length <= 15) {
       let formattedPhone = rawDigits;
       if (formattedPhone.startsWith("62")) {
         formattedPhone = "0" + formattedPhone.slice(2);
@@ -857,27 +959,26 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
         formattedPhone = "0" + formattedPhone;
       }
 
-      const displayName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net")) 
-        ? name 
-        : (pushName && !pushName.includes("@lid") ? pushName : formattedPhone);
+      const isCleanName = (str?: string) => str && !str.includes("@lid") && !str.includes("@s.whatsapp.net") && !str.includes("@g.us");
+      const displayName = isCleanName(name) ? name! : (isCleanName(pushName) ? pushName! : formattedPhone);
 
       return { phone: formattedPhone, name: displayName };
     }
 
-    const fallbackName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net"))
-      ? name
-      : (pushName && !pushName.includes("@lid") ? pushName : "Pengguna WhatsApp");
+    const isCleanName = (str?: string) => str && !str.includes("@lid") && !str.includes("@s.whatsapp.net") && !str.includes("@g.us");
+    const fallbackName = isCleanName(name) ? name! : (isCleanName(pushName) ? pushName! : (jidOrPhone || "Pengguna WhatsApp"));
+    const fallbackPhone = rawDigits && rawDigits.length >= 6 ? rawDigits : fallbackName;
 
-    return { phone: fallbackName, name: fallbackName };
+    return { phone: fallbackPhone, name: fallbackName };
   }
 
-  public async initBaileys(force = false) {
+  public async initBaileys(force = false): Promise<string | null> {
     if (!force && this.connectionState === "connected") {
-      return;
+      return this.qrCodeBase64;
     }
 
-    if (!force && this.connectionState === "connecting" && this.socket && !this.isQRExpired()) {
-      return;
+    if (!force && this.connectionState === "connecting" && this.socket && !this.isQRExpired() && this.qrCodeBase64) {
+      return this.qrCodeBase64;
     }
 
     // Clean up previous socket if forcing reinit or if previous session was expired
@@ -921,97 +1022,115 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
 
       this.socket.ev.on("creds.update", saveCreds);
 
-      this.socket.ev.on("connection.update", async (update: any) => {
-        const { connection, lastDisconnect, qr } = update;
+      const connectionPromise = new Promise<string | null>((resolve) => {
+        let hasResolved = false;
+        const resolveOnce = (val: string | null) => {
+          if (!hasResolved) {
+            hasResolved = true;
+            resolve(val);
+          }
+        };
 
-        if (qr) {
-          this.qrCodeBase64 = await QRCode.toDataURL(qr);
-          this.qrTimestamp = Date.now();
-          this.qrVersion = (this.qrVersion || 0) + 1;
-          this.qrExpired = false;
-          this.connectionState = "connecting";
-          console.log(`[waService] QR Code refreshed (version ${this.qrVersion}) at ${new Date().toLocaleTimeString()}`);
-        }
+        const timeoutId = setTimeout(() => {
+          resolveOnce(this.qrCodeBase64);
+        }, 7000);
 
-        if (connection === "close") {
-          const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-          const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-          const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+        this.socket.ev.on("connection.update", async (update: any) => {
+          const { connection, lastDisconnect, qr } = update;
 
-          console.log(`[waService] Koneksi tertutup. Status: ${statusCode}, isLoggedOut: ${isLoggedOut}, isRestartRequired: ${isRestartRequired}`);
-
-          try {
-            this.socket?.ev?.removeAllListeners?.();
-          } catch (e) {}
-          this.socket = null;
-
-          if (isLoggedOut) {
-            console.log("[waService] Sesi WhatsApp logout (401). Menghapus kredensial sesi.");
-            this.connectionState = "disconnected";
-            this.qrCodeBase64 = null;
-            this.qrExpired = true;
-            this.userPhone = null;
-            this.userJid = null;
+          if (qr) {
             try {
-              fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-            } catch (err) {}
-          } else if (isRestartRequired || statusCode === 428 || (statusCode && statusCode !== 408 && statusCode !== 401 && !this.userPhone)) {
-            // KRUSIAL: Saat HP melakukan scan QR barcode, WhatsApp mengirim sinyal restartRequired (515)
-            // untuk beralih dari soket QR sementara ke soket terotentikasi penuh.
-            // JANGAN DITANDAI EXPIRED! Harus segera initBaileys(false) agar proses masuk (login) selesai!
-            console.log(`[waService] Scan handshake berhasil diterima (status: ${statusCode}). Melanjutkan proses masuk...`);
-            this.connectionState = "connecting";
-            this.qrExpired = false;
-            setTimeout(() => this.initBaileys(false), 1000);
-          } else if (statusCode === DisconnectReason.timedOut || statusCode === 408) {
-            if (!this.userPhone) {
-              // Server WhatsApp menutup soket karena barcode tidak di-scan setelah beberapa putaran
-              this.qrExpired = true;
-              this.connectionState = "disconnected";
-              console.log(`[waService] Barcode tidak di-scan sampai timeout (${statusCode}). Meminta muat ulang.`);
-            } else {
+              this.qrCodeBase64 = await QRCode.toDataURL(qr);
+              this.qrTimestamp = Date.now();
+              this.qrVersion = (this.qrVersion || 0) + 1;
+              this.qrExpired = false;
               this.connectionState = "connecting";
-              setTimeout(() => this.initBaileys(false), 3000);
-            }
-          } else {
-            // Putus koneksi sementara -> auto reconnect
-            console.log(`[waService] Putus koneksi sementara (status: ${statusCode}). Menyambungkan kembali...`);
-            this.connectionState = "connecting";
-            setTimeout(() => this.initBaileys(false), 2000);
-          }
-        } else if (connection === "open") {
-          this.connectionState = "connected";
-          this.qrCodeBase64 = null;
-          this.qrExpired = false;
-          const user = this.socket?.user;
-          this.userJid = user?.id || null;
-          
-          let rawConnectedPhone = "";
-          if (user?.id) {
-            const cleanId = user.id.split(":")[0].split("@")[0];
-            if (!user.id.includes("@lid") || cleanId.length <= 13) {
-              rawConnectedPhone = cleanId.replace(/[^0-9]/g, "");
+              console.log(`[waService] QR Code refreshed (version ${this.qrVersion}) at ${new Date().toLocaleTimeString()}`);
+              clearTimeout(timeoutId);
+              resolveOnce(this.qrCodeBase64);
+            } catch (err) {
+              console.error("[waService] Error generating QR data URL:", err);
             }
           }
-          if (!rawConnectedPhone && (user as any)?.phone) {
-            rawConnectedPhone = String((user as any).phone).replace(/[^0-9]/g, "");
-          }
-          let cleanPhoneNum = rawConnectedPhone || (user?.id ? user.id.split(":")[0].replace(/[^0-9]/g, "") : null);
-          if (cleanPhoneNum && cleanPhoneNum.startsWith("62")) {
-            cleanPhoneNum = "0" + cleanPhoneNum.slice(2);
-          }
-          this.userPhone = cleanPhoneNum;
-          this.userName = user?.name || "WhatsApp Business Bot";
 
-          console.log(`[waService] WhatsApp Connected! Nomor Terhubung: ${this.userPhone}`);
-          if (this.userPhone) {
-            const clean = this.getConnectedPhoneKey(this.userPhone);
-            this.knownConnectedPhones.add(clean);
-            this.saveKnownNumbers();
-            this.loadChatsForPhone(clean);
-            this.syncAllChatsFromSupabase(clean);
+          if (connection === "close") {
+            const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+            const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+            const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+
+            console.log(`[waService] Koneksi tertutup. Status: ${statusCode}, isLoggedOut: ${isLoggedOut}, isRestartRequired: ${isRestartRequired}`);
+
+            try {
+              this.socket?.ev?.removeAllListeners?.();
+            } catch (e) {}
+            this.socket = null;
+
+            if (isLoggedOut) {
+              console.log("[waService] Sesi WhatsApp logout (401). Menghapus kredensial sesi.");
+              this.connectionState = "disconnected";
+              this.qrCodeBase64 = null;
+              this.qrExpired = true;
+              this.userPhone = null;
+              this.userJid = null;
+              try {
+                fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+              } catch (err) {}
+            } else if (isRestartRequired || statusCode === 428 || (statusCode && statusCode !== 408 && statusCode !== 401 && !this.userPhone)) {
+              console.log(`[waService] Scan handshake berhasil diterima (status: ${statusCode}). Melanjutkan proses masuk...`);
+              this.connectionState = "connecting";
+              this.qrExpired = false;
+              setTimeout(() => this.initBaileys(false), 1000);
+            } else if (statusCode === DisconnectReason.timedOut || statusCode === 408) {
+              if (!this.userPhone) {
+                this.qrExpired = true;
+                this.connectionState = "disconnected";
+                console.log(`[waService] Barcode tidak di-scan sampai timeout (${statusCode}). Meminta muat ulang.`);
+              } else {
+                this.connectionState = "connecting";
+                setTimeout(() => this.initBaileys(false), 3000);
+              }
+            } else {
+              console.log(`[waService] Putus koneksi sementara (status: ${statusCode}). Menyambungkan kembali...`);
+              this.connectionState = "connecting";
+              setTimeout(() => this.initBaileys(false), 2000);
+            }
           }
-        }
+
+          if (connection === "open") {
+            this.connectionState = "connected";
+            this.qrCodeBase64 = null;
+            this.qrExpired = false;
+            const user = this.socket?.user;
+            this.userJid = user?.id || null;
+            
+            let rawConnectedPhone = "";
+            if (user?.id) {
+              const cleanId = user.id.split(":")[0].split("@")[0];
+              if (!user.id.includes("@lid") || cleanId.length <= 13) {
+                rawConnectedPhone = cleanId.replace(/[^0-9]/g, "");
+              }
+            }
+            if (!rawConnectedPhone && (user as any)?.phone) {
+              rawConnectedPhone = String((user as any).phone).replace(/[^0-9]/g, "");
+            }
+            let cleanPhoneNum = rawConnectedPhone || (user?.id ? user.id.split(":")[0].replace(/[^0-9]/g, "") : null);
+            if (cleanPhoneNum && cleanPhoneNum.startsWith("62")) {
+              cleanPhoneNum = "0" + cleanPhoneNum.slice(2);
+            }
+            this.userPhone = cleanPhoneNum;
+            this.userName = user?.name || "WhatsApp Business Bot";
+
+            console.log(`[waService] WhatsApp Connected! Nomor Terhubung: ${this.userPhone}`);
+            if (this.userPhone) {
+              const clean = this.getConnectedPhoneKey(this.userPhone);
+              this.knownConnectedPhones.add(clean);
+              this.saveKnownNumbers();
+              this.loadChatsForPhone(clean);
+            }
+            clearTimeout(timeoutId);
+            resolveOnce(null);
+          }
+        });
       });
 
       this.socket.ev.on("messages.upsert", async (m: any) => {
@@ -1125,7 +1244,18 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
             media: incomingMedia
           };
 
-          chat.messages.push(newMsg);
+          const isDup = chat.messages.some(existing => {
+            if (msg.key?.id && existing.id === msg.key.id) return true;
+            if (existing.fromMe === isFromMe && existing.text === text) {
+              const diff = Math.abs((existing.timestamp || Date.now()) - Date.now());
+              if (diff < 8000) return true;
+            }
+            return false;
+          });
+
+          if (!isDup) {
+            chat.messages.push(newMsg);
+          }
           chat.lastMessage = text;
           chat.lastMessageTime = Date.now();
           if (!isFromMe) chat.unreadCount += 1;
@@ -1141,6 +1271,8 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
           }
         }
       });
+
+      return await connectionPromise;
     } catch (err) {
       console.error("[waService] Failed to initialize Baileys:", err);
       this.connectionState = "disconnected";
@@ -1844,7 +1976,17 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
       media
     };
 
-    chat.messages.push(msg);
+    const isDup = chat.messages.some(m => {
+      if (m.fromMe && m.text === (text || displaySummary)) {
+        const diff = Math.abs((m.timestamp || Date.now()) - Date.now());
+        if (diff < 8000) return true;
+      }
+      return false;
+    });
+
+    if (!isDup) {
+      chat.messages.push(msg);
+    }
     chat.lastMessage = displaySummary;
     chat.lastMessageTime = Date.now();
     chat.unreadCount = 0;

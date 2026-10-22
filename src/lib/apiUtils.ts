@@ -36,9 +36,51 @@ export const getApiUrl = (path: string): string => {
 export const safeSetLocalStorage = (key: string, value: any): boolean => {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return false;
-    const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-    window.localStorage.setItem(key, serialized);
-    return true;
+    let serialized = typeof value === 'string' ? value : JSON.stringify(value);
+
+    try {
+      window.localStorage.setItem(key, serialized);
+      return true;
+    } catch (quotaErr) {
+      console.warn(`[localStorage] QuotaExceededError writing key "${key}". Pruning non-essential cache...`);
+
+      // Clear non-critical cache keys to free up localStorage space
+      const keysToPrune = [
+        'mypanca_db_user_logs',
+        'mypanca_mobile_team_messages',
+        'mypanca_cached_tasks',
+        'mypanca_db_deleted',
+        'mypanca_kpi_records',
+        'mypanca_kpi_monthly_financials'
+      ];
+
+      keysToPrune.forEach(k => {
+        if (k !== key) {
+          try { window.localStorage.removeItem(k); } catch {}
+        }
+      });
+
+      // Strip large base64 attachments if value is an array
+      if (Array.isArray(value)) {
+        const cleanedArray = value.map(item => {
+          if (item && typeof item === 'object') {
+            const newItem = { ...item };
+            if (typeof newItem.lampiran === 'string' && newItem.lampiran.length > 3000) {
+              delete newItem.lampiran;
+            }
+            if (typeof newItem.buktiTransfer === 'string' && newItem.buktiTransfer.length > 3000) {
+              delete newItem.buktiTransfer;
+            }
+            return newItem;
+          }
+          return item;
+        });
+        serialized = JSON.stringify(cleanedArray);
+      }
+
+      window.localStorage.setItem(key, serialized);
+      return true;
+    }
   } catch (err) {
     console.warn(`[localStorage] Error writing key "${key}":`, err);
     return false;

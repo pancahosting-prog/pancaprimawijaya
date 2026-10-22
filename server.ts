@@ -36,35 +36,6 @@ async function startServer() {
     next();
   });
 
-  // Fonnte API Proxy
-  app.post("/api/send-whatsapp", async (req, res) => {
-    const { phone, message } = req.body;
-    const token = process.env.FONNTE_TOKEN;
-
-    if (!token) {
-      return res.status(500).json({ error: "Fonnte token not configured" });
-    }
-
-    try {
-      const response = await fetch("https://api.fonnte.com/send", {
-        method: "POST",
-        headers: {
-          "Authorization": token,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          target: phone,
-          message: message,
-        }),
-      });
-
-      const data = await response.json();
-      res.json(data);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to send WhatsApp message" });
-    }
-  });
-
   // WhatsApp Baileys Endpoints (CS AI & Notification Engine)
   const { waService } = await import("./server/waService.ts");
   const { waNotifService } = await import("./server/waNotifService.ts");
@@ -73,6 +44,37 @@ async function startServer() {
   // Auto-initialize WhatsApp CS & WhatsApp Notifikasi on server startup
   waService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp CS failed:", err));
   waNotifService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp Notifikasi failed:", err));
+
+  // WhatsApp Notification Sender Endpoint (Eksklusif Perangkat 2 / Baileys Gateway)
+  app.post("/api/send-whatsapp", async (req, res) => {
+    const { phone, message, text } = req.body;
+    const content = message || text;
+
+    if (!phone || !content) {
+      return res.status(400).json({ success: false, error: "Nomor tujuan (phone) dan pesan (message/text) diperlukan." });
+    }
+
+    // Perangkat 2 (Baileys WhatsApp Gateway)
+    if (waNotifService.connectionState !== "connected") {
+      return res.status(503).json({ 
+        success: false, 
+        error: "WhatsApp Notifikasi (Perangkat 2 / Baileys) belum terhubung. Silakan buka menu Pengaturan WhatsApp Notifikasi dan scan QR Code untuk menghubungkan perangkat.",
+        connectionState: waNotifService.connectionState
+      });
+    }
+
+    try {
+      const result = await waNotifService.sendMessage(phone, content);
+      if (result.success) {
+        return res.json({ success: true, via: "Perangkat 2 (Baileys)", ...result });
+      } else {
+        return res.status(500).json({ success: false, error: result.error || "Gagal mengirim pesan melalui Perangkat 2 (Baileys)." });
+      }
+    } catch (err: any) {
+      console.error("Gagal kirim via Perangkat 2:", err);
+      return res.status(500).json({ success: false, error: err.message || "Gagal mengirim melalui WhatsApp Gateway Perangkat 2." });
+    }
+  });
 
   // --- WhatsApp Notifikasi (Perangkat 2) Endpoints ---
   app.get("/api/wa-notif/status", (_req, res) => {
@@ -113,11 +115,12 @@ async function startServer() {
   });
 
   app.post("/api/wa-notif/send", async (req, res) => {
-    const { phone, text } = req.body;
-    if (!phone || !text) {
+    const { phone, text, message } = req.body;
+    const bodyText = text || message;
+    if (!phone || !bodyText) {
       return res.status(400).json({ success: false, error: "Nomor tujuan dan teks pesan diperlukan." });
     }
-    const result = await waNotifService.sendMessage(phone, text);
+    const result = await waNotifService.sendMessage(phone, bodyText);
     res.json(result);
   });
 
@@ -150,36 +153,22 @@ async function startServer() {
     res.json({ success: true, settings: updated });
   });
 
-  app.get("/api/wa/status", (_req, res) => {
-    const isExpired = waService.qrExpired || (waService.connectionState === "disconnected" && waService.isQRExpired());
+  app.get("/api/wa/status", async (_req, res) => {
+    const status = await waService.getStatus();
     res.json({
       success: true,
-      connectionState: waService.connectionState,
-      qrCodeBase64: waService.qrCodeBase64,
-      rawQrCodeBase64: waService.qrCodeBase64,
-      qrTimestamp: waService.qrTimestamp,
-      qrVersion: waService.qrVersion,
-      qrExpired: isExpired && waService.connectionState !== "connected",
-      userJid: waService.userJid,
-      userPhone: waService.userPhone,
-      userName: waService.userName,
-      knownNumbers: waService.getKnownNumbers()
+      ...status
     });
   });
 
   app.post("/api/wa/connect", async (req, res) => {
     const force = req.query.force === "true" || req.body?.force === true;
     await waService.initBaileys(force);
-    const isExpired = waService.qrExpired || (waService.connectionState === "disconnected" && waService.isQRExpired());
+    const status = await waService.getStatus();
     res.json({
       success: true,
       message: "Proses inisialisasi Baileys WhatsApp dimulai.",
-      connectionState: waService.connectionState,
-      qrCodeBase64: waService.qrCodeBase64,
-      qrVersion: waService.qrVersion,
-      qrTimestamp: waService.qrTimestamp,
-      qrExpired: isExpired && waService.connectionState !== "connected",
-      userPhone: waService.userPhone
+      ...status
     });
   });
 
