@@ -18,7 +18,7 @@ import {
   Wallet, Activity, Users, Package, FileText, CheckCircle, Save, ChevronRight as ChevronRightIcon, Award,
   Truck, Mail, MapPin, AlignLeft, Send, DollarSign, Archive, AlertTriangle, Info, RotateCcw, Camera, MessageSquare, ArrowRightCircle, ArrowRight, Phone, Circle, Edit, LayoutDashboard, ShoppingCart, Globe, Briefcase, ShoppingBag,
   Book, BookOpen, ArrowUpRight, ArrowDownLeft, Sparkles, ShieldCheck, ExternalLink, CloudUpload, CloudDownload, AlertCircle, Lightbulb, Image as ImageIcon, UserPlus, Copy,
-  Bot, LogOut, Loader2
+  Bot, LogOut
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import CompanyLogo from './logo-pancaprimawijaya.jpg';
@@ -2456,9 +2456,6 @@ const App: React.FC = () => {
   const [autoNotifyDays, setAutoNotifyDays] = useState<number>(7);
   const [autoNotifySuperadmin, setAutoNotifySuperadmin] = useState<boolean>(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
-  const [testNotifyPhone, setTestNotifyPhone] = useState<string>('');
-  const [isTestingNotify, setIsTestingNotify] = useState<boolean>(false);
-  const [testNotifyStatus, setTestNotifyStatus] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(null);
   const longPressTimerRef = useRef<any>(null);
   const longPressTriggered = useRef(false);
   const [confirmModal, setConfirmModal] = useState<{
@@ -2866,62 +2863,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
     return () => clearInterval(interval);
   }, []);
 
-  // Handler for Test Mode WhatsApp Notification (Perangkat 2 / Gateway Baileys)
-  const handleTestSendNotification = async () => {
-    const rawTarget = testNotifyPhone || currentUser?.whatsapp || (appUsers.find(u => (u.role === 'superadmin' || u.username === 'superadmin') && u.whatsapp)?.whatsapp) || '';
-    const cleanTarget = rawTarget.replace(/[^0-9]/g, '');
-
-    if (!cleanTarget) {
-      setTestNotifyStatus({
-        type: 'error',
-        message: 'Masukkan nomor WhatsApp tujuan (contoh: 085313200188 atau 6285313200188) untuk menguji pengiriman.'
-      });
-      return;
-    }
-
-    setIsTestingNotify(true);
-    setTestNotifyStatus({
-      type: 'info',
-      message: `Sedang menghubungi WhatsApp Gateway (Perangkat 2) untuk mengirim pesan tes ke ${cleanTarget}...`
-    });
-
-    const testMessage = `*TEST MODE PENGINGAT WHATSAPP MYPANCA*\n\n` +
-      `Halo! Ini adalah pesan uji coba dari sistem Notifikasi Otomatis MyPanca.\n\n` +
-      `📅 Waktu Uji Coba: ${new Date().toLocaleString('id-ID')}\n` +
-      `📡 Jalur Gateway: WhatsApp Notifikasi (Perangkat 2 / Baileys)\n` +
-      `👤 Penguji: ${currentUser?.nama || 'Superadmin'}\n\n` +
-      `_Status: Koneksi pesan pengingat terverifikasi berhasil terkirim._`;
-
-    try {
-      const response = await fetch('/api/send-whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanTarget, message: testMessage, text: testMessage })
-      });
-      const data = await response.json();
-
-      if (response.ok && data.success !== false) {
-        setTestNotifyStatus({
-          type: 'success',
-          message: `Pesan pengingat test BERHASIL dikirim ke ${cleanTarget} via ${data.via || 'Perangkat 2'}!`
-        });
-      } else {
-        setTestNotifyStatus({
-          type: 'error',
-          message: `Gagal mengirim: ${data.error || data.message || 'Perangkat 2 belum terhubung atau nomor tidak valid.'}`
-        });
-      }
-    } catch (err: any) {
-      setTestNotifyStatus({
-        type: 'error',
-        message: `Koneksi gagal: ${err.message || 'Server backend tidak merespons.'}`
-      });
-    } finally {
-      setIsTestingNotify(false);
-    }
-  };
-
-  // Auto Notification: Follow-up Penawaran (berbasis interval) & Jatuh Tempo Piutang (mengikuti tanggal jatuh tempo asli)
+  // Auto Notification for Quotations (7 days after last follow-up)
   useEffect(() => {
     if (!autoNotifyEnabled) return;
     const checkAndNotify = async () => {
@@ -2931,157 +2873,92 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
       let updated = false;
       const newTransactions = [...transactions];
 
-      // Group messages strictly by the responsible sales rep's phone number
       const salesMessages: Record<string, string[]> = {};
       const salesUpdateRecords: Record<string, { i: number, t: any, lastNotDate: string }[]> = {};
 
       for (let i = 0; i < newTransactions.length; i++) {
         const t = newTransactions[i];
-        const salesName = (t.sales || (t as any).salesRep || '').toString().trim();
-        const salesUser = appUsers.find(u => 
-          (u.nama && u.nama.toLowerCase() === salesName.toLowerCase()) || 
-          (u.username && u.username.toLowerCase() === salesName.toLowerCase())
-        );
-        const targetPhone = (salesUser?.whatsapp || '').replace(/[^0-9]/g, '');
-
-        // --- 1. NOTIFIKASI FOLLOW-UP PENAWARAN (Berbasis Interval autoNotifyDays) ---
-        if (t.status === 'Penawaran') {
-          let fuDateStr = t.tanggal;
-          let latestFU: any = null;
-          if (t.followUps && t.followUps.length > 0) {
-            const sortedFollowUps = [...t.followUps].sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
-            latestFU = sortedFollowUps[0];
-            fuDateStr = latestFU.tanggal || t.tanggal;
-          }
-          const fuDate = new Date(fuDateStr);
+        
+        // --- 1. NOTIFICATION FOR QUOTATIONS (Penawaran) ---
+        if (t.status === 'Penawaran' && t.followUps && t.followUps.length > 0) {
+          const sortedFollowUps = [...t.followUps].sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+          const latestFU = sortedFollowUps[0];
+          const fuDate = new Date(latestFU.tanggal);
           const diffDays = Math.floor((now.getTime() - fuDate.getTime()) / dayInMs);
 
-          if (diffDays >= autoNotifyDays && t.lastNotifiedAt !== `FU_${fuDateStr}`) {
+          if (diffDays >= autoNotifyDays && t.lastNotifiedAt !== latestFU.tanggal) {
+            const salesUser = appUsers.find(u => u.nama === t.sales);
+            const targetPhone = salesUser?.whatsapp || "6285313200188";
+            
             const customer = customers.find(c => c.nama === t.customerName);
             const noCust = customer?.phone ? (customer.phoneCode || '+62') + customer.phone : '-';
             const itemListStr = t.items && t.items.length > 0 ? t.items.map((item: any) => `- ${item.nama} (Qty: ${item.qty})`).join('\n') : 'Tidak ada item';
             const totalVal = t.items?.reduce((acc: number, curr: any) => acc + ((curr.harga * curr.qty) - (curr.diskon || 0)), 0) || 0;
+            const roadmapStr = sortedFollowUps.map((fu: any) => `[${fu.tanggal}] ${fu.method || '-'}: ${fu.keterangan || '-'}`).join('\n') || 'Belum ada roadmap follow up';
             
-            const message = `📋 *PENGINGAT FOLLOW-UP PENAWARAN*\n` +
-              `Status: Penawaran belum di-follow-up selama ${diffDays} hari (Interval sistem: ${autoNotifyDays} hari)\n` +
-              `No. Penawaran: ${t.noTrx}\n` +
-              `Customer: ${t.customerName}\n` +
-              `WA Customer: ${noCust}\n` +
-              `Sales Rep: ${salesName || '-'}\n` +
-              `Total: ${formatRupiah(totalVal)}\n` +
-              `Follow-up Terakhir: ${fuDateStr || '-'}\n` +
-              `Metode: ${latestFU?.method || '-'}\n` +
-              `Keterangan: ${latestFU?.keterangan || '-'}\n` +
-              `Item:\n${itemListStr}\n`;
+            const message = `Tipe: *PENAWARAN BELUM FOLLOW-UP*\nNo. Penawaran: ${t.noTrx}\nCustomer: ${t.customerName}\nWA/Telp: ${noCust}\n\nItem:\n${itemListStr}\nTotal: ${formatRupiah(totalVal)}\n\nFollow-up Terakhir: ${latestFU.tanggal || '-'}\nKeterangan: ${latestFU.keterangan || '-'}\n`;
             
-            if (targetPhone) {
-              if (!salesMessages[targetPhone]) { salesMessages[targetPhone] = []; salesUpdateRecords[targetPhone] = []; }
-              salesMessages[targetPhone].push(message);
-              salesUpdateRecords[targetPhone].push({ i, t, lastNotDate: `FU_${fuDateStr}` });
-            }
+            if (!salesMessages[targetPhone]) { salesMessages[targetPhone] = []; salesUpdateRecords[targetPhone] = []; }
+            salesMessages[targetPhone].push(message);
+            salesUpdateRecords[targetPhone].push({ i, t, lastNotDate: latestFU.tanggal });
           }
         }
 
-        // --- 2. NOTIFIKASI TRANSAKSI / PIUTANG (Mengikuti Waktu Jatuh Tempo Asli di Data Transaksi) ---
-        const isBelumLunas = (t.sisaPembayaran && t.sisaPembayaran > 0) || (t.status as string) === 'Belum Lunas' || (t.statuses && (t.statuses as any[]).includes('Belum Lunas'));
-        const rawDue = (t.jatuhTempo || '').trim();
-
-        if (isBelumLunas && rawDue && rawDue !== '-') {
-          // Pemicu otomatis: tepat saat atau setelah tanggal jatuh tempo asli invoice
-          if (rawDue <= todayStr && t.lastNotifiedAt !== `DUE_${rawDue}`) {
+        // --- 2. NOTIFICATION FOR DUE DATES (Belum Lunas) ---
+        if (t.sisaPembayaran && t.sisaPembayaran > 0 && t.jatuhTempo) {
+          if (t.jatuhTempo <= todayStr && t.lastNotifiedAt !== `DUE_${t.jatuhTempo}`) {
+            const salesUser = appUsers.find(u => u.nama === t.sales);
+            const targetPhone = salesUser?.whatsapp || "6285313200188";
             const customer = customers.find(c => c.nama === t.customerName);
-            const noCust = customer?.phone ? (customer.phoneCode || '+62') + customer.phone : '-';
-            const itemListStr = t.items && t.items.length > 0 ? t.items.map((item: any) => `- ${item.nama} (Qty: ${item.qty})`).join('\n') : '-';
-            const isOverdue = rawDue < todayStr;
             
-            const message = `⚠️ *PENGINGAT JATUH TEMPO PIUTANG (BELUM LUNAS)*\n` +
-              `Status: ${isOverdue ? 'Telah Lewat Jatuh Tempo' : 'Jatuh Tempo Hari Ini'}\n` +
-              `No. Invoice: ${t.noTrx}\n` +
-              `Customer: ${t.customerName}\n` +
-              `WA Customer: ${noCust}\n` +
-              `Sales Rep: ${salesName || '-'}\n` +
-              `Tgl Invoice: ${t.tanggal}\n` +
-              `Tgl Jatuh Tempo: *${rawDue}*\n` +
-              `Sisa Piutang: *${formatRupiah(t.sisaPembayaran || 0)}*\n` +
-              `Item:\n${itemListStr}\n`;
+            const itemListStr = t.items.map(item => `- ${item.nama} (Qty: ${item.qty})`).join('\n');
+            const message = `Tipe: *JATUH TEMPO PEMBAYARAN*\nNo. Penawaran: ${t.noTrx}\nCustomer: ${t.customerName}\nWA/Telp: ${customer?.phone ? (customer.phoneCode || '+62') + customer.phone : '-'}\nTgl Pesanan: ${t.tanggal}\nTgl Jatuh Tempo: ${t.jatuhTempo}\n\nItem:\n${itemListStr}\n\nSisa Tagihan: ${formatRupiah(t.sisaPembayaran)}\n`;
             
-            if (targetPhone) {
-              if (!salesMessages[targetPhone]) { salesMessages[targetPhone] = []; salesUpdateRecords[targetPhone] = []; }
-              salesMessages[targetPhone].push(message);
-              salesUpdateRecords[targetPhone].push({ i, t, lastNotDate: `DUE_${rawDue}` });
-            }
+            if (!salesMessages[targetPhone]) { salesMessages[targetPhone] = []; salesUpdateRecords[targetPhone] = []; }
+            salesMessages[targetPhone].push(message);
+            salesUpdateRecords[targetPhone].push({ i, t, lastNotDate: `DUE_${t.jatuhTempo}` });
           }
         }
       }
 
-      // Filter superadmin users with whatsapp
-      const superAdminUsers = appUsers.filter(u => 
-        (u.role === 'superadmin' || u.username === 'superadmin') && 
-        u.whatsapp && u.whatsapp.trim() !== ''
-      );
-
-      // Kirim pesan khusus ke sales yang menangani transaksi tersebut
+      const superAdminUsers = appUsers.filter(u => u.username === 'superadmin' && u.whatsapp);
       for (const phone of Object.keys(salesMessages)) {
-        const bodyMessage = `*NOTIFIKASI OTOMATIS MYPANCA*\n\n` +
-          `${salesMessages[phone].join('\n-----------------------\n\n')}\n` +
-          `*_"Setelah melakukan follow-up atau penagihan, harap segera update status di aplikasi BRM/MyPanca: https://mypancaapps.netlify.app/"_*`;
-        
-        try {
-          const response = await fetch("/api/send-whatsapp", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ phone, message: bodyMessage, text: bodyMessage })
-          });
-
-          if (response.ok) {
-            for (const rec of salesUpdateRecords[phone]) {
-              newTransactions[rec.i] = { ...rec.t, lastNotifiedAt: rec.lastNotDate };
-              updated = true;
-            }
-          }
-        } catch(e) { 
-          console.error("Auto notify error:", e);
-        }
-      }
-
-      // Jika Notifikasi Superadmin aktif, kirim salinan rekap pengingat ke semua Superadmin
-      if (autoNotifySuperadmin && superAdminUsers.length > 0 && Object.keys(salesMessages).length > 0) {
-        const allMessagesSummary: string[] = [];
-        for (const p of Object.keys(salesMessages)) {
-          const matchedSales = appUsers.find(u => (u.whatsapp || '').replace(/[^0-9]/g, '') === p);
-          const sName = matchedSales?.nama || p;
-          allMessagesSummary.push(`[UNTUK SALES: ${sName} (${p})]\n${salesMessages[p].join('\n\n')}`);
-        }
-
-        const superAdminBody = `*SALINAN NOTIFIKASI SUPERADMIN*\n\n` +
-          `Berikut pengingat follow-up penawaran & jatuh tempo piutang yang dikirimkan ke sales hari ini:\n\n` +
-          `${allMessagesSummary.join('\n=======================\n\n')}\n\n` +
-          `*_"Sistem Notifikasi Otomatis MyPanca"_*`;
-
-        for (const sa of superAdminUsers) {
-          const saPhone = (sa.whatsapp || '').replace(/[^0-9]/g, '');
-          if (saPhone) {
-            try {
-              await fetch("/api/send-whatsapp", {
+          const bodyMessage = `[AUTO-REMINDER] DAFTAR NOTIFIKASI\n\n${salesMessages[phone].join('\n-----------------------\n\n')}\n*_"setelah melakukan followup lanjutan harap segera melakukan update follow up terbaru di penawaran ini di BRM , link : https://mypancaapps.netlify.app/"_*`;
+          
+          try {
+              const response = await fetch("/api/send-whatsapp", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ phone: saPhone, message: superAdminBody, text: superAdminBody })
+                body: JSON.stringify({ phone, message: bodyMessage })
               });
-            } catch (err) {
-              console.error("Superadmin notify copy error:", err);
-            }
-          }
-        }
+              
+              if (autoNotifySuperadmin) {
+                  for (const sa of superAdminUsers) {
+                     await fetch("/api/send-whatsapp", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ phone: sa.whatsapp, message: bodyMessage })
+                     });
+                  }
+              }
+
+              if (response.ok) {
+                for (const rec of salesUpdateRecords[phone]) {
+                  newTransactions[rec.i] = { ...rec.t, lastNotifiedAt: rec.lastNotDate };
+                  updated = true;
+                }
+              }
+          } catch(e) { console.error("Auto notify error:", e) }
       }
 
       if (updated) setTransactions(newTransactions);
     };
 
-    // Run on mount and periodically every 12 hours
+    // Run on mount and then every 12 hours
     checkAndNotify();
     const interval = setInterval(checkAndNotify, 12 * 60 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [autoNotifyEnabled, autoNotifyDays, autoNotifySuperadmin, transactions, appUsers, customers]);
+  }, [transactions]); // We need transactions to check, but we use functional update or careful check to avoid loops
 
   // Paste images to currentProd when showDrawer === 'prod'
   useEffect(() => {
@@ -7102,66 +6979,6 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                                               </button>
                                           </div>
                                       </div>
-
-                                      {/* TEST MODE: Pengujian Koneksi Pesan Pengingat WhatsApp (Perangkat 2 / Gateway) */}
-                                      <div className="p-4 bg-slate-50 border border-violet-200 rounded-xl mt-4 shadow-xs">
-                                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-                                              <div>
-                                                  <div className="flex items-center gap-2">
-                                                      <span className="w-2 h-2 rounded-full bg-violet-600 animate-ping" />
-                                                      <h4 className="font-bold text-slate-800 text-sm">Test Mode Pengingat WhatsApp</h4>
-                                                      <span className="text-[10px] bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Perangkat 2 (Baileys)</span>
-                                                  </div>
-                                                  <p className="text-xs text-slate-500 mt-1">
-                                                      Uji coba pengiriman pesan pengingat langsung ke nomor WhatsApp untuk memastikan gateway Perangkat 2 aktif dan pesan terkirim.
-                                                  </p>
-                                              </div>
-                                          </div>
-
-                                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-slate-200">
-                                              <div className="relative flex-1">
-                                                  <input 
-                                                      type="text" 
-                                                      placeholder="Nomor WhatsApp tes (contoh: 085313200188 atau 6285313200188)"
-                                                      value={testNotifyPhone}
-                                                      onChange={(e) => setTestNotifyPhone(e.target.value)}
-                                                      className="w-full text-xs font-semibold px-3 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-violet-500 outline-none transition-all placeholder:text-slate-400"
-                                                  />
-                                              </div>
-                                              <button
-                                                  onClick={handleTestSendNotification}
-                                                  disabled={isTestingNotify}
-                                                  className={`px-4 py-2.5 text-xs font-bold text-white rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 ${
-                                                      isTestingNotify ? 'bg-slate-400 cursor-not-allowed' : 'bg-violet-600 hover:bg-violet-700 shadow-violet-200'
-                                                  }`}
-                                              >
-                                                  {isTestingNotify ? (
-                                                      <>
-                                                          <Loader2 size={14} className="animate-spin" />
-                                                          <span>Mengirim Tes...</span>
-                                                      </>
-                                                  ) : (
-                                                      <>
-                                                          <Send size={14} />
-                                                          <span>Test Kirim Pesan</span>
-                                                      </>
-                                                  )}
-                                              </button>
-                                          </div>
-
-                                          {testNotifyStatus && (
-                                              <div className={`mt-3 p-3 rounded-lg text-xs font-medium flex items-center gap-2.5 transition-all ${
-                                                  testNotifyStatus.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
-                                                  testNotifyStatus.type === 'error' ? 'bg-rose-50 text-rose-800 border border-rose-200' :
-                                                  'bg-amber-50 text-amber-800 border border-amber-200'
-                                              }`}>
-                                                  {testNotifyStatus.type === 'success' && <CheckCircle size={16} className="shrink-0 text-emerald-600" />}
-                                                  {testNotifyStatus.type === 'error' && <AlertCircle size={16} className="shrink-0 text-rose-600" />}
-                                                  {testNotifyStatus.type === 'info' && <Loader2 size={16} className="shrink-0 animate-spin text-amber-600" />}
-                                                  <span className="flex-1">{testNotifyStatus.message}</span>
-                                              </div>
-                                          )}
-                                      </div>
                                   </div>
                               </section>
 
@@ -7188,9 +7005,6 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                                   )}
                                   <button 
                                       onClick={() => {
-                                          localStorage.setItem('mypanca_db_auto_notify', autoNotifyEnabled.toString());
-                                          localStorage.setItem('mypanca_db_auto_notify_days', autoNotifyDays.toString());
-                                          localStorage.setItem('mypanca_db_auto_notify_superadmin', autoNotifySuperadmin.toString());
                                           setShowSaveSuccess(true);
                                           setTimeout(() => setShowSaveSuccess(false), 3000);
                                       }}
