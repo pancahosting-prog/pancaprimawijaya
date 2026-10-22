@@ -656,26 +656,35 @@ export const DriveView: React.FC<DriveViewProps> = ({ currentUser }) => {
                       <p className="text-sm text-slate-500 dark:text-slate-400 whitespace-pre-wrap font-medium">{post.content}</p>
                     )}
 
-                    {/* Shared state indicators - Hanya tampil jika link masih aktif */}
-                    {isShared && !hasExpired && (
-                      <div className="p-3.5 rounded-2xl border text-xs font-bold flex flex-wrap items-center justify-between gap-2 bg-emerald-50/50 border-emerald-100 text-emerald-800">
+                    {/* Shared state indicators */}
+                    {isShared && (
+                      <div className={`p-3.5 rounded-2xl border text-xs font-bold flex flex-wrap items-center justify-between gap-2 ${
+                        hasExpired 
+                          ? 'bg-rose-50/50 border-rose-100 text-rose-700' 
+                          : 'bg-emerald-50/50 border-emerald-100 text-emerald-800'
+                      }`}>
                         <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span className={`w-2 h-2 rounded-full ${hasExpired ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`}></span>
                           <span>
-                            Link share aktif s.d: {new Date(post.share_expires_at!).toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}
+                            {hasExpired 
+                              ? 'Link temporary sudah kedaluwarsa!' 
+                              : `Link share aktif s.d: ${new Date(post.share_expires_at!).toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}`
+                            }
                           </span>
                         </div>
                         <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              handleOpenShare(post);
-                              const fullLink = `${window.location.origin}/app?shareDrive=${post.share_token}`;
-                              setGeneratedLink(fullLink);
-                            }}
-                            className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-lg text-[10px] uppercase tracking-wider"
-                          >
-                            Detail Link
-                          </button>
+                          {!hasExpired && (
+                            <button
+                              onClick={() => {
+                                handleOpenShare(post);
+                                const fullLink = `${window.location.origin}?shareDrive=${post.share_token}`;
+                                setGeneratedLink(fullLink);
+                              }}
+                              className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-lg text-[10px] uppercase tracking-wider"
+                            >
+                              Detail Link
+                            </button>
+                          )}
                           <button
                             onClick={() => handleCancelShare(post.id)}
                             className="px-2.5 py-1 bg-white hover:bg-rose-50 border border-rose-200 text-rose-600 rounded-lg text-[10px] uppercase tracking-wider"

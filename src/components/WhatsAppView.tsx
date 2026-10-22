@@ -55,40 +55,24 @@ import { SUPABASE_MIGRATION_SQL } from '../lib/supabaseMigrationSql';
 import { getApiUrl } from '../lib/apiUtils';
 
 export const formatDisplayPhone = (rawPhoneOrJid?: string, name?: string): { phone: string; name: string } => {
-  if (!rawPhoneOrJid) {
-    const cleanName = (name && !name.includes("@")) ? name : "Pengguna WA";
-    return { phone: cleanName, name: cleanName };
-  }
+  if (!rawPhoneOrJid) return { phone: name || "Pengguna WA", name: name || "Pengguna WA" };
 
   let val = rawPhoneOrJid.split("@")[0].split(":")[0];
-  let digits = val.replace(/[^0-9]/g, "");
+  const digits = val.replace(/[^0-9]/g, "");
 
-  // Fallback: check if name contains phone digits
-  if ((!digits || digits.length < 8) && name) {
-    const nDigits = name.replace(/[^0-9]/g, "");
-    if (nDigits.length >= 8 && nDigits.length <= 15) {
-      digits = nDigits;
-    }
-  }
-
-  if (digits && digits.length >= 8 && digits.length <= 15) {
+  if (digits && digits.length >= 8 && digits.length <= 15 && !val.includes("lid")) {
     let formatted = digits;
     if (formatted.startsWith("62")) {
       formatted = "0" + formatted.slice(2);
     } else if (!formatted.startsWith("0")) {
       formatted = "0" + formatted;
     }
-    const isCleanName = name && !name.includes("@lid") && !name.includes("@s.whatsapp.net") && !name.includes("@g.us");
-    const displayName = isCleanName ? name : formatted;
-
+    const displayName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net")) ? name : formatted;
     return { phone: formatted, name: displayName };
   }
 
-  const isCleanName = name && !name.includes("@lid") && !name.includes("@s.whatsapp.net") && !name.includes("@g.us");
-  const fallbackName = isCleanName ? name : (rawPhoneOrJid || "Pengguna WA");
-  const fallbackPhone = digits && digits.length >= 6 ? digits : fallbackName;
-
-  return { phone: fallbackPhone, name: fallbackName };
+  const cleanName = (name && !name.includes("@lid") && !name.includes("@s.whatsapp.net")) ? name : "Pengguna WA";
+  return { phone: cleanName, name: cleanName };
 };
 
 export interface WAChatMedia {
@@ -515,8 +499,6 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const [newSalesCtaKeywordInput, setNewSalesCtaKeywordInput] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const prevChatJidRef = useRef<string | null>(null);
-  const isUserScrollingUpRef = useRef<boolean>(false);
 
   // Fetch WA Connection Status & Known Connected Numbers
   const fetchStatus = async () => {
@@ -787,16 +769,7 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   }, [selectedConnectedPhone, activeSubTab, connectionStatus.connectionState]);
 
   useEffect(() => {
-    if (!selectedChatJid) return;
-
-    if (selectedChatJid !== prevChatJidRef.current) {
-      prevChatJidRef.current = selectedChatJid;
-      isUserScrollingUpRef.current = false;
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      return;
-    }
-
-    if (!isUserScrollingUpRef.current) {
+    if (selectedChatJid) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chats, selectedChatJid]);
@@ -887,7 +860,6 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     if (!selectedChatJid || (!replyText.trim() && !attachedMedia) || isSending) return;
 
     setIsSending(true);
-    isUserScrollingUpRef.current = false;
     const textToSend = replyText.trim();
     const mediaToSend = attachedMedia;
     setReplyText('');
@@ -1563,25 +1535,8 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                   )}
 
                   {/* Messages Scroll Area */}
-                  <div 
-                    className="flex-1 overflow-y-auto p-4 space-y-3"
-                    onScroll={(e) => {
-                      const target = e.currentTarget;
-                      const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 120;
-                      isUserScrollingUpRef.current = !isNearBottom;
-                    }}
-                  >
-                    {selectedChat.messages.filter((m, idx, arr) => {
-                      const firstIdx = arr.findIndex(x => (x.id && m.id && x.id === m.id));
-                      if (firstIdx !== -1 && firstIdx !== idx) return false;
-                      const dupIdx = arr.findIndex((x, i) => 
-                        i < idx && 
-                        x.fromMe === m.fromMe && 
-                        x.text === m.text && 
-                        Math.abs((x.timestamp || 0) - (m.timestamp || 0)) < 5000
-                      );
-                      return dupIdx === -1;
-                    }).map((m, idx) => (
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {selectedChat.messages.map((m, idx) => (
                       <div
                         key={`${m.id || 'm'}_${idx}`}
                         className={`flex flex-col ${m.fromMe ? 'items-end' : 'items-start'}`}

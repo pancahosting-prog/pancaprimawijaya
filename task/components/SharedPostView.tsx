@@ -195,18 +195,12 @@ export const SharedPostView: React.FC<SharedPostViewProps> = ({ shareToken, onBa
             </div>
           </div>
 
-          {/* Isi / Deskripsi Postingan - Paling Atas Di Atas Lampiran */}
           {post.content && (
             <div className="space-y-2">
-              <div className="flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M4 6h16M4 12h16M4 18h7" />
-                </svg>
-                <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Isi / Deskripsi Postingan</p>
-              </div>
-              <div className="text-sm text-slate-700 whitespace-pre-wrap font-medium bg-slate-50 p-5 rounded-2xl border border-slate-200/80 leading-relaxed shadow-2xs">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Keterangan / Deskripsi</p>
+              <p className="text-sm text-slate-600 whitespace-pre-wrap font-medium bg-slate-50/50 p-6 rounded-3xl border border-slate-50 leading-relaxed">
                 {post.content}
-              </div>
+              </p>
             </div>
           )}
 
