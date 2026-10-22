@@ -201,10 +201,6 @@ class WAService {
   public async getStatus() {
     await this.loadPersistedStatus();
 
-    if (this.connectionState === "disconnected" || (this.connectionState === "connecting" && !this.qrCodeBase64 && !this.socket)) {
-      this.initBaileys(false).catch(() => {});
-    }
-
     const isExpired = this.qrExpired || (this.connectionState === "disconnected" && this.isQRExpired());
     return {
       connectionState: this.connectionState,
@@ -990,6 +986,15 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
       this.socket = null;
     }
 
+    if (force) {
+      try {
+        if (fs.existsSync(SESSION_DIR)) {
+          fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+        }
+      } catch (e) {}
+      this.qrCodeBase64 = null;
+    }
+
     this.connectionState = "connecting";
     this.qrExpired = false;
 
@@ -1048,6 +1053,7 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
               console.log(`[waService] QR Code refreshed (version ${this.qrVersion}) at ${new Date().toLocaleTimeString()}`);
               clearTimeout(timeoutId);
               resolveOnce(this.qrCodeBase64);
+              this.persistStatus().catch(() => {});
             } catch (err) {
               console.error("[waService] Error generating QR data URL:", err);
             }
@@ -1065,7 +1071,7 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
             } catch (e) {}
             this.socket = null;
 
-            if (isLoggedOut) {
+            if (isLoggedOut || statusCode === 401) {
               console.log("[waService] Sesi WhatsApp logout (401). Menghapus kredensial sesi.");
               this.connectionState = "disconnected";
               this.qrCodeBase64 = null;
@@ -1073,8 +1079,14 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
               this.userPhone = null;
               this.userJid = null;
               try {
-                fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+                if (fs.existsSync(SESSION_DIR)) {
+                  fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+                }
               } catch (err) {}
+              this.persistStatus().catch(() => {});
+              clearTimeout(timeoutId);
+              resolveOnce(null);
+              return;
             } else if (isRestartRequired || statusCode === 428 || (statusCode && statusCode !== 408 && statusCode !== 401 && !this.userPhone)) {
               console.log(`[waService] Scan handshake berhasil diterima (status: ${statusCode}). Melanjutkan proses masuk...`);
               this.connectionState = "connecting";
