@@ -33,6 +33,7 @@ import { GeminiSettingsSection } from './src/components/GeminiSettingsSection';
 import { WANotifSettingsSection } from './src/components/WANotifSettingsSection';
 import { WhatsAppView } from './src/components/WhatsAppView';
 import { callGeminiWithKeyRotation, loadGeminiSettingsFromDatabase } from './src/services/geminiKeyService';
+import { safeSetLocalStorage } from './src/lib/apiUtils';
 
 // --- Interfaces ---
 interface TutorialSection {
@@ -2792,21 +2793,21 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
   useEffect(() => {
     if (!isMounted) return; // Prevent overwriting history on first mount
     
-    localStorage.setItem('mypanca_db_trx', JSON.stringify(transactions));
-    localStorage.setItem('mypanca_db_cust', JSON.stringify(customers));
-    localStorage.setItem('mypanca_db_prod', JSON.stringify(products));
-    localStorage.setItem('mypanca_db_supp', JSON.stringify(suppliers));
-    localStorage.setItem('mypanca_db_po', JSON.stringify(purchaseOrders));
-    localStorage.setItem('mypanca_db_deleted', JSON.stringify(deletedItems));
-    localStorage.setItem('mypanca_db_user_logs', JSON.stringify(userLogs));
-    localStorage.setItem('mypanca_db_app_users', JSON.stringify(appUsers));
-    localStorage.setItem('mypanca_db_employees', JSON.stringify(employees));
-    localStorage.setItem('mypanca_db_companies', JSON.stringify(companies));
-    localStorage.setItem('mypanca_db_tutorials', JSON.stringify(tutorials));
-    if (currentUser) localStorage.setItem('mypanca_current_user', JSON.stringify(currentUser));
-    localStorage.setItem('mypanca_db_auto_notify', autoNotifyEnabled.toString());
-    localStorage.setItem('mypanca_db_auto_notify_days', autoNotifyDays.toString());
-    localStorage.setItem('mypanca_db_auto_notify_superadmin', autoNotifySuperadmin.toString());
+    safeSetLocalStorage('mypanca_db_trx', transactions);
+    safeSetLocalStorage('mypanca_db_cust', customers);
+    safeSetLocalStorage('mypanca_db_prod', products);
+    safeSetLocalStorage('mypanca_db_supp', suppliers);
+    safeSetLocalStorage('mypanca_db_po', purchaseOrders);
+    safeSetLocalStorage('mypanca_db_deleted', deletedItems);
+    safeSetLocalStorage('mypanca_db_user_logs', userLogs);
+    safeSetLocalStorage('mypanca_db_app_users', appUsers);
+    safeSetLocalStorage('mypanca_db_employees', employees);
+    safeSetLocalStorage('mypanca_db_companies', companies);
+    safeSetLocalStorage('mypanca_db_tutorials', tutorials);
+    if (currentUser) safeSetLocalStorage('mypanca_current_user', currentUser);
+    safeSetLocalStorage('mypanca_db_auto_notify', autoNotifyEnabled.toString());
+    safeSetLocalStorage('mypanca_db_auto_notify_days', autoNotifyDays.toString());
+    safeSetLocalStorage('mypanca_db_auto_notify_superadmin', autoNotifySuperadmin.toString());
   }, [transactions, customers, products, suppliers, purchaseOrders, deletedItems, appUsers, employees, currentUser, autoNotifyEnabled, autoNotifyDays, autoNotifySuperadmin, isMounted, tutorials, userLogs]);
 
   // --- NEW: Background Sync to Supabase ---

@@ -888,13 +888,13 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
     return { phone: fallbackPhone, name: fallbackName };
   }
 
-  public async initBaileys(force = false) {
+  public async initBaileys(force = false): Promise<string | null> {
     if (!force && this.connectionState === "connected") {
-      return;
+      return this.qrCodeBase64;
     }
 
-    if (!force && this.connectionState === "connecting" && this.socket && !this.isQRExpired()) {
-      return;
+    if (!force && this.connectionState === "connecting" && this.socket && !this.isQRExpired() && this.qrCodeBase64) {
+      return this.qrCodeBase64;
     }
 
     // Clean up previous socket if forcing reinit or if previous session was expired
@@ -938,97 +938,115 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
 
       this.socket.ev.on("creds.update", saveCreds);
 
-      this.socket.ev.on("connection.update", async (update: any) => {
-        const { connection, lastDisconnect, qr } = update;
+      const connectionPromise = new Promise<string | null>((resolve) => {
+        let hasResolved = false;
+        const resolveOnce = (val: string | null) => {
+          if (!hasResolved) {
+            hasResolved = true;
+            resolve(val);
+          }
+        };
 
-        if (qr) {
-          this.qrCodeBase64 = await QRCode.toDataURL(qr);
-          this.qrTimestamp = Date.now();
-          this.qrVersion = (this.qrVersion || 0) + 1;
-          this.qrExpired = false;
-          this.connectionState = "connecting";
-          console.log(`[waService] QR Code refreshed (version ${this.qrVersion}) at ${new Date().toLocaleTimeString()}`);
-        }
+        const timeoutId = setTimeout(() => {
+          resolveOnce(this.qrCodeBase64);
+        }, 7000);
 
-        if (connection === "close") {
-          const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-          const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-          const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+        this.socket.ev.on("connection.update", async (update: any) => {
+          const { connection, lastDisconnect, qr } = update;
 
-          console.log(`[waService] Koneksi tertutup. Status: ${statusCode}, isLoggedOut: ${isLoggedOut}, isRestartRequired: ${isRestartRequired}`);
-
-          try {
-            this.socket?.ev?.removeAllListeners?.();
-          } catch (e) {}
-          this.socket = null;
-
-          if (isLoggedOut) {
-            console.log("[waService] Sesi WhatsApp logout (401). Menghapus kredensial sesi.");
-            this.connectionState = "disconnected";
-            this.qrCodeBase64 = null;
-            this.qrExpired = true;
-            this.userPhone = null;
-            this.userJid = null;
+          if (qr) {
             try {
-              fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-            } catch (err) {}
-          } else if (isRestartRequired || statusCode === 428 || (statusCode && statusCode !== 408 && statusCode !== 401 && !this.userPhone)) {
-            // KRUSIAL: Saat HP melakukan scan QR barcode, WhatsApp mengirim sinyal restartRequired (515)
-            // untuk beralih dari soket QR sementara ke soket terotentikasi penuh.
-            // JANGAN DITANDAI EXPIRED! Harus segera initBaileys(false) agar proses masuk (login) selesai!
-            console.log(`[waService] Scan handshake berhasil diterima (status: ${statusCode}). Melanjutkan proses masuk...`);
-            this.connectionState = "connecting";
-            this.qrExpired = false;
-            setTimeout(() => this.initBaileys(false), 1000);
-          } else if (statusCode === DisconnectReason.timedOut || statusCode === 408) {
-            if (!this.userPhone) {
-              // Server WhatsApp menutup soket karena barcode tidak di-scan setelah beberapa putaran
-              this.qrExpired = true;
-              this.connectionState = "disconnected";
-              console.log(`[waService] Barcode tidak di-scan sampai timeout (${statusCode}). Meminta muat ulang.`);
-            } else {
+              this.qrCodeBase64 = await QRCode.toDataURL(qr);
+              this.qrTimestamp = Date.now();
+              this.qrVersion = (this.qrVersion || 0) + 1;
+              this.qrExpired = false;
               this.connectionState = "connecting";
-              setTimeout(() => this.initBaileys(false), 3000);
-            }
-          } else {
-            // Putus koneksi sementara -> auto reconnect
-            console.log(`[waService] Putus koneksi sementara (status: ${statusCode}). Menyambungkan kembali...`);
-            this.connectionState = "connecting";
-            setTimeout(() => this.initBaileys(false), 2000);
-          }
-        } else if (connection === "open") {
-          this.connectionState = "connected";
-          this.qrCodeBase64 = null;
-          this.qrExpired = false;
-          const user = this.socket?.user;
-          this.userJid = user?.id || null;
-          
-          let rawConnectedPhone = "";
-          if (user?.id) {
-            const cleanId = user.id.split(":")[0].split("@")[0];
-            if (!user.id.includes("@lid") || cleanId.length <= 13) {
-              rawConnectedPhone = cleanId.replace(/[^0-9]/g, "");
+              console.log(`[waService] QR Code refreshed (version ${this.qrVersion}) at ${new Date().toLocaleTimeString()}`);
+              clearTimeout(timeoutId);
+              resolveOnce(this.qrCodeBase64);
+            } catch (err) {
+              console.error("[waService] Error generating QR data URL:", err);
             }
           }
-          if (!rawConnectedPhone && (user as any)?.phone) {
-            rawConnectedPhone = String((user as any).phone).replace(/[^0-9]/g, "");
-          }
-          let cleanPhoneNum = rawConnectedPhone || (user?.id ? user.id.split(":")[0].replace(/[^0-9]/g, "") : null);
-          if (cleanPhoneNum && cleanPhoneNum.startsWith("62")) {
-            cleanPhoneNum = "0" + cleanPhoneNum.slice(2);
-          }
-          this.userPhone = cleanPhoneNum;
-          this.userName = user?.name || "WhatsApp Business Bot";
 
-          console.log(`[waService] WhatsApp Connected! Nomor Terhubung: ${this.userPhone}`);
-          if (this.userPhone) {
-            const clean = this.getConnectedPhoneKey(this.userPhone);
-            this.knownConnectedPhones.add(clean);
-            this.saveKnownNumbers();
-            this.loadChatsForPhone(clean);
-            this.syncAllChatsFromSupabase(clean);
+          if (connection === "close") {
+            const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+            const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+            const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+
+            console.log(`[waService] Koneksi tertutup. Status: ${statusCode}, isLoggedOut: ${isLoggedOut}, isRestartRequired: ${isRestartRequired}`);
+
+            try {
+              this.socket?.ev?.removeAllListeners?.();
+            } catch (e) {}
+            this.socket = null;
+
+            if (isLoggedOut) {
+              console.log("[waService] Sesi WhatsApp logout (401). Menghapus kredensial sesi.");
+              this.connectionState = "disconnected";
+              this.qrCodeBase64 = null;
+              this.qrExpired = true;
+              this.userPhone = null;
+              this.userJid = null;
+              try {
+                fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+              } catch (err) {}
+            } else if (isRestartRequired || statusCode === 428 || (statusCode && statusCode !== 408 && statusCode !== 401 && !this.userPhone)) {
+              console.log(`[waService] Scan handshake berhasil diterima (status: ${statusCode}). Melanjutkan proses masuk...`);
+              this.connectionState = "connecting";
+              this.qrExpired = false;
+              setTimeout(() => this.initBaileys(false), 1000);
+            } else if (statusCode === DisconnectReason.timedOut || statusCode === 408) {
+              if (!this.userPhone) {
+                this.qrExpired = true;
+                this.connectionState = "disconnected";
+                console.log(`[waService] Barcode tidak di-scan sampai timeout (${statusCode}). Meminta muat ulang.`);
+              } else {
+                this.connectionState = "connecting";
+                setTimeout(() => this.initBaileys(false), 3000);
+              }
+            } else {
+              console.log(`[waService] Putus koneksi sementara (status: ${statusCode}). Menyambungkan kembali...`);
+              this.connectionState = "connecting";
+              setTimeout(() => this.initBaileys(false), 2000);
+            }
           }
-        }
+
+          if (connection === "open") {
+            this.connectionState = "connected";
+            this.qrCodeBase64 = null;
+            this.qrExpired = false;
+            const user = this.socket?.user;
+            this.userJid = user?.id || null;
+            
+            let rawConnectedPhone = "";
+            if (user?.id) {
+              const cleanId = user.id.split(":")[0].split("@")[0];
+              if (!user.id.includes("@lid") || cleanId.length <= 13) {
+                rawConnectedPhone = cleanId.replace(/[^0-9]/g, "");
+              }
+            }
+            if (!rawConnectedPhone && (user as any)?.phone) {
+              rawConnectedPhone = String((user as any).phone).replace(/[^0-9]/g, "");
+            }
+            let cleanPhoneNum = rawConnectedPhone || (user?.id ? user.id.split(":")[0].replace(/[^0-9]/g, "") : null);
+            if (cleanPhoneNum && cleanPhoneNum.startsWith("62")) {
+              cleanPhoneNum = "0" + cleanPhoneNum.slice(2);
+            }
+            this.userPhone = cleanPhoneNum;
+            this.userName = user?.name || "WhatsApp Business Bot";
+
+            console.log(`[waService] WhatsApp Connected! Nomor Terhubung: ${this.userPhone}`);
+            if (this.userPhone) {
+              const clean = this.getConnectedPhoneKey(this.userPhone);
+              this.knownConnectedPhones.add(clean);
+              this.saveKnownNumbers();
+              this.loadChatsForPhone(clean);
+            }
+            clearTimeout(timeoutId);
+            resolveOnce(null);
+          }
+        });
       });
 
       this.socket.ev.on("messages.upsert", async (m: any) => {
@@ -1169,6 +1187,8 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
           }
         }
       });
+
+      return await connectionPromise;
     } catch (err) {
       console.error("[waService] Failed to initialize Baileys:", err);
       this.connectionState = "disconnected";
