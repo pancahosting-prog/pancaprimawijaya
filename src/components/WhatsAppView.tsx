@@ -1939,9 +1939,9 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
             {/* SECTION 1: BASIS PENGETAHUAN (PARAGRAF & KONTEN) */}
             {aiActiveSection === 'knowledge' && (
               <div className="space-y-6">
-                {/* Switcher Kontainer Pengetahuan */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Container 1 Tab: Paragraf & Dokumen (Utama) */}
+                {/* Switcher Kontainer Pengetahuan: Hanya Paragraf Percakapan & Katalog Produk */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Container 1 Tab: Paragraf Percakapan (Utama) */}
                   <div 
                     onClick={() => setKbActiveContainer('snippets')}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
@@ -1958,10 +1958,10 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Paragraf & Konten</h4>
+                          <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Paragraf Percakapan</h4>
                           <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold">Utama</span>
                         </div>
-                        <p className="text-[10px] text-zinc-500">Aturan, SOP, info, kebijakan</p>
+                        <p className="text-[10px] text-zinc-500">Narasi alur obrolan, SOP, info layanan & CTA</p>
                       </div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full text-xs font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
@@ -1986,36 +1986,11 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                       </div>
                       <div>
                         <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Katalog Produk</h4>
-                        <p className="text-[10px] text-zinc-500">Daftar harga & spesifikasi</p>
+                        <p className="text-[10px] text-zinc-500">Daftar harga & spesifikasi produk</p>
                       </div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full text-xs font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
                       {settings.knowledgeProducts?.length || 0}
-                    </span>
-                  </div>
-
-                  {/* Container 3 Tab: Website */}
-                  <div 
-                    onClick={() => setKbActiveContainer('websites')}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                      kbActiveContainer === 'websites'
-                        ? 'bg-violet-50/80 dark:bg-violet-950/30 border-violet-500 shadow-xs ring-1 ring-violet-500/20'
-                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        kbActiveContainer === 'websites' ? 'bg-violet-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600'
-                      }`}>
-                        <Globe size={18} />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black text-zinc-900 dark:text-zinc-100">Referensi Website</h4>
-                        <p className="text-[10px] text-zinc-500">Tautan & ringkasan web</p>
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-                      {settings.knowledgeWebSources?.length || 0}
                     </span>
                   </div>
                 </div>
@@ -2719,67 +2694,18 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                   </div>
                 </div>
 
-                {/* 3. Sales CTA (Call to Action Otomatis) */}
-                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
-                      <Sparkles className="text-amber-500" size={20} />
-                      <div>
-                        <h3 className="text-sm font-black">3. Sales CTA (Ajakan Aksi Penutupan Penjualan Otomatis)</h3>
-                        <p className="text-xs text-zinc-500 mt-0.5">
-                          Menyematkan ajakan bertindak (Quotation, cek stok, atau sampel) saat pelanggan menanyakan harga atau berminat dengan produk.
-                        </p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={settings.salesCta?.enabled ?? true} 
-                        onChange={(e) => setSettings({
-                          ...settings,
-                          salesCta: { ...settings.salesCta, enabled: e.target.checked }
-                        })}
-                        className="sr-only peer" 
-                      />
-                      <div className="w-10 h-5 bg-zinc-300 dark:bg-zinc-700 rounded-full peer peer-checked:bg-amber-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
-                    </label>
+                {/* Ajakan Aksi (CTA) Berbasis Percakapan */}
+                <div className="bg-amber-50/70 dark:bg-amber-950/20 p-5 rounded-3xl border border-amber-200/80 dark:border-amber-900/40 flex items-start gap-3.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Sparkles size={18} />
                   </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1">Teks Pesan Call to Action (CTA)</label>
-                    <input
-                      type="text"
-                      value={settings.salesCta?.ctaMessage || ''}
-                      onChange={(e) => setSettings({
-                        ...settings,
-                        salesCta: { ...settings.salesCta, ctaMessage: e.target.value }
-                      })}
-                      placeholder="Contoh: Apakah Bapak/Ibu ingin kami buatkan penawaran harga resmi (Quotation) untuk kebutuhan ini?"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-zinc-400 block mb-1.5">Kata Kunci Pemicu CTA Penjualan</label>
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {(settings.salesCta?.triggerKeywords || []).map((kw, idx) => (
-                        <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40">
-                          <span>{kw}</span>
-                          <button type="button" onClick={() => handleRemoveSalesCtaTrigger(kw)} className="cursor-pointer hover:text-rose-500"><X size={11} /></button>
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Tambah kata kunci (cth: harga, pesan, beli, katalog)..."
-                        value={newSalesCtaKeywordInput}
-                        onChange={(e) => setNewSalesCtaKeywordInput(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSalesCtaTrigger(); } }}
-                        className="flex-1 px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
-                      />
-                      <button type="button" onClick={handleAddSalesCtaTrigger} className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition cursor-pointer">+ Tambah</button>
-                    </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-black text-amber-900 dark:text-amber-200">
+                      Ajakan Aksi / Penawaran (CTA) Terintegrasi di Paragraf Percakapan
+                    </h4>
+                    <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+                      Setting CTA otomatis terpisah telah ditiadakan. AI kini menyisipkan ajakan bertindak (penawaran harga/quotation, konsultasi teknis, atau pemesanan) secara alami dan luwes langsung dari narasi <strong>Paragraf Percakapan</strong> yang Anda susun, tanpa menggunakan template tempelan kaku.
+                    </p>
                   </div>
                 </div>
               </div>

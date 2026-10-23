@@ -495,28 +495,15 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
     return this.aiSettings;
   }
 
-  /**
-   * Menghasilkan pesan fallback yang ramah, fleksibel, bervariasi, dan selalu membantu pelanggan
-   */
   public generateDynamicFallbackMessage(senderName: string, userMessage: string, fallbackCount: number = 1): string {
     const variations = [
-      `Mohon maaf ya Kak ${senderName}, untuk informasi terkait hal tersebut saat ini belum tercatat di panduan resmi kami 🙏\n\nApakah ada hal lain seputar katalog produk, spesifikasi teknis, atau prosedur pemesanan yang ingin Kakak tanyakan? Kami siap melayani dengan senang hati! 😊`,
-
-      `Waduh mohon maaf Kak ${senderName}, detail mengenai hal tersebut belum tersedia di basis data kami 🙏\n\nApakah Kakak tertarik untuk melihat spesifikasi produk kami atau berkonsultasi seputar pemesanan? Siap kami bantu dengan senang hati ya!`,
-
-      `Mohon maaf atas keterbatasan informasi kami Kak ${senderName}, hal tersebut belum tercatat di sistem kami 🙏\n\nApakah Kakak berkenan kami buatkan penawaran harga resmi (Quotation) atau ingin menanyakan informasi produk lainnya terlebih dahulu?`,
-
-      `Terima kasih sudah bertanya Kak ${senderName}. Namun mohon maaf, untuk informasi tersebut belum tersedia di data kami 🙏\n\nApakah ada kebutuhan lain seputar produk atau informasi pemesanan yang ingin Kakak ketahui? Kami siap membantu! 😊`
+      `Halo Kak ${senderName}! Terima kasih atas pertanyaannya. Terkait kebutuhan tersebut, boleh diceritakan lebih detail rencana penggunaannya Kak? Kami siap bantu carikan solusi yang paling pas 😊`,
+      `Halo Kak ${senderName}! Terkait hal yang Kakak tanyakan, ada spesifikasi atau kebutuhan tertentu yang sedang dicari? Boleh disampaikan agar kami bantu rekomendasikan opsinya ya 😊`,
+      `Baik Kak ${senderName}, untuk membantu Kakak mendapatkan solusi terbaik, boleh kami tahu lebih lanjut kebutuhan atau estimasi yang diperlukan? Siap kami bantu dengan senang hati! 😊`
     ];
 
     const idx = Math.abs(userMessage.length + fallbackCount) % variations.length;
-    let reply = variations[idx];
-
-    if (fallbackCount >= 3) {
-      reply += `\n\nBtw Kak ${senderName}, karena kebutuhan Kakak memerlukan info khusus di luar panduan sistem saya, apakah Kakak ingin obrolan ini langsung saya alihkan ke tim Customer Service / Sales kami agar dibantu secara personal? (Ketik *Ya / Boleh* jika berkenan 😊)`;
-    }
-
-    return reply;
+    return variations[idx];
   }
 
   /**
@@ -1429,23 +1416,18 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
 
       const knowledgeSections: string[] = [];
 
-      // Semua dokumen disusun menjadi Paragraf & Konten Pengetahuan yang bersih dan fokus
+      // 1. KONTEN PARAGRAF PERCAKAPAN (Aturan, konteks, SOP, & CTA terintegrasi)
       snippets.forEach((s, idx) => {
-        knowledgeSections.push(`[PARAGRAF DOKUMEN #${idx + 1}: ${s.title.toUpperCase()}${s.category ? ` - ${s.category}` : ''}]\n${s.content}`);
+        knowledgeSections.push(`[PARAGRAF PERCAKAPAN #${idx + 1}: ${s.title.toUpperCase()}${s.category ? ` - ${s.category}` : ''}]\n${s.content}`);
       });
 
-      // Produk juga disajikan sebagai paragraf konten yang to-the-point
+      // 2. KONTEN PRODUK (Spesifikasi & Harga)
       products.forEach((p, idx) => {
-        let text = `[PARAGRAF PRODUK #${idx + 1}: ${p.productName.toUpperCase()}]\n${p.description}\nEstimasi Harga: ${p.price}`;
+        let text = `[DATA PRODUK #${idx + 1}: ${p.productName.toUpperCase()}]\n${p.description}\nEstimasi Harga: ${p.price}`;
         if (p.faq && p.faq.length > 0) {
           text += `\nDetail: ` + p.faq.map(f => `${f.q}: ${f.a}`).join(' | ');
         }
         knowledgeSections.push(text);
-      });
-
-      // Sumber web juga disajikan sebagai paragraf konten
-      webSources.forEach((w, idx) => {
-        knowledgeSections.push(`[PARAGRAF REFERENSI #${idx + 1}: ${w.title}]\n${w.summary}`);
       });
 
       const fullKnowledgeText = knowledgeSections.join("\n\n---\n\n");
@@ -1455,36 +1437,32 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
       const customPrompt = (this.aiSettings.systemInstructions || "").trim();
 
       const fullSystemPrompt = `PERAN & IDENTITAS UTAMA:
-Anda adalah Customer Service WhatsApp resmi dari PT. Panca Prima Wijaya (spesialis sarana pertanian, perkebunan, greenhouse, dan industri).
-Gaya komunikasi Anda: Sangat ramah, bersahabat, komunikatif, luwes, dan mengalir natural selayaknya staf CS WhatsApp manusia asli Indonesia yang melayani pelanggan dengan senyuman dan empati (BUKAN robot kaku, BUKAN pembaca template statis).
+Anda adalah Customer Service WhatsApp profesional yang melayani pelanggan dengan pendekatan BERBASIS PERCAKAPAN (Conversational Flow).
+Gaya komunikasi Anda: Sangat ramah, bersahabat, komunikatif, luwes, dan mengalir natural selayaknya staf CS WhatsApp manusia asli Indonesia (BUKAN robot kaku, BUKAN pembaca template statis).
 Bahasa respon: ${lang}.
 Nada bicara: ${tone}.
-Sapa nama pelanggan dengan santun (misal: "Halo Kak ${senderName}", "Baik Kak ${senderName}"). Hindari mengulang-ulang sapaan pembuka di setiap pesan jika sedang dalam rangkaian percakapan yang sama.
+Sapa nama pelanggan dengan santun (misal: "Halo Kak ${senderName}", "Baik Kak ${senderName}"). Hindari mengulang-ulang salam pembuka di setiap pesan jika sedang dalam rangkaian percakapan yang sama.
 
 ${customPrompt ? `=== PANDUAN KHUSUS & SYSTEM PROMPT PERUSAHAAN (DARI DATABASE/SETTINGS) ===
 ${customPrompt}
 ` : ''}
 
-PRINSIP KOMUNIKASI FLEKSIBEL & KONTEKSTUAL:
-1. FLEKSIBEL & TIDAK TERPAKU PADA TEMPLATE KNOWLEDGE:
-   - Gunakan Catatan Basis Pengetahuan di bawah sebagai sumber fakta resmi, tetapi JANGAN meng-copy-paste kalimat mentah apa adanya. Rangkai kembali dengan gaya bahasa percakapan WhatsApp yang luwes, santai, jelas, dan enak dibaca.
+PRINSIP WAJIB KOMUNIKASI BERBASIS PERCAKAPAN:
+1. OLAH DATA DAN KATA, JANGAN MENJAWAB TEMPLATE:
+   - Gunakan referensi di bawah (Paragraf Percakapan & Katalog Produk) sebagai rujukan informasi fakta.
+   - JANGAN PERNAH menyalin mentah-mentah satu blok teks dokumen. Pahami maksud inti pertanyaan pelanggan, olah data dan fakta tersebut, lalu susun kalimat baru yang santun, luwes, komunikatif, dan enak dibaca.
    - Pahami maksud pelanggan meskipun kalimatnya singkat, terdapat typo, bahasa gaul/informal, singkatan (cth: "brp", "ready", "ongkir", "klo"), atau bahasa campuran.
-   - Pahami riwayat obrolan sebelumnya (multi-turn context) agar percakapan tetap nyambung, konsisten, dan memahami konteks pertanyaan lanjutan.
+   - Pahami riwayat obrolan sebelumnya (multi-turn context) agar alur percakapan selalu nyambung dan konsisten.
 
-2. FOKUS PADA TOPIK & SOLUTIF:
-   - Jawab secara fokus dan tuntas apa yang ditanyakan pelanggan tanpa berbelit-belit ke hal yang tidak relevan.
-   - Buat jawaban yang proporsional: padat, informatif, dan solutif (1-2 paragraf mengalir).
-   - Jika ditanya harga atau produk, berikan penjelasan manfaat ringkas serta kisaran harga/minimal order resmi.
+2. TANPA FALLBACK KAKU — BUAT PERCAKAPAN TERUS BERJALAN AKTIF:
+   - JANGAN PERNAH menggunakan kalimat penolakan atau jawaban template fallback kaku (seperti "Maaf saya tidak tahu", "Hal tersebut di luar panduan kami", atau "Data tidak ditemukan").
+   - Jika pelanggan bertanya sesuatu yang belum tercatat secara spesifik dalam data, jangan menolak. Tanggapi dengan hangat, sampaikan hal relevan yang dapat dibantu dari data yang Anda miliki, lalu AJUKAN PERTANYAAN BALIK YANG RELEVAN (open-ended question) untuk menggali kebutuhan atau rencana penggunaan pelanggan lebih lanjut, sehingga percakapan terus mengalir menuju solusi yang tepat.
 
-3. PENANGANAN KETIKA INFORMASI TIDAK TERCANTUM (FALLBACK LUWES & EDUKATIF):
-   - Jika pelanggan bertanya hal di luar Catatan Basis Pengetahuan perusahaan (misal produk non-pertanian atau hal pribadi):
-     * Jangan gunakan kalimat kaku "Maaf saya tidak tahu" atau penolakan datar.
-     * Sampaikan secara santun dan ramah keterbatasan informasi terkait hal tersebut, lalu perkenalkan dengan luwes spesialisasi PT. Panca Prima Wijaya (penyedia Plastik Sungkup Pertanian UV, Mulsa Plastik Hitam Perak MPHP, Insect Net Kasa Hijau, dll).
-     * Berikan tawaran bantuan yang ramah (misal katalog produk atau konsultasi kebutuhan pertanian).
-     * Bubuhkan kode rahasia [FALLBACK_TAG] di akhir balasan (sistem akan otomatis menghapusnya).
+3. AJAKAN AKSI (CALL TO ACTION / CTA) MENYATU SECARA ALAMI:
+   - Tidak ada template CTA tempelan kaku. Masukkan ajakan bertindak (penawaran harga/quotation, konsultasi spesifikasi, cek ketersediaan stok) secara alami dan menyatu dalam alur percakapan sesuai konteks pembahasan di Paragraf Percakapan.
 
-=== CATATAN BASIS PENGETAHUAN PERUSAHAAN (FAKTA RESMI) ===
-${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
+=== BASIS PENGETAHUAN: PARAGRAF PERCAKAPAN & KATALOG PRODUK ===
+${fullKnowledgeText || "Belum ada dokumen yang dimasukkan. Sambut pelanggan dengan hangat dan tanyakan kebutuhan yang bisa dibantu."}
 `;
 
       const apiKey = process.env.GEMINI_API_KEY;
@@ -1523,17 +1501,11 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
               const data = await res.json();
               const genText = data.candidates?.[0]?.content?.parts?.[0]?.text;
               if (genText) {
-                let cleanGen = genText.trim();
-                if (cleanGen.includes("[FALLBACK_TAG]")) {
-                  isFallback = true;
-                  cleanGen = cleanGen.replace(/\[FALLBACK_TAG\]/g, "").trim();
-                  containerMatched = 'fallback';
-                } else {
-                  isFallback = false;
-                  containerMatched = 'snippets';
-                }
+                let cleanGen = genText.replace(/\[FALLBACK_TAG\]/g, "").trim();
                 replyText = cleanGen;
                 modelUsed = `Gemini AI (${candidate})`;
+                containerMatched = 'snippets';
+                isFallback = false;
                 break;
               }
             } else {
@@ -1552,7 +1524,7 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
         snippets.forEach(s => {
           allParagraphs.push({
             title: s.title,
-            category: s.category,
+            category: s.category || 'Paragraf Percakapan',
             content: s.content,
             keywords: s.keywords || []
           });
@@ -1567,14 +1539,6 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
             category: 'Katalog Produk',
             content: c,
             keywords: p.keywords || []
-          });
-        });
-        webSources.forEach(w => {
-          allParagraphs.push({
-            title: w.title,
-            category: 'Referensi Website',
-            content: `${w.title}\n${w.summary}`,
-            keywords: [w.title.toLowerCase()]
           });
         });
 
@@ -1626,7 +1590,6 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
             matchedTitleOrKeyword = true;
           }
 
-          // Hanya cocok jika ada kecocokan di judul/keyword atau skor konten sangat tinggi
           if (matchedTitleOrKeyword && score > highestScore && score >= 6) {
             highestScore = score;
             bestMatch = p;
@@ -1637,23 +1600,14 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
         }
 
         if (bestMatch) {
-          // JAWAB HANYA APA YANG DITANYAKAN (RAMAH, BERSAHABAT & TO-THE-POINT)
-          replyText = `Halo Kak ${senderName}! Terkait pertanyaan mengenai *${bestMatch.title}*, berikut informasinya ya:\n\n${bestMatch.content}\n\nAda lagi yang ingin ditanyakan atau dipastikan seputar ini Kak? 😊`;
+          replyText = `Halo Kak ${senderName}! Terkait hal tersebut, berikut informasi yang bisa kami sampaikan ya:\n\n${bestMatch.content}\n\nKira-kira ada bagian yang ingin Kakak tanyakan lebih detail lagi? Kami siap bantu jelaskan 😊`;
           containerMatched = 'snippets';
           isFallback = false;
         } else {
-          // Cek sapaan salam santai
-          const isGreetingCheck = /^(?:halo|hai|hi|hei|helo|pagi|siang|sore|malam|assalam|permisi|selamat|sampurasun|punten|tes|test|p)\b/i.test(msgLower);
-          if (isGreetingCheck) {
-            replyText = `Halo Kak ${senderName}! Selamat datang di layanan WhatsApp PT. Panca Prima Wijaya 😊 Ada yang bisa kami bantu seputar informasi produk pertanian atau layanan kami hari ini?`;
-            containerMatched = 'greeting';
-            isFallback = false;
-          } else {
-            // FALLBACK DINAMIS & FLEKSIBEL (EDUKASI KE LAYANAN/PRODUK PERUSAHAAN)
-            replyText = this.generateDynamicFallbackMessage(senderName, userMessage, 1);
-            isFallback = true;
-            containerMatched = 'fallback';
-          }
+          // Buat percakapan terus berjalan aktif tanpa template fallback kaku
+          replyText = `Halo Kak ${senderName}! Terima kasih sudah menghubungi kami. Terkait hal tersebut, boleh diceritakan lebih detail mengenai kebutuhan atau rencana penggunaannya Kak? Kami siap bantu berikan rekomendasi solusi yang paling tepat untuk Kakak 😊`;
+          containerMatched = 'snippets';
+          isFallback = false;
         }
       }
     }
