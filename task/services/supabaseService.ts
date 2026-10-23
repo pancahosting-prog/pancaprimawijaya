@@ -264,7 +264,10 @@ export const supabaseService = {
       .select('*, profiles(name)');
     
     if (username) {
-      query = query.eq('owner_username', username);
+      const u = username;
+      const uLower = u.toLowerCase();
+      const uCap = u.charAt(0).toUpperCase() + u.slice(1);
+      query = query.or(`owner_username.eq.${u},owner_username.eq.${uLower},owner_username.eq.${uCap}`);
     }
     
     const { data, error } = await query.order('created_at', { ascending: false });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Bell, Search, ArrowRight, Sparkles, Send, User, FileText, 
-  Tag, BarChart3, Zap, Target, FileEdit, TrendingUp, LayoutGrid, MessageSquare
+  Tag, BarChart3, Zap, Target, FileEdit, TrendingUp, LayoutGrid, MessageSquare, FolderKanban, HelpCircle
 } from 'lucide-react';
 
 interface PancaHomeViewProps {
@@ -21,6 +21,8 @@ interface PancaHomeViewProps {
   onOpenNotifications: () => void;
   onOpenDriveUpload: () => void;
   onGoToAI: () => void;
+  onOpenProject?: () => void;
+  onOpenQA?: () => void;
   onLogout?: () => void;
 }
 
@@ -30,6 +32,8 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
   onSelectPrompt,
   onOpenNotifications,
   onGoToAI,
+  onOpenProject,
+  onOpenQA,
   onLogout,
 }) => {
   const [chatInput, setChatInput] = useState('');
@@ -105,6 +109,11 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
     { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
     { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
     { label: '📊 Analisa Pekerjaan', icon: Target, prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
+  ] : userRole === 'engineer' ? [
+    { label: '📁 Knowledge Project', icon: FolderKanban, prompt: 'buka database project', onClick: onOpenProject },
+    { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
+    { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
+    { label: '📊 Analisa Pekerjaan', icon: Target, prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
   ] : [
     { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
     { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
@@ -175,7 +184,16 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
     }
   ];
 
+  const canAccessQA = isSuperAdmin || userRole === 'sales' || userRole === 'engineer';
+
   const fiturLayanan = [
+    ...(canAccessQA ? [{
+      title: 'Q&A',
+      desc: 'Tanya jawab teknis, kendala SLD, sensor, & solusi lapangan.',
+      icon: HelpCircle,
+      onClick: onOpenQA,
+      prompt: ''
+    }] : []),
     {
       title: 'Riset Pasar',
       desc: 'Temukan peluang pasar, tren terbaru, dan insight kompetitor.',
@@ -300,7 +318,13 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
             return (
               <button
                 key={idx}
-                onClick={() => onSelectPrompt(item.prompt)}
+                onClick={() => {
+                  if ((item as any).onClick) {
+                    (item as any).onClick();
+                  } else if (item.prompt) {
+                    onSelectPrompt(item.prompt);
+                  }
+                }}
                 className="px-3.5 py-2 rounded-full bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 border border-slate-200/90 dark:border-zinc-800 flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-zinc-200 shadow-2xs transition active:scale-95 shrink-0"
               >
                 <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-600 dark:text-zinc-300">
@@ -364,7 +388,13 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
             return (
               <button
                 key={idx}
-                onClick={() => onSelectPrompt(item.prompt)}
+                onClick={() => {
+                  if ((item as any).onClick) {
+                    (item as any).onClick();
+                  } else {
+                    onSelectPrompt(item.prompt);
+                  }
+                }}
                 className="w-40 shrink-0 p-3.5 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800/80 border border-slate-200/90 dark:border-zinc-800 rounded-2xl text-left shadow-2xs transition active:scale-95 group flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between w-full mb-2">

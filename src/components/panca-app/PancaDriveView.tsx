@@ -52,7 +52,7 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
   const [previewFile, setPreviewFile] = useState<DriveAttachment | null>(null);
 
   const activeUsername = currentUser?.username || 'user';
-  const isSuperadmin = currentUser?.role === 'superadmin';
+  const isSuperadmin = currentUser?.role === 'superadmin' || currentUser?.username === 'superadmin';
 
   useEffect(() => {
     // Load ImageKit settings from env or localStorage
@@ -69,12 +69,14 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
     setIkPrivate(savedPrivate);
 
     fetchDrivePosts();
-  }, []);
+  }, [currentUser?.username, currentUser?.role]);
 
   const fetchDrivePosts = async () => {
     setIsLoading(true);
     try {
-      const data = await supabaseService.getDrivePosts();
+      // User hanya bisa mengakses file miliknya sendiri, KECUALI superadmin yang bisa melihat semua file
+      const userFilter = isSuperadmin ? undefined : activeUsername;
+      const data = await supabaseService.getDrivePosts(userFilter);
       setPosts(data || []);
     } catch (e) {
       console.warn("Error fetching drive posts:", e);
@@ -381,15 +383,22 @@ export const PancaDriveView: React.FC<PancaDriveViewProps> = ({
     return <FileText className="w-4 h-4 text-slate-500 shrink-0" />;
   };
 
-  const filteredPosts = posts.filter(p => {
-    const q = searchQuery.toLowerCase();
-    return (
-      p.title.toLowerCase().includes(q) ||
-      (p.content && p.content.toLowerCase().includes(q)) ||
-      (p.owner_username && p.owner_username.toLowerCase().includes(q)) ||
-      (p.attachments && p.attachments.some(a => a.name.toLowerCase().includes(q)))
-    );
-  });
+  const filteredPosts = posts
+    .filter(p => {
+      if (isSuperadmin) return true;
+      const owner = (p.owner_username || '').toLowerCase();
+      const me = activeUsername.toLowerCase();
+      return owner === me || !p.owner_username;
+    })
+    .filter(p => {
+      const q = searchQuery.toLowerCase();
+      return (
+        p.title.toLowerCase().includes(q) ||
+        (p.content && p.content.toLowerCase().includes(q)) ||
+        (p.owner_username && p.owner_username.toLowerCase().includes(q)) ||
+        (p.attachments && p.attachments.some(a => a.name.toLowerCase().includes(q)))
+      );
+    });
 
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100">

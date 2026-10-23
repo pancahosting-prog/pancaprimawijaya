@@ -6,13 +6,15 @@ import { PancaMessagesView } from './PancaMessagesView';
 import { PancaNotificationsView } from './PancaNotificationsView';
 import { PancaDriveView } from './PancaDriveView';
 import { PancaWhatsAppMobileView } from './PancaWhatsAppMobileView';
+import { PancaProjectMobileView } from './PancaProjectMobileView';
+import { PancaQAMobileView } from './PancaQAMobileView';
 import { SharedPostView } from '../../../task/components/SharedPostView';
 import { 
-  Bot, MessageSquare, Bell, HardDrive, ArrowLeft, Home as HomeIcon, LayoutGrid, Menu, MessageCircle
+  Bot, MessageSquare, Bell, HardDrive, ArrowLeft, Home as HomeIcon, LayoutGrid, Menu, MessageCircle, FolderKanban
 } from 'lucide-react';
 import { PWAInstallButton } from '../PWAInstallButton';
 
-export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file' | 'whatsapp';
+export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file' | 'whatsapp' | 'project' | 'qa';
 
 interface PancaMobileAppProps {
   currentUser?: {
@@ -150,6 +152,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
     </div>
   );
 
+  const isEngineer = (currentUser?.role || '').toLowerCase() === 'engineer';
   const isSalesOrSuperadmin = 
     currentUser?.role === 'sales' || 
     currentUser?.role === 'superadmin' || 
@@ -176,6 +179,8 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
               onOpenNotifications={() => setActiveTab('notifikasi')}
               onOpenDriveUpload={handleOpenDriveUploadFromHome}
               onGoToAI={() => setActiveTab('ai')}
+              onOpenProject={() => setActiveTab('project')}
+              onOpenQA={() => setActiveTab('qa')}
               onLogout={onLogout}
             />
           )}
@@ -239,6 +244,18 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
             </div>
           )}
 
+          {activeTab === 'project' && (
+            <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950">
+              {renderHeader("Knowledge Project", "Database SOP & Dokumen Engineering", () => setActiveTab('home'))}
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <PancaProjectMobileView 
+                  currentUser={currentUser}
+                  onBack={() => setActiveTab('home')}
+                />
+              </div>
+            </div>
+          )}
+
           {activeTab === 'file' && (
             <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950">
               {renderHeader("Panca Drive", "Dokumen & Berbagi Berkas", () => setActiveTab('home'))}
@@ -248,6 +265,15 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
                   openUploadOnMount={openUploadInDrive}
                 />
               </div>
+            </div>
+          )}
+
+          {activeTab === 'qa' && (
+            <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950">
+              <PancaQAMobileView 
+                currentUser={currentUser}
+                onBack={() => setActiveTab('home')}
+              />
             </div>
           )}
         </div>
@@ -284,7 +310,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
               <span className="text-[10px] font-semibold mt-0.5">Chat</span>
             </button>
 
-            {/* 3. Drive (Sebelumnya Tools) */}
+            {/* 3. Drive */}
             <button
               onClick={() => {
                 setOpenUploadInDrive(false);
@@ -302,8 +328,22 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
               <span className={`text-[10px] ${activeTab === 'file' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Drive</span>
             </button>
 
-            {/* 4. WhatsApp (Khusus Sales & Superadmin) atau Lainnya (Untuk Role Lain) */}
-            {isSalesOrSuperadmin ? (
+            {/* 4. Khusus Engineer: Project (Menggantikan WhatsApp). Role Lain: WhatsApp atau Lainnya */}
+            {isEngineer ? (
+              <button
+                onClick={() => setActiveTab('project')}
+                className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                  activeTab === 'project'
+                    ? 'text-blue-600 dark:text-blue-400 font-extrabold'
+                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                }`}
+              >
+                <div className="p-1 rounded-xl">
+                  <FolderKanban className={`w-5 h-5 ${activeTab === 'project' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                </div>
+                <span className={`text-[10px] ${activeTab === 'project' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Project</span>
+              </button>
+            ) : isSalesOrSuperadmin ? (
               <button
                 onClick={() => setActiveTab('whatsapp')}
                 className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
