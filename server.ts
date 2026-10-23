@@ -170,6 +170,7 @@ async function startServer() {
       message: "Proses inisialisasi Baileys WhatsApp dimulai.",
       ...status
     });
+  });
   app.post("/api/wa/reset-session", async (_req, res) => {
     const result = await waService.resetTotalSession();
     res.json(result);
@@ -657,7 +658,7 @@ async function startServer() {
         }
       }
     }));
-    app.get(/(.*)/, (_req, res) => {
+    app.get("*", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
