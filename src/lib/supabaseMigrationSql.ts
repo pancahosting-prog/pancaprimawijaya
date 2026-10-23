@@ -158,7 +158,7 @@ BEGIN
         VALUES (
           'gemini_settings',
           'gemini_settings',
-          '{"apiKeys": [], "activeKeyIndex": 0, "model": "gemini-3.5-flash", "temperature": 0.2, "autoRotate": true, "lastUpdated": "2026-10-15T00:00:00.000Z"}'::jsonb,
+          '{"apiKeys": [], "activeKeyIndex": 0, "model": "gemini-2.5-flash", "temperature": 0.7, "autoRotate": true, "lastUpdated": "2026-10-15T00:00:00.000Z"}'::jsonb,
           NOW(),
           'system_init'
         );
@@ -167,7 +167,7 @@ BEGIN
           INSERT INTO public.app_settings (key, value, updated_at, updated_by)
           VALUES (
             'gemini_settings',
-            '{"apiKeys": [], "activeKeyIndex": 0, "model": "gemini-3.5-flash", "temperature": 0.2, "autoRotate": true, "lastUpdated": "2026-10-15T00:00:00.000Z"}'::jsonb,
+            '{"apiKeys": [], "activeKeyIndex": 0, "model": "gemini-2.5-flash", "temperature": 0.7, "autoRotate": true, "lastUpdated": "2026-10-15T00:00:00.000Z"}'::jsonb,
             NOW(),
             'system_init'
           );
@@ -178,7 +178,7 @@ BEGIN
       INSERT INTO public.app_settings (key, value, updated_at, updated_by)
       VALUES (
         'gemini_settings',
-        '{"apiKeys": [], "activeKeyIndex": 0, "model": "gemini-3.5-flash", "temperature": 0.2, "autoRotate": true, "lastUpdated": "2026-10-15T00:00:00.000Z"}'::jsonb,
+        '{"apiKeys": [], "activeKeyIndex": 0, "model": "gemini-2.5-flash", "temperature": 0.7, "autoRotate": true, "lastUpdated": "2026-10-15T00:00:00.000Z"}'::jsonb,
         NOW(),
         'system_init'
       );
@@ -188,7 +188,52 @@ EXCEPTION WHEN OTHERS THEN
   NULL;
 END $$;
 
--- 4. VERIFIKASI INSTALASI TABEL
+
+-- 4. INITIAL SEED (Knowledge Base, Instruksi Sistem & Guardrails WhatsApp AI - Perangkat 1)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.app_settings WHERE key = 'wa_ai_settings') THEN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' AND table_name = 'app_settings' AND column_name = 'id'
+    ) THEN
+      BEGIN
+        INSERT INTO public.app_settings (id, key, value, updated_at, updated_by)
+        VALUES (
+          'wa_ai_settings',
+          'wa_ai_settings',
+          '{"autoReplyEnabled": true, "botName": "Customer Assistant AI", "systemInstructions": "Anda adalah customer service profesional yang ramah, komunikatif, solutif, dan natural. Tujuanmu adalah membantu pelanggan menyelesaikan kebutuhannya dengan luwes dan memahami konteks percakapan.", "toneOfVoice": "Sangat Ramah, Bersahabat & Solutif", "tone": "Sangat Ramah, Bersahabat & Solutif", "responseLanguage": "Bahasa Indonesia", "greetingMessage": "Halo! Selamat datang di layanan WhatsApp resmi kami. Ada yang bisa kami bantu seputar produk atau pemesanan hari ini?", "fallbackMessage": "Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini belum tercatat di sistem kami. Apakah ada hal lain yang bisa kami bantu seputar produk atau layanan pemesanan kami?", "restrictedTopics": ["Isu SARA, politik, dan konten sensitif", "Perbandingan atau menjelekkan kompetitor lain", "Membocorkan harga modal internal atau rahasia supplier pabrik", "Menjanjikan diskon khusus sepihak tanpa persetujuan tim sales resmi", "Data pribadi karyawan di luar nomor kontak layanan resmi"], "handoverToHuman": {"enabled": true, "triggerKeywords": ["bicara dengan manusia", "hubungi sales", "komplain", "bicara cs", "customer service", "mau telpon", "bisa bicara sales", "minta nomor sales", "keluhan barang"], "handoverContact": "0811-1234-5678", "handoverMessage": "Baik Kak {name}, obrolan Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor WhatsApp {contact}. Tim kami akan segera menghubungi Kakak secara langsung ya."}, "salesCta": {"enabled": true, "ctaMessage": "Apakah Kakak ingin kami buatkan Surat Penawaran Harga resmi (Quotation) untuk kebutuhan ini?", "triggerKeywords": ["harga", "pesan", "order", "quotation", "penawaran", "katalog", "stok", "beli", "minimal order", "sample", "sampel"]}, "knowledgeProducts": [], "knowledgeSnippets": [], "knowledgeWebSources": [], "knowledgeBase": [], "logs": []}'::jsonb,
+          NOW(),
+          'system_init'
+        );
+      EXCEPTION WHEN OTHERS THEN
+        BEGIN
+          INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+          VALUES (
+            'wa_ai_settings',
+            '{"autoReplyEnabled": true, "botName": "Customer Assistant AI", "systemInstructions": "Anda adalah customer service profesional yang ramah, komunikatif, solutif, dan natural. Tujuanmu adalah membantu pelanggan menyelesaikan kebutuhannya dengan luwes dan memahami konteks percakapan.", "toneOfVoice": "Sangat Ramah, Bersahabat & Solutif", "tone": "Sangat Ramah, Bersahabat & Solutif", "responseLanguage": "Bahasa Indonesia", "greetingMessage": "Halo! Selamat datang di layanan WhatsApp resmi kami. Ada yang bisa kami bantu seputar produk atau pemesanan hari ini?", "fallbackMessage": "Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini belum tercatat di sistem kami. Apakah ada hal lain yang bisa kami bantu seputar produk atau layanan pemesanan kami?", "restrictedTopics": ["Isu SARA, politik, dan konten sensitif", "Perbandingan atau menjelekkan kompetitor lain", "Membocorkan harga modal internal atau rahasia supplier pabrik", "Menjanjikan diskon khusus sepihak tanpa persetujuan tim sales resmi", "Data pribadi karyawan di luar nomor kontak layanan resmi"], "handoverToHuman": {"enabled": true, "triggerKeywords": ["bicara dengan manusia", "hubungi sales", "komplain", "bicara cs", "customer service", "mau telpon", "bisa bicara sales", "minta nomor sales", "keluhan barang"], "handoverContact": "0811-1234-5678", "handoverMessage": "Baik Kak {name}, obrolan Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor WhatsApp {contact}. Tim kami akan segera menghubungi Kakak secara langsung ya."}, "salesCta": {"enabled": true, "ctaMessage": "Apakah Kakak ingin kami buatkan Surat Penawaran Harga resmi (Quotation) untuk kebutuhan ini?", "triggerKeywords": ["harga", "pesan", "order", "quotation", "penawaran", "katalog", "stok", "beli", "minimal order", "sample", "sampel"]}, "knowledgeProducts": [], "knowledgeSnippets": [], "knowledgeWebSources": [], "knowledgeBase": [], "logs": []}'::jsonb,
+            NOW(),
+            'system_init'
+          );
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+      END;
+    ELSE
+      INSERT INTO public.app_settings (key, value, updated_at, updated_by)
+      VALUES (
+        'wa_ai_settings',
+        '{"autoReplyEnabled": true, "botName": "Customer Assistant AI", "systemInstructions": "Anda adalah customer service profesional yang ramah, komunikatif, solutif, dan natural. Tujuanmu adalah membantu pelanggan menyelesaikan kebutuhannya dengan luwes dan memahami konteks percakapan.", "toneOfVoice": "Sangat Ramah, Bersahabat & Solutif", "tone": "Sangat Ramah, Bersahabat & Solutif", "responseLanguage": "Bahasa Indonesia", "greetingMessage": "Halo! Selamat datang di layanan WhatsApp resmi kami. Ada yang bisa kami bantu seputar produk atau pemesanan hari ini?", "fallbackMessage": "Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini belum tercatat di sistem kami. Apakah ada hal lain yang bisa kami bantu seputar produk atau layanan pemesanan kami?", "restrictedTopics": ["Isu SARA, politik, dan konten sensitif", "Perbandingan atau menjelekkan kompetitor lain", "Membocorkan harga modal internal atau rahasia supplier pabrik", "Menjanjikan diskon khusus sepihak tanpa persetujuan tim sales resmi", "Data pribadi karyawan di luar nomor kontak layanan resmi"], "handoverToHuman": {"enabled": true, "triggerKeywords": ["bicara dengan manusia", "hubungi sales", "komplain", "bicara cs", "customer service", "mau telpon", "bisa bicara sales", "minta nomor sales", "keluhan barang"], "handoverContact": "0811-1234-5678", "handoverMessage": "Baik Kak {name}, obrolan Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor WhatsApp {contact}. Tim kami akan segera menghubungi Kakak secara langsung ya."}, "salesCta": {"enabled": true, "ctaMessage": "Apakah Kakak ingin kami buatkan Surat Penawaran Harga resmi (Quotation) untuk kebutuhan ini?", "triggerKeywords": ["harga", "pesan", "order", "quotation", "penawaran", "katalog", "stok", "beli", "minimal order", "sample", "sampel"]}, "knowledgeProducts": [], "knowledgeSnippets": [], "knowledgeWebSources": [], "knowledgeBase": [], "logs": []}'::jsonb,
+        NOW(),
+        'system_init'
+      );
+    END IF;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+
+-- 5. VERIFIKASI INSTALASI TABEL
 SELECT 'app_settings' AS table_name, count(*) AS total_records FROM public.app_settings
 UNION ALL
 SELECT 'wa_chats' AS table_name, count(*) AS total_records FROM public.wa_chats;

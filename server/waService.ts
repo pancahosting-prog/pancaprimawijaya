@@ -234,91 +234,9 @@ class WAService {
   private chatsByPhone: Map<string, Map<string, WAChat>> = new Map();
   private knownConnectedPhones: Set<string> = new Set();
 
-  public static readonly DEFAULT_CLEAN_KNOWLEDGE_SNIPPETS = [
-    {
-      id: "snip-1",
-      title: "Profil Perusahaan & Layanan Utama PT. Panca Prima Wijaya",
-      category: "Profil Perusahaan",
-      content: "PT. Panca Prima Wijaya adalah perusahaan manufaktur dan distributor terpercaya di Indonesia yang bergerak di bidang penyediaan sarana produksi pertanian modern, kemasan industri, dan perlengkapan perkebunan. Kami berfokus pada penyediaan produk berkualitas tinggi seperti Plastik Sungkup Pertanian UV, Mulsa Plastik Hitam Perak (MPHP), Insect Net Kasa Hijau, Karung Plastik, dan perlengkapan greenhouse untuk mendukung produktivitas petani dan mitra industri di seluruh Indonesia.",
-      keywords: ["profil", "tentang kami", "perusahaan", "panca prima wijaya", "layanan", "distributor", "pabrik", "kantor"]
-    },
-    {
-      id: "snip-2",
-      title: "Katalog Produk Unggulan & Spesifikasi Teknis",
-      category: "Katalog Produk",
-      content: "Produk-produk unggulan resmi PT. Panca Prima Wijaya:\n1. Plastik Sungkup Pertanian UV: Plastik transparan proteksi anti-UV tebal & ulet untuk perlindungan tanaman cabai, melon, dan semangka dari hujan ekstrem serta hama (Rp 450.000 / roll ukuran 1m x 200m, tahan hingga 2-3 musim tanam).\n2. Mulsa Plastik Hitam Perak (MPHP): Mulsa dua lapis berkualitas tinggi (sisi perak memantulkan sinar matahari menghalau serangga/kutu trips, sisi hitam menekan pertumbuhan gulma & menjaga kelembapan tanah, Rp 385.000 / roll tebal 0.35 mikron).\n3. Insect Net / Kasa Hijau 50 Mesh: Jaring pelindung greenhouse monofilament HDPE murni, rajutan kuat lock-stitch anti-hama serangga kecil tanpa menghambat sirkulasi udara (Rp 1.250.000 / roll 3m x 100m).\nTersedia juga pemesanan ukuran khusus (custom roll) untuk kebutuhan proyek perkebunan skala besar.",
-      keywords: ["produk", "katalog", "plastik sungkup", "sungkup", "uv", "mulsa", "mphp", "hitam perak", "insect net", "kasa hijau", "harga", "spesifikasi"]
-    },
-    {
-      id: "snip-3",
-      title: "Jam Operasional Layanan & Respons WhatsApp",
-      category: "Jam Operasional",
-      content: "Jam Operasional Layanan Customer Service PT. Panca Prima Wijaya:\n• Senin s/d Jumat: 08:30 - 17:00 WIB\n• Sabtu: 08:30 - 13:00 WIB\n• Hari Minggu & Hari Libur Nasional: Tutup (Pesan yang masuk di luar jam kerja tetap tersimpan aman dan diprioritaskan untuk direspon pada jam kerja pertama berikutnya).",
-      keywords: ["jam kerja", "operasional", "buka", "tutup", "hari kerja", "sabtu", "minggu", "libur"]
-    },
-    {
-      id: "snip-4",
-      title: "Prosedur Pemesanan & Penerbitan Faktur Pajak PPN",
-      category: "Prosedur Pemesanan",
-      content: "Alur pemesanan produk resmi PT. Panca Prima Wijaya:\n1. Pelanggan berkonsultasi mengenai tipe, ukuran, dan jumlah kebutuhan barang dengan tim sales.\n2. Tim sales menerbitkan Surat Penawaran Harga resmi (Quotation / Sales Order).\n3. Pelanggan melakukan konfirmasi dan transfer ke rekening bank resmi perusahaan.\n4. Pesanan disiapkan di gudang dan dikirim bersama Invoice asli & Surat Jalan.\nPT. Panca Prima Wijaya adalah Pengusaha Kena Pajak (PKP) resmi dan siap menerbitkan e-Faktur Pajak 11% untuk setiap transaksi bisnis maupun perorangan.",
-      keywords: ["cara order", "pemesanan", "pesan", "beli", "quotation", "penawaran", "faktur pajak", "ppn", "invoice", "po", "pkp"]
-    },
-    {
-      id: "snip-5",
-      title: "Rekening Bank Pembayaran Resmi Perusahaan",
-      category: "Rekening & Pembayaran",
-      content: "PERINGATAN KEAMANAN TRANSAKSI:\nSeluruh transaksi pembayaran yang sah HANYA dilakukan melalui transfer ke rekening bank resmi atas nama perusahaan PT. PANCA PRIMA WIJAYA:\n• Bank BCA: No. Rek 123-456-7890 (a/n PT Panca Prima Wijaya)\n• Bank Mandiri: No. Rek 987-654-3210 (a/n PT Panca Prima Wijaya)\n\nManajemen PT. Panca Prima Wijaya TIDAK PERNAH meminta pembayaran ke rekening pribadi atas nama perorangan siapapun demi menjamin keamanan transaksi Anda.",
-      keywords: ["rekening", "nomor rekening", "transfer", "bca", "mandiri", "pembayaran", "bank", "penipuan"]
-    },
-    {
-      id: "snip-6",
-      title: "Ketentuan Pengiriman & Jasa Ekspedisi Kargo",
-      category: "Ketentuan Pengiriman",
-      content: "Pilihan pengiriman pesanan PT. Panca Prima Wijaya:\n1. Armada Truk Pengiriman Kantor: Khusus area Jabodetabek dan sekitarnya sesuai jadwal rute reguler gudang.\n2. Jasa Ekspedisi Kargo Rekanan: Melayani pengiriman ke seluruh Indonesia via Indah Logistik Kargo, Dakota Cargo, Baraka Sarana Tama, J&T Cargo, atau ekspedisi langganan pilihan pelanggan.\n3. Pengambilan Mandiri (Self Pick-up): Dapat diambil langsung di Gudang Pusat kami dengan konfirmasi Surat Jalan dari tim Sales.",
-      keywords: ["pengiriman", "kirim", "ongkir", "kargo", "ekspedisi", "dakota", "indah kargo", "baraka", "gudang", "ambil sendiri"]
-    },
-    {
-      id: "snip-7",
-      title: "Ketentuan Garansi & Prosedur Retur Barang",
-      category: "Garansi & Retur",
-      content: "Ketentuan klaim garansi dan pengembalian barang (retur):\n1. Komplain ketidaksesuaian atau cacat produk dapat diajukan maksimal 3x24 jam sejak barang diterima dari kurir/ekspedisi.\n2. Wajib melampirkan video unboxing lengkap tanpa jeda dan foto label Surat Jalan / Invoice pembelian.\n3. Retur berlaku untuk barang cacat produksi pabrik atau ketidaksesuaian ukuran/tipe dengan Surat Pesanan (PO).\n4. Barang pengganti yang baru akan segera dikirimkan tanpa biaya tambahan bagi pelanggan.",
-      keywords: ["garansi", "retur", "klaim", "komplain", "rusak", "cacat", "tukar", "ganti baru"]
-    }
-  ];
+  public static readonly DEFAULT_CLEAN_KNOWLEDGE_SNIPPETS: any[] = [];
 
-  public static readonly DEFAULT_CLEAN_PRODUCTS = [
-    {
-      id: "prod-1",
-      productName: "Plastik Sungkup Pertanian UV",
-      description: "Plastik sungkup transparan berkualitas tinggi dengan proteksi anti-UV untuk perlindungan optimal tanaman cabai, semangka, dan melon dari hama serta guyuran hujan ekstrem.",
-      price: "Rp 450.000 / Roll (Ukuran 1m x 200m)",
-      keywords: ["plastik sungkup", "sungkup", "uv", "pertanian", "tutup tanaman", "plastik uv"],
-      faq: [
-        { q: "Berapa lama ketahanan plastik sungkup ini di lapangan?", a: "Plastik sungkup kami memiliki aditif stabilizer UV dengan ketahanan pemakaian hingga 2-3 musim tanam normal." },
-        { q: "Apakah bisa custom ukuran lebar roll?", a: "Bisa, untuk pembelian kuantitas proyek kami melayani pemotongan ukuran custom." }
-      ]
-    },
-    {
-      id: "prod-2",
-      productName: "Mulsa Plastik Hitam Perak (MPHP)",
-      description: "Mulsa pertanian dua lapis (sisi hitam menekan gulma, sisi perak memantulkan sinar matahari untuk menghalau kutu daun dan hama trips). Sangat ulet dan tidak mudah sobek.",
-      price: "Rp 385.000 / Roll (Tebal 0.35 mikron)",
-      keywords: ["mulsa", "hitam perak", "mphp", "plastik mulsa", "gulma", "bedengan"],
-      faq: [
-        { q: "Apa fungsi sisi perak pada mulsa?", a: "Sisi perak menghadap ke atas untuk memantulkan sinar matahari sehingga suhu tanah stabil dan mengusir serangga hama." }
-      ]
-    },
-    {
-      id: "prod-3",
-      productName: "Insect Net / Kasa Nyamuk Hijau 50 Mesh",
-      description: "Jaring kasa pelindung greenhouse berbahan monofilament HDPE murni, kerapatan 50 mesh anti-serangga kecil tanpa menghambat sirkulasi udara dan cahaya tanaman.",
-      price: "Rp 1.250.000 / Roll (3m x 100m)",
-      keywords: ["insect net", "kasa hijau", "greenhouse", "jaring serangga", "kutu kebul"],
-      faq: [
-        { q: "Apakah tahan terhadap terpaan angin kencang?", a: "Ya, anyaman monofilament kami memiliki jahitan rajut kuat berpola kunci (lock-stitch) sehingga tidak mudah robek melebar." }
-      ]
-    }
-  ];
+  public static readonly DEFAULT_CLEAN_PRODUCTS: any[] = [];
 
   public static readonly DEFAULT_SYSTEM_PROMPT = `# SYSTEM PROMPT — AI CUSTOMER SERVICE WHATSAPP
 
@@ -387,8 +305,8 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
     toneOfVoice: "Sangat Ramah, Bersahabat & Solutif",
     tone: "Sangat Ramah, Bersahabat & Solutif",
     responseLanguage: "Bahasa Indonesia",
-    greetingMessage: "Halo! Selamat datang di WhatsApp resmi PT. Panca Prima Wijaya 😊 Senang bisa terhubung dengan Kakak. Ada yang bisa kami bantu seputar produk pertanian kami atau informasi pemesanan hari ini?",
-    fallbackMessage: "Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini di luar panduan resmi kami 🙏 Sekadar informasi, di PT. Panca Prima Wijaya kami merupakan spesialis penyedia sarana pertanian & perkebunan berkualitas, seperti Plastik Sungkup UV, Mulsa Hitam Perak (MPHP), dan Insect Net kasa hijau. Apakah Kakak ingin melihat katalog produk atau penawaran harga kami?",
+    greetingMessage: "Halo! Selamat datang di layanan WhatsApp resmi kami 😊 Senang bisa terhubung dengan Kakak. Ada yang bisa kami bantu seputar informasi produk atau pemesanan hari ini?",
+    fallbackMessage: "Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini belum tercatat di sistem kami 🙏 Apakah ada hal lain yang bisa kami bantu seputar produk atau layanan pemesanan kami?",
     restrictedTopics: [
       "Isu SARA, politik, dan konten sensitif",
       "Perbandingan atau menjelekkan kompetitor lain",
@@ -407,19 +325,10 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
       ctaMessage: "Apakah Kakak ingin kami buatkan Surat Penawaran Harga resmi (Quotation) untuk kebutuhan ini?",
       triggerKeywords: ["harga", "pesan", "order", "quotation", "penawaran", "katalog", "stok", "beli", "minimal order", "sample", "sampel"]
     },
-    knowledgeProducts: WAService.DEFAULT_CLEAN_PRODUCTS,
-    knowledgeSnippets: WAService.DEFAULT_CLEAN_KNOWLEDGE_SNIPPETS,
-    knowledgeWebSources: [
-      {
-        id: "kb-web-1",
-        url: "https://pancaprima.co.id",
-        title: "Website Resmi PT. Panca Prima Wijaya",
-        summary: "Situs web portal resmi untuk melihat portofolio produk sarana pertanian modern, sertifikasi mutu, visi misi perseroan, dan informasi kantor pusat serta gudang distribusi di Indonesia.",
-        isActive: true,
-        updatedAt: Date.now()
-      }
-    ],
-    knowledgeBase: WAService.DEFAULT_CLEAN_PRODUCTS,
+    knowledgeProducts: [],
+    knowledgeSnippets: [],
+    knowledgeWebSources: [],
+    knowledgeBase: [],
     logs: []
   };
 
@@ -473,14 +382,19 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
       if (fs.existsSync(SETTINGS_FILE)) {
         const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
         const parsed = JSON.parse(raw);
-        const products = parsed.knowledgeProducts || parsed.knowledgeBase || this.aiSettings.knowledgeProducts;
+        const products = Array.isArray(parsed.knowledgeProducts)
+          ? parsed.knowledgeProducts
+          : (Array.isArray(parsed.knowledgeBase) ? parsed.knowledgeBase : []);
+        const snippets = Array.isArray(parsed.knowledgeSnippets) ? parsed.knowledgeSnippets : [];
+        const webSources = Array.isArray(parsed.knowledgeWebSources) ? parsed.knowledgeWebSources : [];
+
         this.aiSettings = {
           ...this.aiSettings,
           ...parsed,
           knowledgeProducts: products,
           knowledgeBase: products,
-          knowledgeSnippets: parsed.knowledgeSnippets || this.aiSettings.knowledgeSnippets,
-          knowledgeWebSources: parsed.knowledgeWebSources || this.aiSettings.knowledgeWebSources,
+          knowledgeSnippets: snippets,
+          knowledgeWebSources: webSources,
           restrictedTopics: parsed.restrictedTopics || this.aiSettings.restrictedTopics,
           handoverToHuman: { ...this.aiSettings.handoverToHuman, ...(parsed.handoverToHuman || {}) },
           salesCta: { ...this.aiSettings.salesCta, ...(parsed.salesCta || {}) },
@@ -500,22 +414,19 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
             .maybeSingle();
           if (data && data.value && !error) {
             const dbVal = data.value;
-            const products = dbVal.knowledgeProducts || dbVal.knowledgeBase || this.aiSettings.knowledgeProducts;
-            // Merge snippets by ID/title so local updates are not lost
-            const mergedSnippets = [...(dbVal.knowledgeSnippets || [])];
-            for (const localS of (this.aiSettings.knowledgeSnippets || [])) {
-              if (!mergedSnippets.some(s => s.id === localS.id || s.title.toLowerCase() === localS.title.toLowerCase())) {
-                mergedSnippets.push(localS);
-              }
-            }
+            const products = Array.isArray(dbVal.knowledgeProducts) 
+              ? dbVal.knowledgeProducts 
+              : (Array.isArray(dbVal.knowledgeBase) ? dbVal.knowledgeBase : []);
+            const snippets = Array.isArray(dbVal.knowledgeSnippets) ? dbVal.knowledgeSnippets : [];
+            const webSources = Array.isArray(dbVal.knowledgeWebSources) ? dbVal.knowledgeWebSources : [];
 
             this.aiSettings = {
               ...this.aiSettings,
               ...dbVal,
               knowledgeProducts: products,
               knowledgeBase: products,
-              knowledgeSnippets: mergedSnippets,
-              knowledgeWebSources: dbVal.knowledgeWebSources || this.aiSettings.knowledgeWebSources
+              knowledgeSnippets: snippets,
+              knowledgeWebSources: webSources
             };
             console.log("[waService] Berhasil sinkronisasi AI settings dari Supabase app_settings.");
           }
@@ -543,12 +454,27 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
       // 2. Dual-Persistence: simpan juga ke tabel Supabase app_settings jika terhubung
       if (supabaseServer) {
         try {
-          await supabaseServer.from("app_settings").upsert({
+          const payload = {
+            id: "wa_ai_settings",
             key: "wa_ai_settings",
             value: this.aiSettings,
             updated_at: new Date().toISOString(),
             updated_by: "wa_service"
-          }, { onConflict: "key" });
+          };
+          const { error } = await supabaseServer.from("app_settings").upsert(payload, { onConflict: "key" });
+          if (error) {
+            console.warn("[waService] Upsert wa_ai_settings error:", error.message, "- trying update/insert fallback");
+            const { data: existing } = await supabaseServer.from("app_settings").select("key").eq("key", "wa_ai_settings").maybeSingle();
+            if (existing) {
+              await supabaseServer.from("app_settings").update({
+                value: this.aiSettings,
+                updated_at: new Date().toISOString(),
+                updated_by: "wa_service"
+              }).eq("key", "wa_ai_settings");
+            } else {
+              await supabaseServer.from("app_settings").insert(payload);
+            }
+          }
           console.log("[waService] Berhasil menyimpan AI settings ke Supabase app_settings.");
         } catch (dbErr) {
           console.warn("[waService] Supabase app_settings sync skipped:", dbErr);
@@ -560,36 +486,27 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
   }
 
   public async resetKnowledgeToBase() {
-    this.aiSettings.knowledgeSnippets = [...WAService.DEFAULT_CLEAN_KNOWLEDGE_SNIPPETS];
-    this.aiSettings.knowledgeProducts = [...WAService.DEFAULT_CLEAN_PRODUCTS];
-    this.aiSettings.knowledgeBase = [...WAService.DEFAULT_CLEAN_PRODUCTS];
-    this.aiSettings.knowledgeWebSources = [
-      {
-        id: "web-1",
-        url: "https://pancaprima.co.id",
-        title: "Website Portal Resmi PT. Panca Prima Wijaya",
-        summary: "Website portal utama yang memuat profil perseroan, sertifikasi mutu, visi misi, serta jaringan kantor cabang dan gudang distribusi di seluruh wilayah Indonesia.",
-        isActive: true,
-        updatedAt: Date.now()
-      }
-    ];
-    this.aiSettings.fallbackMessage = "Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini di luar panduan resmi kami 🙏 Sekadar informasi, di PT. Panca Prima Wijaya kami merupakan spesialis penyedia sarana pertanian & perkebunan berkualitas, seperti Plastik Sungkup UV, Mulsa Hitam Perak (MPHP), dan Insect Net kasa hijau. Apakah Kakak ingin melihat katalog produk atau penawaran harga kami?";
+    this.aiSettings.knowledgeSnippets = [];
+    this.aiSettings.knowledgeProducts = [];
+    this.aiSettings.knowledgeBase = [];
+    this.aiSettings.knowledgeWebSources = [];
+    this.aiSettings.fallbackMessage = "Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini belum tercatat di sistem kami 🙏 Apakah ada hal lain yang bisa kami bantu seputar produk atau layanan pemesanan kami?";
     await this.saveSettings(this.aiSettings);
     return this.aiSettings;
   }
 
   /**
-   * Menghasilkan pesan fallback yang ramah, fleksibel, bervariasi, dan selalu mengarahkan ke layanan & produk perusahaan
+   * Menghasilkan pesan fallback yang ramah, fleksibel, bervariasi, dan selalu membantu pelanggan
    */
   public generateDynamicFallbackMessage(senderName: string, userMessage: string, fallbackCount: number = 1): string {
     const variations = [
-      `Mohon maaf ya Kak ${senderName}, untuk informasi terkait hal tersebut saat ini di luar cakupan panduan resmi kami 🙏\n\nSekadar informasi, di *PT. Panca Prima Wijaya* kami merupakan produsen & distributor sarana pertanian dan perkebunan berkualitas, seperti:\n• Plastik Sungkup Pertanian UV (anti-hama & cuaca ekstrem)\n• Mulsa Plastik Hitam Perak / MPHP (penahan gulma & penstabil suhu tanah)\n• Insect Net / Kasa Hijau 50 Mesh (pelindung greenhouse)\n\nApakah Kakak ingin melihat katalog produk kami, cek daftar harga, atau ada kebutuhan pertanian tertentu yang bisa kami bantu jelaskan? 😊`,
+      `Mohon maaf ya Kak ${senderName}, untuk informasi terkait hal tersebut saat ini belum tercatat di panduan resmi kami 🙏\n\nApakah ada hal lain seputar katalog produk, spesifikasi teknis, atau prosedur pemesanan yang ingin Kakak tanyakan? Kami siap melayani dengan senang hati! 😊`,
 
-      `Waduh mohon maaf Kak ${senderName}, detail mengenai hal tersebut belum tercatat di data panduan kami 🙏\n\nPerusahaan kami, *PT. Panca Prima Wijaya*, berfokus pada pengadaan perlengkapan perkebunan modern dan produk pertanian unggulan (Plastik Sungkup UV, Mulsa Hitam Perak, dan Insect Net anti-serangga).\n\nApakah Kakak tertarik untuk melihat spesifikasi produk kami atau penawaran harga resmi? Siap kami bantu dengan senang hati ya!`,
+      `Waduh mohon maaf Kak ${senderName}, detail mengenai hal tersebut belum tersedia di basis data kami 🙏\n\nApakah Kakak tertarik untuk melihat spesifikasi produk kami atau berkonsultasi seputar pemesanan? Siap kami bantu dengan senang hati ya!`,
 
-      `Mohon maaf atas keterbatasan informasi kami Kak ${senderName}, hal tersebut di luar spesialisasi produk kami 🙏\n\nDi *PT. Panca Prima Wijaya*, kami siap melayani kebutuhan aneka sarana produksi agrikultur dan greenhouse dengan jaminan mutu dan pengiriman kargo ke seluruh Indonesia.\n\nApakah Kakak berkenan kami buatkan penawaran harga atau ingin melihat katalog produk pertanian kami terlebih dahulu?`,
+      `Mohon maaf atas keterbatasan informasi kami Kak ${senderName}, hal tersebut belum tercatat di sistem kami 🙏\n\nApakah Kakak berkenan kami buatkan penawaran harga resmi (Quotation) atau ingin menanyakan informasi produk lainnya terlebih dahulu?`,
 
-      `Terima kasih sudah bertanya Kak ${senderName}. Namun mohon maaf, untuk informasi tersebut belum tersedia di sistem kami 🙏\n\nSebagai gambaran, kami di *PT. Panca Prima Wijaya* menyediakan aneka perlengkapan pertanian berkualitas seperti Plastik Sungkup UV, Mulsa MPHP, dan Insect Net.\n\nApakah ada hal lain seputar produk atau ketentuan pemesanan kami yang ingin Kakak tanyakan? Kami siap melayani! 😊`
+      `Terima kasih sudah bertanya Kak ${senderName}. Namun mohon maaf, untuk informasi tersebut belum tersedia di data kami 🙏\n\nApakah ada kebutuhan lain seputar produk atau informasi pemesanan yang ingin Kakak ketahui? Kami siap membantu! 😊`
     ];
 
     const idx = Math.abs(userMessage.length + fallbackCount) % variations.length;
@@ -1464,7 +1381,7 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
       const isBotCheck = /\b(?:apakah\s+(?:ini\s+)?(?:bot|robot|ai)|ini\s+(?:bot|robot|ai)|ada\s+orang|admin(?:nya)?\s+aktif)\b/i.test(cleanMsg);
 
       if (isAskingToAsk) {
-        replyText = `Halo Kak ${senderName}! Tentu boleh banget, silakan mau tanya tentang apa nih? 😊 Apakah seputar produk pertanian kami (seperti Plastik Sungkup UV, Mulsa MPHP, Insect Net), penawaran harga, atau prosedur pemesanan? Siap kami bantu dengan senang hati ya!`;
+        replyText = `Halo Kak ${senderName}! Tentu boleh banget, silakan mau tanya tentang apa nih? 😊 Apakah seputar produk kami, penawaran harga, atau prosedur pemesanan? Siap kami bantu dengan senang hati ya!`;
         containerMatched = 'greeting';
         isFallback = false;
         modelUsed = "Asisten CS Ramah (Percakapan Pembuka)";
@@ -1476,9 +1393,9 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
         else if (cleanMsg.includes("malam")) timeSalutation = "malam";
 
         const greetingReplies = [
-          `Halo Kak ${senderName}! Selamat ${timeSalutation} dan selamat datang di layanan WhatsApp resmi PT. Panca Prima Wijaya 😊 Senang sekali bisa terhubung dengan Kakak. Ada yang bisa kami bantu seputar produk pertanian atau layanan kami hari ini?`,
-          `Halo Kak ${senderName}! Selamat ${timeSalutation} 😊 Terima kasih telah menghubungi PT. Panca Prima Wijaya. Silakan, ada yang ingin ditanyakan seputar produk kami (Plastik Sungkup UV, Mulsa Hitam Perak, Insect Net) atau layanan pemesanan?`,
-          `Hai Kak ${senderName}! Senang bisa melayani Kakak hari ini 😊 Ada yang bisa kami bantu seputar informasi produk, harga, atau pengadaan sarana pertanian PT. Panca Prima Wijaya?`
+          `Halo Kak ${senderName}! Selamat ${timeSalutation} dan selamat datang di layanan WhatsApp resmi kami 😊 Senang sekali bisa terhubung dengan Kakak. Ada yang bisa kami bantu seputar produk atau layanan kami hari ini?`,
+          `Halo Kak ${senderName}! Selamat ${timeSalutation} 😊 Terima kasih telah menghubungi kami. Silakan, ada yang ingin ditanyakan seputar produk atau layanan pemesanan?`,
+          `Hai Kak ${senderName}! Senang bisa melayani Kakak hari ini 😊 Ada yang bisa kami bantu seputar informasi produk, harga, atau pemesanan?`
         ];
         replyText = greetingReplies[Math.abs(cleanWords.length) % greetingReplies.length];
         containerMatched = 'greeting';

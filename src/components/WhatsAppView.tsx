@@ -49,7 +49,9 @@ import {
   deleteWAChatFromSupabase,
   clearWAChatsFromSupabase,
   loadKnownConnectedNumbersFromSupabase,
-  checkSupabaseTableStatus 
+  checkSupabaseTableStatus,
+  saveAppSettingToSupabase,
+  loadAppSettingFromSupabase
 } from '../lib/supabaseSync';
 import { SUPABASE_MIGRATION_SQL } from '../lib/supabaseMigrationSql';
 import { getApiUrl } from '../lib/apiUtils';
@@ -726,40 +728,56 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   // Fetch AI Settings
   const fetchSettings = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/wa/settings'));
-      if (res.ok) {
-        const data = await res.json();
-        if (data.settings) {
-          const s = data.settings;
-          const products = s.knowledgeProducts || s.knowledgeBase || [];
-          setSettings({
-            autoReplyEnabled: s.autoReplyEnabled ?? true,
-            botName: s.botName || 'Customer Assistant AI',
-            systemInstructions: s.systemInstructions || 'Anda adalah asisten AI customer service resmi PT. Panca Prima Wijaya di WhatsApp. Tugas utama Anda adalah melayani pertanyaan pelanggan seputar produk, penawaran harga, prosedur pemesanan, dan informasi perusahaan secara ramah, ringkas, sopan, dan solutif.',
-            toneOfVoice: s.toneOfVoice || s.tone || 'Ramah & Solutif',
-            tone: s.toneOfVoice || s.tone || 'Ramah & Solutif',
-            responseLanguage: s.responseLanguage || 'Bahasa Indonesia',
-            greetingMessage: s.greetingMessage || 'Halo! Terima kasih telah menghubungi PT. Panca Prima Wijaya. Ada yang bisa kami bantu terkait produk dan layanan kami?',
-            fallbackMessage: s.fallbackMessage || 'Mohon maaf, pesan Anda telah kami catat. Tim sales dan customer service kami akan segera menghubungi Anda kembali untuk memberikan informasi lebih detail.',
-            restrictedTopics: s.restrictedTopics || [],
-            handoverToHuman: s.handoverToHuman || {
-              enabled: true,
-              triggerKeywords: ['bicara dengan manusia', 'hubungi sales', 'komplain', 'bicara cs', 'customer service'],
-              handoverContact: '0811-1234-5678',
-              handoverMessage: 'Baik Bapak/Ibu {name}, pertanyaan/kendala Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor {contact}. Tim kami akan segera merespon secara langsung.'
-            },
-            salesCta: s.salesCta || {
-              enabled: true,
-              ctaMessage: 'Apakah Bapak/Ibu ingin kami buatkan penawaran harga resmi (Quotation) untuk kebutuhan ini?',
-              triggerKeywords: ['harga', 'pesan', 'order', 'quotation', 'penawaran', 'katalog', 'stok', 'beli']
-            },
-            knowledgeProducts: products,
-            knowledgeSnippets: s.knowledgeSnippets || [],
-            knowledgeWebSources: s.knowledgeWebSources || [],
-            knowledgeBase: products,
-            logs: s.logs || []
-          });
+      let s: any = null;
+      try {
+        const res = await fetch(getApiUrl('/api/wa/settings'));
+        if (res.ok) {
+          const data = await res.json();
+          if (data.settings) s = data.settings;
         }
+      } catch (err) {
+        console.warn('Error fetching settings from server API:', err);
+      }
+
+      // Sync dari Supabase app_settings jika tersedia
+      try {
+        const cloudVal = await loadAppSettingFromSupabase('wa_ai_settings');
+        if (cloudVal && typeof cloudVal === 'object') {
+          s = { ...(s || {}), ...cloudVal };
+        }
+      } catch (e) {
+        console.warn('Could not read wa_ai_settings from Supabase:', e);
+      }
+
+      if (s) {
+        const products = Array.isArray(s.knowledgeProducts) ? s.knowledgeProducts : (Array.isArray(s.knowledgeBase) ? s.knowledgeBase : []);
+        setSettings({
+          autoReplyEnabled: s.autoReplyEnabled ?? true,
+          botName: s.botName || 'Customer Assistant AI',
+          systemInstructions: s.systemInstructions || 'Anda adalah customer service profesional yang ramah, komunikatif, solutif, dan natural. Tujuanmu adalah membantu pelanggan menyelesaikan kebutuhannya dengan luwes dan memahami konteks percakapan.',
+          toneOfVoice: s.toneOfVoice || s.tone || 'Sangat Ramah, Bersahabat & Solutif',
+          tone: s.toneOfVoice || s.tone || 'Sangat Ramah, Bersahabat & Solutif',
+          responseLanguage: s.responseLanguage || 'Bahasa Indonesia',
+          greetingMessage: s.greetingMessage || 'Halo! Selamat datang di layanan WhatsApp resmi kami. Ada yang bisa kami bantu seputar produk atau pemesanan hari ini?',
+          fallbackMessage: s.fallbackMessage || 'Mohon maaf ya Kak, untuk informasi spesifik terkait hal tersebut saat ini belum tercatat di sistem kami 🙏 Apakah ada hal lain yang bisa kami bantu seputar produk atau layanan pemesanan kami?',
+          restrictedTopics: Array.isArray(s.restrictedTopics) ? s.restrictedTopics : [],
+          handoverToHuman: s.handoverToHuman || {
+            enabled: true,
+            triggerKeywords: ['bicara dengan manusia', 'hubungi sales', 'komplain', 'bicara cs', 'customer service'],
+            handoverContact: '0811-1234-5678',
+            handoverMessage: 'Baik Kak {name}, pertanyaan/kendala Anda telah kami teruskan langsung ke Sales & CS Specialist kami di nomor {contact}. Tim kami akan segera merespon secara langsung.'
+          },
+          salesCta: s.salesCta || {
+            enabled: true,
+            ctaMessage: 'Apakah Kakak ingin kami buatkan penawaran harga resmi (Quotation) untuk kebutuhan ini?',
+            triggerKeywords: ['harga', 'pesan', 'order', 'quotation', 'penawaran', 'katalog', 'stok', 'beli']
+          },
+          knowledgeProducts: products,
+          knowledgeSnippets: Array.isArray(s.knowledgeSnippets) ? s.knowledgeSnippets : [],
+          knowledgeWebSources: Array.isArray(s.knowledgeWebSources) ? s.knowledgeWebSources : [],
+          knowledgeBase: products,
+          logs: Array.isArray(s.logs) ? s.logs : []
+        });
       }
     } catch (err) {
       console.error('Error fetching settings:', err);
@@ -975,6 +993,14 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
     const toSave = customSettings || settings;
     setIsSavingSettings(true);
     try {
+      // 1. Dual-Persistence: Simpan langsung ke Supabase app_settings dari client
+      try {
+        await saveAppSettingToSupabase('wa_ai_settings', toSave, currentUser?.username || 'user');
+      } catch (sbErr) {
+        console.warn('Direct Supabase sync warning:', sbErr);
+      }
+
+      // 2. Simpan ke backend server
       const res = await fetch(getApiUrl('/api/wa/settings'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -985,8 +1011,8 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
         if (data && data.settings) {
           setSettings(data.settings);
         }
-        setSaveSuccessMsg('Tersimpan Otomatis!');
-        setTimeout(() => setSaveSuccessMsg(null), 3000);
+        setSaveSuccessMsg('Tersimpan di Cloud Supabase & Server!');
+        setTimeout(() => setSaveSuccessMsg(null), 3500);
       }
     } catch (err) {
       console.error('Error saving settings:', err);
