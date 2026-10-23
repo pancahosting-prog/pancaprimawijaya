@@ -1020,13 +1020,13 @@ const Login = ({ onLogin, users, dbStatus, dbError }: { onLogin: (user: UserAcco
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     console.log(`Login attempt: ${username} (Password length: ${password.length})`);
-    const user = users.find(u => u.username === username && u.password === password);
+    const user = users.find(u => (u.username === username || u.username.toLowerCase() === username.toLowerCase()) && u.password === password);
     if (user) {
       console.log('Login successful for user:', user.nama);
       onLogin(user);
     } else {
       console.log('Login failed: User not found or password mismatch. Total users in state:', users.length);
-      const userExists = users.find(u => u.username === username);
+      const userExists = users.find(u => u.username === username || u.username.toLowerCase() === username.toLowerCase());
       if (userExists) {
         console.log(`User ${username} exists but password check failed. User object has password: ${!!userExists.password}`);
       }
@@ -2119,7 +2119,7 @@ const App: React.FC = () => {
     { id: 'U7', nama: 'Mustaqim', username: 'mustaqim', password: 'pancasukses', whatsapp: '628000000007', role: 'stocklist', createdAt: new Date().toISOString(), companyId: '1' },
     { id: 'U8', nama: 'Rizqi', username: 'rizqi', password: 'pancaprimamaju', whatsapp: '628000000008', role: 'stocklist', createdAt: new Date().toISOString(), companyId: '1' },
     { id: 'U9', nama: 'Rodliyah', username: 'rodliyah', password: 'semangatbekerja', whatsapp: '628000000009', role: 'sales', createdAt: new Date().toISOString(), companyId: '1' },
-    { id: 'U10', nama: 'Evan', username: 'evan', password: 'pancaprimawijayasukses', whatsapp: '628000000010', role: 'engineer', createdAt: new Date().toISOString(), companyId: '1' },
+    { id: 'U10', nama: 'Evan', username: 'Evan', password: 'pancaprimawijayasukses', whatsapp: '628000000010', role: 'engineer', createdAt: new Date().toISOString(), companyId: '1' },
     { id: 'U11', nama: 'Yadi', username: 'yadi', password: 'pancaprima123wijaya', whatsapp: '628000000011', role: 'sales', createdAt: new Date().toISOString(), companyId: '1' },
     { id: 'U12', nama: 'Arie', username: 'arie', password: 'sensorgempa', whatsapp: '628000000012', role: 'engineer', createdAt: new Date().toISOString(), companyId: '1' }
   ]);

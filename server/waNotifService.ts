@@ -482,6 +482,39 @@ class WANotifService {
       };
     }
   }
+
+  public async resetTotalSession() {
+    console.log("[waNotifService] Performing total Baileys session reset...");
+    if (this.socket) {
+      try {
+        this.socket.ev.removeAllListeners();
+        this.socket.end(undefined);
+      } catch (e) {}
+      this.socket = null;
+    }
+
+    this.connectionState = "disconnected";
+    this.qrCodeBase64 = null;
+    this.qrTimestamp = 0;
+    this.userPhone = null;
+
+    try {
+      if (fs.existsSync(SESSION_DIR)) {
+        fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+        console.log("[waNotifService] Successfully removed wa-notif-session folder.");
+      }
+    } catch (e) {}
+
+    await this.initBaileys(true);
+
+    return {
+      success: true,
+      message: "Sesi WhatsApp Notifikasi berhasil di-reset total.",
+      connectionState: this.connectionState,
+      qrCodeBase64: this.qrCodeBase64,
+      userPhone: this.userPhone
+    };
+  }
 }
 
 export const waNotifService = new WANotifService();

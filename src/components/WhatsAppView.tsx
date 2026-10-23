@@ -518,11 +518,27 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   const prevChatJidRef = useRef<string | null>(null);
   const isUserScrollingUpRef = useRef<boolean>(false);
 
+  const handleEmergencyWipe = async () => {
+    if (!confirm("PERINGATAN KERAS: Tindakan ini akan menghapus paksa seluruh file sesi di server dan Supabase. Gunakan hanya jika reset biasa gagal. Lanjutkan?")) return;
+    setIsLoadingStatus(true);
+    try {
+      const res = await fetch(getApiUrl('/api/wa/emergency-wipe'), { method: 'POST' });
+      if (res.ok) {
+        alert("Sesi server telah dibersihkan total. Silakan 'Buat Barcode' kembali.");
+        fetchStatus();
+      }
+    } catch (e) {
+      alert("Gagal melakukan emergency wipe.");
+    } finally {
+      setIsLoadingStatus(false);
+    }
+  };
+
   // Fetch WA Connection Status & Known Connected Numbers
   const fetchStatus = async () => {
     setIsLoadingStatus(true);
     try {
-      const res = await fetch(getApiUrl('/api/wa/status'));
+      const res = await fetch(getApiUrl(`/api/wa/status?t=${Date.now()}`));
       if (res.ok) {
         const data = await res.json();
         setConnectionStatus(prev => {
@@ -830,11 +846,23 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
   };
 
   const handleResetSession = async () => {
+    if (!confirm('Apakah Anda yakin ingin MERESET TOTAL sesi Baileys WhatsApp? Seluruh folder sesi lama akan dibersihkan untuk membuat barcode QR segar baru.')) return;
     setIsLoadingStatus(true);
     try {
-      await fetch(getApiUrl('/api/wa/logout'), { method: 'POST' });
-      await new Promise(r => setTimeout(r, 800));
-      await handleInitConnection(true);
+      const res = await fetch(getApiUrl('/api/wa/reset-session'), { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setConnectionStatus(prev => ({
+          ...prev,
+          connectionState: data.connectionState || 'connecting',
+          qrCodeBase64: data.qrCodeBase64,
+          rawQrCodeBase64: data.qrCodeBase64,
+          qrVersion: data.qrVersion || 1,
+          qrExpired: false,
+          qrTimestamp: Date.now()
+        }));
+        setQrCountdown(60);
+      }
     } catch (err) {
       console.error('Error resetting WA session:', err);
     } finally {
@@ -3047,6 +3075,16 @@ export const WhatsAppView: React.FC<WhatsAppViewProps> = ({ initialSubTab = 'cha
                         >
                           <RotateCcw size={13} />
                           <span>Reset Sesi</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleEmergencyWipe}
+                          disabled={isLoadingStatus}
+                          className="py-2.5 px-3 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/50 rounded-xl text-[10px] font-black uppercase transition flex items-center justify-center gap-1 cursor-pointer"
+                          title="Wipe Server Files (Emergency Only)"
+                        >
+                          <Trash2 size={12} />
+                          <span>Wipe All</span>
                         </button>
                       </div>
                     </div>

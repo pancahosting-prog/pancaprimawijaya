@@ -50,8 +50,9 @@ interface Notification {
 const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
   const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
     if (externalUser) {
+      const uname = externalUser.username.toLowerCase() === 'evan' ? 'Evan' : externalUser.username.toLowerCase();
       return {
-        username: externalUser.username.toLowerCase(),
+        username: uname,
         role: externalUser.role === "superadmin" ? "superadmin" : "user",
         name: externalUser.nama || externalUser.username
       };
@@ -78,8 +79,9 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
   
   useEffect(() => {
     if (externalUser) {
+      const uname = externalUser.username.toLowerCase() === 'evan' ? 'Evan' : externalUser.username.toLowerCase();
       setCurrentUser({
-        username: externalUser.username.toLowerCase(),
+        username: uname,
         role: externalUser.role === "superadmin" ? "superadmin" : "user",
         name: externalUser.nama || externalUser.username
       });

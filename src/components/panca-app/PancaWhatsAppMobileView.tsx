@@ -60,7 +60,7 @@ export const PancaWhatsAppMobileView: React.FC<PancaWhatsAppMobileViewProps> = (
   // Fetch connection status
   const fetchStatus = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/wa/status'));
+      const res = await fetch(getApiUrl(`/api/wa/status?t=${Date.now()}`));
       if (res.ok) {
         const data = await res.json();
         setConnectionStatus({
@@ -157,8 +157,10 @@ export const PancaWhatsAppMobileView: React.FC<PancaWhatsAppMobileViewProps> = (
         const data = await res.json();
         setConnectionStatus(prev => ({
           ...prev,
-          connectionState: data.connectionState,
+          connectionState: data.connectionState || 'connecting',
           qrCodeBase64: data.qrCodeBase64,
+          userPhone: data.userPhone || prev.userPhone,
+          userName: data.userName || prev.userName,
           qrExpired: false
         }));
       }
@@ -482,14 +484,29 @@ export const PancaWhatsAppMobileView: React.FC<PancaWhatsAppMobileViewProps> = (
             </div>
 
             {/* Action Buttons */}
-            <div className="space-y-2">
+            <div className="flex gap-2">
               <button
                 onClick={handleConnect}
                 disabled={isConnecting}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition disabled:opacity-50"
+                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${isConnecting ? 'animate-spin' : ''}`} />
-                {connectionStatus.qrCodeBase64 ? 'Perbarui Barcode (Refresh)' : 'Buat Barcode Login'}
+                {connectionStatus.qrCodeBase64 ? 'Perbarui' : 'Buat Barcode'}
+              </button>
+              <button
+                onClick={async () => {
+                  if (confirm("Reset total sesi server?")) {
+                    setIsConnecting(true);
+                    try {
+                      await fetch(getApiUrl('/api/wa/reset-session'), { method: 'POST' });
+                      fetchStatus();
+                    } finally { setIsConnecting(false); }
+                  }
+                }}
+                disabled={isConnecting}
+                className="px-4 py-3 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 rounded-2xl text-xs font-black transition disabled:opacity-50"
+              >
+                Reset
               </button>
             </div>
 

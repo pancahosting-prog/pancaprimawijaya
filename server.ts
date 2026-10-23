@@ -170,6 +170,25 @@ async function startServer() {
       message: "Proses inisialisasi Baileys WhatsApp dimulai.",
       ...status
     });
+  app.post("/api/wa/reset-session", async (_req, res) => {
+    const result = await waService.resetTotalSession();
+    res.json(result);
+  });
+
+  app.post("/api/wa-notif/reset-session", async (_req, res) => {
+    const result = await waNotifService.resetTotalSession();
+    res.json(result);
+  });
+
+  app.get("/api/wa/debug", (_req, res) => {
+    res.json(waService.getDebugInfo());
+  });
+
+  app.post("/api/wa/emergency-wipe", async (_req, res) => {
+    console.log("[server] EMERGENCY WIPE REQUESTED");
+    await waService.resetTotalSession();
+    await waNotifService.resetTotalSession();
+    res.json({ success: true, message: "Seluruh folder sesi Baileys telah dibersihkan secara paksa." });
   });
 
   // Get Chats per Connected Phone Number

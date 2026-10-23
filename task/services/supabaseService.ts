@@ -89,14 +89,18 @@ export const supabaseService = {
     // Jika BUKAN tampilan tracking (artinya tampilan Kalender/Dashboard/List Pribadi)
     if (!isTrackingView) {
       const u = currentUser?.username || 'superadmin';
-      const n = (currentUser as any)?.nama || 'Superadmin';
-      query = query.or(`owner_username.eq.${u},employee_name.eq.${n},employee_name.eq.${u},collaborators.cs.{${u}}`);
+      const n = (currentUser as any)?.nama || (currentUser as any)?.name || 'Superadmin';
+      const uLower = u.toLowerCase();
+      const uCap = u.charAt(0).toUpperCase() + u.slice(1);
+      query = query.or(`owner_username.eq.${u},owner_username.eq.${uLower},owner_username.eq.${uCap},employee_name.eq.${n},employee_name.eq.${u},collaborators.cs.{${u}},collaborators.cs.{${uLower}},collaborators.cs.{${uCap}}`);
     } else {
       // Jika tampilan tracking / AI view, ambil semua jika superadmin/admin, atau filter jika user biasa
       if (!isSuper) {
         const u = currentUser?.username || 'user';
-        const n = (currentUser as any)?.nama || 'User';
-        query = query.or(`owner_username.eq.${u},employee_name.eq.${n},employee_name.eq.${u},collaborators.cs.{${u}}`);
+        const n = (currentUser as any)?.nama || (currentUser as any)?.name || 'User';
+        const uLower = u.toLowerCase();
+        const uCap = u.charAt(0).toUpperCase() + u.slice(1);
+        query = query.or(`owner_username.eq.${u},owner_username.eq.${uLower},owner_username.eq.${uCap},employee_name.eq.${n},employee_name.eq.${u},collaborators.cs.{${u}},collaborators.cs.{${uLower}},collaborators.cs.{${uCap}}`);
       }
     }
 
@@ -190,11 +194,15 @@ export const supabaseService = {
 
   // --- Stickynote Pribadi ---
   async getStickyNote(username: string) {
+    const u = username;
+    const uLower = u.toLowerCase();
+    const uCap = u.charAt(0).toUpperCase() + u.slice(1);
     const { data, error } = await supabase
       .from('sticky_notes')
       .select('content')
-      .eq('username', username)
-      .single();
+      .or(`username.eq.${u},username.eq.${uLower},username.eq.${uCap}`)
+      .limit(1)
+      .maybeSingle();
     if (error && error.code !== 'PGRST116') console.error('Error getting note:', error);
     return data?.content || '';
   },
@@ -209,10 +217,13 @@ export const supabaseService = {
 
   // --- Notifikasi & Pesan ---
   async getNotifications(username: string) {
+    const u = username;
+    const uLower = u.toLowerCase();
+    const uCap = u.charAt(0).toUpperCase() + u.slice(1);
     const { data } = await supabase
       .from('notifications')
       .select('*')
-      .eq('recipient_username', username)
+      .or(`recipient_username.eq.${u},recipient_username.eq.${uLower},recipient_username.eq.${uCap}`)
       .order('date', { ascending: false });
     return (data || []).map(n => ({ 
       id: n.id,

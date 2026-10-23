@@ -199,7 +199,21 @@ class WAService {
   }
 
   public async getStatus() {
-    await this.loadPersistedStatus();
+    // 1. Load from persistence if memory is empty
+    if (this.connectionState === "disconnected") {
+      await this.loadPersistedStatus();
+    }
+
+    // 2. Critical Check: If persistence says "connected" or "connecting" but there is NO socket object,
+    // the server probably restarted or the process died. We must resume.
+    if (!this.socket && (this.connectionState === "connected" || this.connectionState === "connecting")) {
+      console.log(`[waService] Socket missing for state "${this.connectionState}". Resuming...`);
+      // Start init in background, don't await to avoid hanging the status request too long
+      this.initBaileys(false).catch(err => console.error("[waService] Auto-resume failed:", err));
+    }
+
+    // 3. If still disconnected after loading, maybe start a fresh one if requested? 
+    // No, keep it passive for status calls, unless it's a new instance.
 
     const isExpired = this.qrExpired || (this.connectionState === "disconnected" && this.isQRExpired());
     return {
@@ -999,20 +1013,44 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
     this.qrExpired = false;
 
     try {
+      if (force) {
+        try {
+          if (fs.existsSync(SESSION_DIR)) {
+            // Aggressive deletion: try to remove everything inside first
+            const files = fs.readdirSync(SESSION_DIR);
+            for (const file of files) {
+              try { fs.unlinkSync(path.join(SESSION_DIR, file)); } catch (e) {}
+            }
+            fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+          }
+        } catch (e) {}
+        this.qrCodeBase64 = null;
+      }
+
       if (!fs.existsSync(SESSION_DIR)) {
         fs.mkdirSync(SESSION_DIR, { recursive: true });
       }
 
       const baileys = await import("@whiskeysockets/baileys");
-      const makeWASocket = baileys.default || baileys.makeWASocket;
-      const useMultiFileAuthState = baileys.useMultiFileAuthState;
-      const DisconnectReason = baileys.DisconnectReason;
+      const { 
+        default: makeWASocket, 
+        useMultiFileAuthState, 
+        DisconnectReason, 
+        fetchLatestBaileysVersion,
+        Browsers
+      } = baileys as any;
 
       const pino = (await import("pino")).default;
       const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
-      const Browsers = baileys.Browsers || (baileys as any).default?.Browsers;
+      
+      // Fetch latest version to avoid outdated protocol issues
+      const { version } = await fetchLatestBaileysVersion().catch(() => ({ 
+        version: [2, 3000, 1015901307]
+      }));
+      console.log(`[waService] Using Baileys version: ${version.join(".")}`);
 
       this.socket = makeWASocket({
+        version,
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: "silent" }) as any,
@@ -1037,6 +1075,7 @@ Jangan menjadikan jumlah pesan, panjang jawaban, atau keberhasilan menemukan FAQ
         };
 
         const timeoutId = setTimeout(() => {
+          console.log(`[waService] initBaileys timeout reached (7s). current connectionState: ${this.connectionState}, hasQR: ${!!this.qrCodeBase64}`);
           resolveOnce(this.qrCodeBase64);
         }, 7000);
 
@@ -2059,6 +2098,85 @@ ${fullKnowledgeText || "Belum ada dokumen pengetahuan yang dimasukkan."}
         fs.rmSync(SESSION_DIR, { recursive: true, force: true });
       }
     } catch (e) {}
+  }
+
+  public async resetTotalSession() {
+    console.log("[waService] Performing total Baileys session reset...");
+    
+    // 1. Close existing socket
+    if (this.socket) {
+      try {
+        this.socket.ev?.removeAllListeners?.();
+        this.socket.end?.();
+      } catch (e) {}
+      this.socket = null;
+    }
+
+    // 2. Reset state variables
+    this.connectionState = "disconnected";
+    this.userJid = null;
+    this.userPhone = null;
+    this.userName = null;
+    this.qrCodeBase64 = null;
+    this.qrExpired = true;
+    this.qrVersion = 0;
+    this.qrTimestamp = 0;
+
+    // 3. Remove disk files
+    try {
+      if (fs.existsSync(SESSION_DIR)) {
+        fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+        console.log("[waService] Successfully removed wa-session folder.");
+      }
+    } catch (e) {}
+
+    try {
+      const statusFile = path.join(process.cwd(), "wa-status.json");
+      if (fs.existsSync(statusFile)) {
+        fs.unlinkSync(statusFile);
+      }
+    } catch (e) {}
+
+    // 4. Remove from Supabase
+    if (supabaseServer) {
+      try {
+        await supabaseServer.from("app_settings").delete().eq("key", "wa_connection_status");
+      } catch (e) {}
+    }
+
+    // 5. Force fresh init
+    const newQr = await this.initBaileys(true);
+
+    return {
+      success: true,
+      message: "Sesi WhatsApp berhasil di-reset total dan siap untuk dipindai ulang.",
+      connectionState: this.connectionState,
+      qrCodeBase64: newQr || this.qrCodeBase64,
+      qrVersion: this.qrVersion,
+      qrTimestamp: this.qrTimestamp,
+      qrExpired: false
+    };
+  }
+
+  public getDebugInfo() {
+    const exists = fs.existsSync(SESSION_DIR);
+    let files: string[] = [];
+    if (exists) {
+      try {
+        files = fs.readdirSync(SESSION_DIR);
+      } catch (e) {}
+    }
+
+    return {
+      SESSION_DIR,
+      exists,
+      fileCount: files.length,
+      files: files.slice(0, 20),
+      connectionState: this.connectionState,
+      hasSocket: !!this.socket,
+      hasQR: !!this.qrCodeBase64,
+      cwd: process.cwd()
+    };
   }
 }
 
