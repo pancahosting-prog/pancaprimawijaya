@@ -193,25 +193,7 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
       icon: HelpCircle,
       onClick: onOpenQA,
       prompt: ''
-    }] : []),
-    {
-      title: 'Riset Pasar',
-      desc: 'Temukan peluang pasar, tren terbaru, dan insight kompetitor.',
-      icon: Search,
-      prompt: 'Tolong analisis tren pasar dan peluang bisnis saat ini.'
-    },
-    {
-      title: 'Buat Konten',
-      desc: 'Ide konten, copywriting, artikel blog, atau caption media sosial.',
-      icon: FileEdit,
-      prompt: 'Tolong buatkan draf konten promosi produk Panca Prima Wijaya.'
-    },
-    {
-      title: 'Analisis Kompetitor',
-      desc: 'Pantau strategi, kekuatan, dan celah kompetitor kamu.',
-      icon: TrendingUp,
-      prompt: 'Tolong buatkan analisis kekuatan dan strategi kompetitor.'
-    }
+    }] : [])
   ];
 
   return (
@@ -376,48 +358,50 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
       </div>
 
       {/* 6. Fitur & Layanan */}
-      <div>
-        <div className="flex items-center gap-1.5 mb-2.5">
-          <LayoutGrid className="w-3.5 h-3.5 text-slate-900 dark:text-white" />
-          <h4 className="text-xs font-bold text-slate-900 dark:text-white">Fitur & Layanan</h4>
-        </div>
+      {fiturLayanan.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 mb-2.5">
+            <LayoutGrid className="w-3.5 h-3.5 text-slate-900 dark:text-white" />
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white">Fitur & Layanan</h4>
+          </div>
 
-        <div className="flex items-stretch gap-2.5 overflow-x-auto pb-2 scrollbar-hide">
-          {fiturLayanan.map((item, idx) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={idx}
-                onClick={() => {
-                  if ((item as any).onClick) {
-                    (item as any).onClick();
-                  } else {
-                    onSelectPrompt(item.prompt);
-                  }
-                }}
-                className="w-40 shrink-0 p-3.5 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800/80 border border-slate-200/90 dark:border-zinc-800 rounded-2xl text-left shadow-2xs transition active:scale-95 group flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between w-full mb-2">
-                  <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-700 dark:text-zinc-300">
-                    <Icon className="w-4 h-4" />
+          <div className="flex items-stretch gap-2.5 overflow-x-auto pb-2 scrollbar-hide">
+            {fiturLayanan.map((item, idx) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    if ((item as any).onClick) {
+                      (item as any).onClick();
+                    } else {
+                      onSelectPrompt(item.prompt);
+                    }
+                  }}
+                  className="w-44 shrink-0 p-3.5 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800/80 border border-slate-200/90 dark:border-zinc-800 rounded-2xl text-left shadow-2xs transition active:scale-95 group flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between w-full mb-2">
+                    <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-700 dark:text-zinc-300">
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="w-5 h-5 rounded-full bg-slate-100/60 dark:bg-zinc-800/60 flex items-center justify-center text-slate-400 group-hover:text-slate-800 dark:group-hover:text-white">
+                      <ArrowRight className="w-3 h-3" />
+                    </div>
                   </div>
-                  <div className="w-5 h-5 rounded-full bg-slate-100/60 dark:bg-zinc-800/60 flex items-center justify-center text-slate-400 group-hover:text-slate-800 dark:group-hover:text-white">
-                    <ArrowRight className="w-3 h-3" />
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
+                      {item.title}
+                    </h5>
+                    <p className="text-[10px] text-slate-400 dark:text-zinc-400 mt-1 line-clamp-3 leading-relaxed">
+                      {item.desc}
+                    </p>
                   </div>
-                </div>
-                <div>
-                  <h5 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
-                    {item.title}
-                  </h5>
-                  <p className="text-[10px] text-slate-400 dark:text-zinc-400 mt-1 line-clamp-3 leading-relaxed">
-                    {item.desc}
-                  </p>
-                </div>
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -3,7 +3,8 @@ import {
   Send, ArrowLeft, Trash2, Copy, Check, Sparkles, 
   Bot, User, Download, Mic, Square, Volume2, VolumeX,
   AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package,
-  ChevronUp, ChevronDown, CheckCircle, MessageSquare, Zap
+  ChevronUp, ChevronDown, CheckCircle, MessageSquare, Zap,
+  Info, Layers, ExternalLink, X
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +12,7 @@ import { supabaseService } from '../../../task/services/supabaseService';
 import { supabase } from '../../lib/supabase';
 import { Task, Project, DrivePost } from '../../../task/types';
 import { queryPancaAI, PancaAIContext, generateSmartDynamicFallback } from '../../services/pancaAIService';
+import { AnswerSource, detectAnswerSources } from '../../services/webKnowledgeService';
 import { SUPPORTED_GEMINI_MODELS } from '../../services/geminiKeyService';
 import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl, extractProductPhoto, hasDatabaseProductImage } from '../../services/pancaProductCatalog';
 import { safeSetLocalStorage, getApiUrl } from '../../lib/apiUtils';
@@ -35,6 +37,7 @@ interface Message {
     candidateTokens: number;
     totalTokens: number;
   };
+  sources?: AnswerSource[];
 }
 
 const TypewriterText: React.FC<{
@@ -274,6 +277,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash-lite');
   const [showModelSelector, setShowModelSelector] = useState(false);
+  const [activeSourcePopupId, setActiveSourcePopupId] = useState<string | null>(null);
   
 
 
@@ -1443,14 +1447,18 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         });
       }
 
-      
+      const resolvedSources = (typeof queryRes === 'object' && queryRes?.sources && queryRes.sources.length > 0)
+        ? queryRes.sources
+        : detectAnswerSources(query.trim(), responseText, {}, currentUser?.role);
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: responseText,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isNew: true,
-        tokenUsage: tokenUsage
+        tokenUsage: tokenUsage,
+        sources: resolvedSources
       };
       setMessages(prev => [...prev, assistantMessage]);
 
@@ -1463,12 +1471,14 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       } catch (fbErr) {
         console.error("Fallback generator error:", fbErr);
       }
+      const fallbackSources = detectAnswerSources(query.trim(), fallbackContent, {}, currentUser?.role);
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: fallbackContent || 'Maaf, terjadi kendala saat memproses pertanyaan Anda. Silakan coba kembali.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isNew: true
+        isNew: true,
+        sources: fallbackSources
       }]);
     } finally {
       setIsLoading(false);
@@ -1514,7 +1524,10 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 flex flex-col bg-white dark:bg-zinc-950">
+      <div 
+        onClick={() => activeSourcePopupId && setActiveSourcePopupId(null)}
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 flex flex-col bg-white dark:bg-zinc-950"
+      >
         {messages.length === 0 ? (
           <div className="flex-1 min-h-[300px] flex flex-col items-center justify-center text-center p-6 my-auto select-none">
             <div className="w-32 h-32 mb-3 relative flex items-center justify-center">
@@ -1572,11 +1585,85 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                         <span>Salin</span>
                       </button>
                       {m.tokenUsage && (
-                        <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80 px-2 py-0.5 rounded-full font-mono text-[9px] font-bold shadow-2xs ml-0.5">
+                        <span className="flex items-center gap-0.5 font-mono text-[10px] text-slate-400 dark:text-zinc-500 ml-0.5">
                           <Zap size={10} className="text-amber-500 fill-amber-500 shrink-0" />
-                          <span>{m.tokenUsage.totalTokens.toLocaleString('id-ID')} token ({m.tokenUsage.promptTokens.toLocaleString('id-ID')} in / {m.tokenUsage.candidateTokens.toLocaleString('id-ID')} out)</span>
-                        </div>
+                          <span>{m.tokenUsage.totalTokens.toLocaleString('id-ID')} token</span>
+                        </span>
                       )}
+                      {(() => {
+                        const sources = (m.sources && m.sources.length > 0)
+                          ? m.sources
+                          : detectAnswerSources(m.content, m.content, {}, currentUser?.role);
+                        if (!sources || sources.length === 0) return null;
+                        const isOpen = activeSourcePopupId === m.id;
+                        const primaryTitle = sources[0]?.title || 'Sumber Data';
+                        const labelText = sources.length === 1 
+                          ? primaryTitle 
+                          : `${primaryTitle} (+${sources.length - 1})`;
+
+                        return (
+                          <div className="relative inline-block ml-0.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveSourcePopupId(isOpen ? null : m.id);
+                              }}
+                              className="p-0.5 rounded text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50/80 dark:hover:bg-zinc-800 transition cursor-pointer flex items-center justify-center active:scale-95"
+                              title={`Lihat sumber referensi jawaban (${sources.length} sumber)`}
+                              aria-label="Lihat sumber referensi jawaban"
+                            >
+                              <Info size={12} className="shrink-0" />
+                            </button>
+
+                            {isOpen && (
+                              <div 
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute left-0 bottom-full mb-1.5 w-72 sm:w-80 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-xl z-50 text-slate-700 dark:text-zinc-200 text-xs animate-in fade-in zoom-in-95"
+                              >
+                                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-zinc-800 mb-2">
+                                  <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white text-[11px]">
+                                    <Layers size={13} className="text-indigo-500" />
+                                    <span>Sumber Referensi Data Jawaban</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveSourcePopupId(null)}
+                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 p-0.5 rounded cursor-pointer"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                                  {sources.map((src, sIdx) => (
+                                    <div key={sIdx} className="bg-slate-50 dark:bg-zinc-800/70 p-2 rounded-lg border border-slate-100 dark:border-zinc-750 text-[11px]">
+                                      <div className="flex items-center justify-between font-semibold text-slate-800 dark:text-zinc-100">
+                                        <span className="flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
+                                          <span>{src.title}</span>
+                                        </span>
+                                        {src.url && (
+                                          <a 
+                                            href={src.url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="text-indigo-600 dark:text-indigo-400 hover:underline text-[10px] inline-flex items-center gap-0.5 ml-1 font-normal"
+                                          >
+                                            Buka <ExternalLink size={9} />
+                                          </a>
+                                        )}
+                                      </div>
+                                      <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1 leading-snug">
+                                        {src.detail}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                 </div>

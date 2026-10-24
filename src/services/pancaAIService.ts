@@ -1,5 +1,10 @@
 import { callGeminiWithKeyRotation, callGeminiWithKeyRotationDetails } from './geminiKeyService';
-import { generateWebKnowledgeDigest } from './webKnowledgeService';
+import { 
+  generateWebKnowledgeDigest, 
+  isRoleAuthorizedForWebKnowledge, 
+  detectAnswerSources, 
+  AnswerSource 
+} from './webKnowledgeService';
 import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl } from './pancaProductCatalog';
 
 export interface PancaAIContext {
@@ -105,22 +110,25 @@ export const getProductStock = (p: any, purchaseOrders: any[] = [], transactions
 // // Compile real-time aggregations from all modules
 export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string = '') => {
   const currentCompId = ctx.activeCompany?.id || '1';
-  const isSuperAdmin = ctx.currentUser?.role?.toLowerCase() === 'superadmin';
+  const roleLower = (ctx.currentUser?.role || '').toLowerCase();
+  const isSuperAdmin = roleLower === 'superadmin' || roleLower === 'super admin';
+  const isEngineer = roleLower.includes('engineer');
   const perms = ctx.rolePermissions || [];
 
-  // Helper to check permission
+  // Helper to check permission (Engineer strictly forbidden from CRM)
   const canView = (id: string) => {
+    if (isEngineer) return false;
     if (isSuperAdmin) return true;
     if (perms.length === 0) return true; // Default to allow if not provided
     return perms.find(p => p.id === id)?.canView ?? false;
   };
 
-  const allTransactions = ctx.transactions || [];
-  const allCustomers = ctx.customers || [];
-  const allProducts = ctx.products || [];
-  const allSuppliers = ctx.suppliers || [];
-  const allPOs = ctx.purchaseOrders || [];
-  const allEmployees = ctx.employees || [];
+  const allTransactions = isEngineer ? [] : (ctx.transactions || []);
+  const allCustomers = isEngineer ? [] : (ctx.customers || []);
+  const allProducts = isEngineer ? [] : (ctx.products || []);
+  const allSuppliers = isEngineer ? [] : (ctx.suppliers || []);
+  const allPOs = isEngineer ? [] : (ctx.purchaseOrders || []);
+  const allEmployees = isEngineer ? [] : (ctx.employees || []);
 
   // Data Restriction Logic based on Menu Access Control
   const allowedTransactions = canView('Transaksi') 
@@ -130,11 +138,13 @@ export const compileSystemAggregations = (ctx: PancaAIContext, queryText: string
       : [];
 
   const allowedCustomers = canView('Contacts') ? allCustomers : [];
-  // Ensure real database products are always accessible for product queries & photos
+  // Ensure real database products are accessible only for non-engineers
   const compProductsFiltered = allProducts.filter(p => !p.companyId || p.companyId === currentCompId);
-  const compProducts = compProductsFiltered.length > 0 
-    ? compProductsFiltered 
-    : (allProducts.length > 0 ? allProducts : DEFAULT_PANCA_PRODUCTS);
+  const compProducts = isEngineer 
+    ? [] 
+    : (compProductsFiltered.length > 0 
+        ? compProductsFiltered 
+        : (allProducts.length > 0 ? allProducts : DEFAULT_PANCA_PRODUCTS));
   const allowedSuppliers = canView('Suppliers') || canView('purchasing_suppliers') || canView('stocklist_suppliers') ? allSuppliers : [];
   const allowedPOs = canView('Purchase Orders') || canView('purchasing_po') || canView('stocklist_po') ? allPOs : [];
   const allowedEmployees = canView('Employees') ? allEmployees : [];
@@ -404,6 +414,81 @@ export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string =
     if (monthMatched.length > 0) targetQuotes = monthMatched;
   }
 
+  const isEngineer = (ctx.currentUser?.role || '').toLowerCase().includes('engineer');
+  if (isEngineer) {
+    let engDigest = `=== SISTEM DATA MYPANCA (ROLE: ENGINEER) ===
+- Pengguna: ${ctx.currentUser?.nama || 'Engineer'} (Role: Engineer)
+- STATUS HAK AKSES RESMI:
+  * DISETUJUI / DIIZINKAN: Folder Task / Task App (Tugas, Proyek, Timeline Pengerjaan, Dokumen Drive Tugas, Forum Q&A Teknis) & 2 Website Resmi Sensor (pancaprimawijaya.id/sensor dan sensorgempa.com).
+  * DIBATASI / TIDAK ADA HAK AKSES: Modul CRM (Transaksi, Customer, Penawaran, Master Produk & Harga Penjualan CRM). Jika pengguna bertanya hal ini, tolak dengan sopan bahwa akun Engineer tidak memiliki akses ke data komersial CRM.
+
+`;
+
+    // 1. Task App Tasks & Projects
+    let rawTasks: any[] = ctx.taskAppData?.tasks || [];
+    if (rawTasks.length === 0 && typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('mypanca_cached_tasks');
+        if (cached) rawTasks = JSON.parse(cached);
+      } catch {}
+    }
+    const rawProjects: any[] = ctx.taskAppData?.projects || [];
+    const tasks = rawTasks;
+    const projects = rawProjects;
+
+    engDigest += `--- [TASK APP: DAFTAR TUGAS & PROYEK PEKERJAAN] ---\n`;
+    engDigest += `* Total Tugas Terdaftar: ${tasks.length} task (${tasks.filter(t => t.status === 'Selesai').length} Selesai, ${tasks.filter(t => t.status !== 'Selesai').length} Dalam Proses / Berjalan).\n`;
+    if (projects.length > 0) {
+      engDigest += `* Daftar Proyek: ${projects.map(p => `"${p.title}" (Status: ${p.status || 'Berjalan'})`).join(', ')}\n`;
+    }
+
+    if (tasks.length > 0) {
+      engDigest += `* Rincian Tugas:\n`;
+      tasks.forEach((t, i) => {
+        const logsCount = Array.isArray(t.logs) ? t.logs.length : 0;
+        const lastLog = logsCount > 0 ? t.logs[logsCount - 1] : null;
+        const lastLogNote = lastLog ? `(Log terakhir: ${lastLog.date || ''} - ${lastLog.note || lastLog.description || ''})` : '';
+        engDigest += `  ${i + 1}. [${t.title}] Kategori: ${t.category || '-'} | Status: ${t.status} | Progres: ${t.progress || 0}% | PIC: ${t.employeeName || t.owner || '-'} ${lastLogNote}\n`;
+      });
+    }
+
+    // 2. Drive Posts / Dokumen Task App
+    const rawDrive: any[] = ctx.taskAppData?.drivePosts || [];
+    if (rawDrive.length > 0) {
+      engDigest += `\n--- [TASK APP: DOKUMEN & DRIVE PEKERJAAN] ---\n`;
+      const curUser = (ctx.currentUser?.username || ctx.currentUser?.nama || '').toLowerCase();
+      const userDrive = rawDrive.filter(d => {
+        const auth = (d.author || d.author_name || '').toLowerCase();
+        return !auth || auth.includes(curUser) || curUser.includes(auth);
+      });
+      const effectiveDrive = userDrive.length > 0 ? userDrive : rawDrive.slice(0, 5);
+      effectiveDrive.forEach((d, i) => {
+        engDigest += `  ${i + 1}. [Dokumen: "${d.title}"] Kategori: ${d.category || 'Umum'} | Pembuat: ${d.author || d.author_name || '-'} | Konten: ${d.content || d.description || ''}\n`;
+      });
+    }
+
+    // 3. Q&A Forum Teknis
+    if (ctx.taskAppDataExt?.qaQuestions && ctx.taskAppDataExt.qaQuestions.length > 0) {
+      engDigest += `\n--- [TASK APP: FORUM DISKUSI & Q&A TEKNIS] ---\n`;
+      ctx.taskAppDataExt.qaQuestions.forEach(q => {
+        engDigest += `* TOPIK DISKUSI: "${q.title}" (${q.category})\n`;
+        engDigest += `  - PERTANYAAN: ${q.content}\n`;
+        if (q.answers && q.answers.length > 0) {
+          q.answers.forEach((ans: any, idx: number) => {
+            engDigest += `  - JAWABAN #${idx + 1} (${ans.author_name}): ${ans.content}\n`;
+          });
+        } else {
+          engDigest += `  - STATUS: Belum ada jawaban teknis.\n`;
+        }
+      });
+    }
+
+    // 4. Injeksi 2 Website Teknis: pancaprimawijaya.id/sensor & sensorgempa.com
+    engDigest += generateWebKnowledgeDigest('engineer');
+
+    return engDigest;
+  }
+
   let digest = `=== DATABASE REAL-TIME SISTEM MYPANCA (PT. PANCA PRIMA WIJAYA) ===
 - Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
 - Status Akses Pengguna: ${allowedListStr}
@@ -563,9 +648,13 @@ ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.coun
     }
   }
 
-  // External Web Knowledge
-  if (isProductQuery || isQAQuery || isExplicitGeneralReport) {
-    digest += generateWebKnowledgeDigest(ctx.currentUser?.role || '');
+  // External Web Knowledge (Authorized for Sales & SuperAdmin, or when query touches products/solutions/articles)
+  const userRoleStr = ctx.currentUser?.role || '';
+  const isAuthorizedRole = isRoleAuthorizedForWebKnowledge(userRoleStr);
+  const touchesWebTopics = /gempa|seismik|seismic|sensor|ews|shm|lift|elevator|toyo|v-207|v-555|bms|fumigasi|pest|hama|kutu|bubuk|silogud|silogard|fumiphos|afas|kontainer|kapal|vessel|kadar air|moisture|sampling|probe|beras|jagung|website|artikel|panca/i.test(queryText);
+
+  if (isAuthorizedRole || touchesWebTopics || isProductQuery || isQAQuery || isExplicitGeneralReport) {
+    digest += generateWebKnowledgeDigest(isAuthorizedRole ? userRoleStr : 'sales');
   }
 
   // Include Task App data if available (SuperAdmin / Team / AI)
@@ -985,6 +1074,7 @@ export interface PancaAIQueryResult {
     candidateTokens: number;
     totalTokens: number;
   };
+  sources?: AnswerSource[];
 }
 
 // Unified LLM Calling Function with Strict Data Reading Rules and Friendly Tone
@@ -1035,9 +1125,11 @@ export const queryPancaAI = async ({
     ctx.currentUser.username?.toLowerCase() === 'superadmin' ||
     ctx.currentUser.nama?.toLowerCase() === 'superadmin';
 
+  const isEngineer = (ctx.currentUser?.role || '').toLowerCase().includes('engineer');
+
   const systemPrompt = `Anda adalah "Panca AI Assistant", asisten kecerdasan buatan terpadu yang profesional, ramah, dan analis data bisnis untuk PT. Panca Prima Wijaya (MyPanca CRM, ERP, & Task App).
 Nama Pengguna: ${userName}
-Peran Pengguna: ${ctx.currentUser?.role || 'Staff'} (Akses Superadmin: ${isSuperAdmin ? 'YA - Wewenang Penuh Analisa & Konsultasi Seluruh Tim' : 'TIDAK'})
+Peran Pengguna: ${ctx.currentUser?.role || 'Staff'} (Akses Superadmin: ${isSuperAdmin ? 'YA - Wewenang Penuh Analisa & Konsultasi Seluruh Tim' : 'TIDAK'} | Role Engineer: ${isEngineer ? 'YA - AKSES KHUSUS TASK APP & SENSOR WEBSITE' : 'TIDAK'})
 Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
 
 WAKTU & TANGGAL SISTEM SAAT INI (REAL-TIME REFERENCE):
@@ -1048,21 +1140,46 @@ WAKTU & TANGGAL SISTEM SAAT INI (REAL-TIME REFERENCE):
 - BULAN INI: ${thisMonthName}
 - BULAN LALU / KEMARIN: ${prevMonthName}
 
+${isEngineer ? `================================================================================
+KEBIJAKAN MUTLAK HAK AKSES KHUSUS ROLE ENGINEER (STRICT CRM ISOLATION):
+================================================================================
+1. BLOKIR PENUH AKSES DATA CRM (TRANSAKSI, CUSTOMER, PENAWARAN, HARGA/STOK PRODUK CRM):
+   - Pengguna saat ini berstatus peran ENGINEER.
+   - Sesuai kebijakan keamanan dan tata kelola perusahaan, Engineer TIDAK MEMILIKI AKSES ke seluruh data komersial CRM seperti Transaksi Penjualan, Nilai Omzet, Data Pelanggan/Customer, Penawaran (Quotations), Tagihan/Piutang, serta Master Produk & Harga Jual CRM.
+   - JIKA PENGGUNA ENGINEER BERTANYA TENTANG SALAH SATU DATA CRM TERSEBUT (misal: "berapa omset", "cek transaksi", "siapa customer", "berapa harga produk", "stok barang di gudang"):
+     Anda WAJIB MENOLAK secara sopan dan tegas:
+     "Mohon maaf **${userName}**, sebagai Engineer akun Anda tidak memiliki hak akses untuk memeriksa data komersial CRM (transaksi penjualan, omzet, pelanggan, penawaran, maupun harga/stok penjualan). Kapasitas Anda difokuskan pada manajemen pengerjaan tugas (Task App), dokumen teknis, forum Q&A, serta solusi sensor & keselamatan gedung (pancaprimawijaya.id/sensor & sensorgempa.com)."
+
+2. CAKUPAN PENGETAHUAN RESMI ROLE ENGINEER:
+   - Engineer HANYA boleh mengakses dan menanyakan:
+     a. Seluruh data folder Task / Task App: tugas (tasks), proyek tim (projects), riwayat timeline log pekerjaan, dokumen Drive pekerjaan milik sendiri/task app, serta forum diskusi Q&A teknis.
+     b. 2 Website Resmi Teknis: https://pancaprimawijaya.id/sensor dan https://sensorgempa.com/ (Toyo Earthquake Sensors V-207CMX, V-555, V-925, V-858, Vibline, Vibcon, EWS lift/elevator darurat, RTMS, BMS, dan Structural Health Monitoring / SHM).
+     c. Topik komersial fumigasi/trading pasca-panen dari website lain di luar 2 website sensor di atas TIDAK termasuk dalam cakupan Engineer.
+` : ''}
 ================================================================================
 ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
 ===============================================================================
 
-1. PEMBATASAN RUANG LINGKUP (MUTLAK & KRITIKAL):
-   - Anda adalah asisten BISNIS EKSKLUSIF hanya untuk PT. Panca Prima Wijaya.
+1. PEMBATASAN RUANG LINGKUP & OTORITAS PENUH 4 WEBSITE (KHUSUS SALES & SUPERADMIN):
+   - Anda adalah asisten BISNIS EKSKLUSIF untuk PT. Panca Prima Wijaya (MyPanca CRM, ERP, Task App) dan seluruh ekosistem bisnis serta 4 website resminya.
+   - HAK ISTIMEWA RESMI (KHUSUS SALES & SUPERADMIN):
+     Pengguna dengan peran Sales dan Superadmin MEMILIKI WEWENANG PENUH untuk bertanya dan mendapatkan penjelasan komprehensif seputar:
+     a. Solusi Sensor Gempa Bumi Toyo (V-207CMX, V-555, V-925, V-858, Vibline, Vibcon), Early Warning System (EWS), Real-Time Monitoring System (RTMS), Building Management System (BMS), keselamatan lift/elevator darurat, dan artikel regulasi keselamatan bangunan bertingkat dari https://pancaprimawijaya.id/sensor dan https://sensorgempa.com/.
+     b. Solusi komoditas pasca-panen (beras, jagung, gandum, kedelai, kopi, pakan ternak), alat uji kadar air (grain moisture meter), grain sampling probe, pelapis Silogud/Silogard kedap gas, terpal fumigasi khusus tahan gas PVC, dan artikel penanganan hama gudang (kutu beras Sitophilus oryzae, kumbang bubuk Tribolium castaneum) dari https://pancaprimawijaya.id/panca dan https://pancaprimawijaya.com/.
+     c. Jasa profesional fumigasi gudang pangan skala besar, fumigasi kontainer ekspor standar AFAS (Australia/karantina internasional), fumigasi kapal pengangkut (vessel), sertifikasi resmi (Sertifikat Fumigasi, Phytosanitary), pest control (rayap, tikus gudang, kecoa, kutu industri), disinfeksi, dan standar K3 gas beracun dari https://ahlifumigasi.com/.
+     d. Hub korporat, produk pestisida resmi (Fumiphos 56 TB, Silogud 250 EC), alat lab grading pangan/beras, dan mesin giling mini dari https://pancaprimawijaya.com/.
+     - ANDA DIWAJIBKAN DAN DIIZINKAN MENJAWAB pertanyaan dari topik-topik 4 website di atas meskipun detailnya tidak ada di tabel transaksi CRM harian.
+     - JAWABAN HARUS FLEKSIBEL: JANGAN membatasi jawaban secara kaku antar website. Sintesiskan wawasan teknis, solusi produk, panduan prosedural, dan artikel edukasi dari keempat website tersebut secara luwes, cerdas, dan mengalir untuk membantu pengguna.
+     - DILARANG MENOLAK pertanyaan bisnis yang berkaitan dengan 4 website tersebut!
    - PENGECUALIAN RESMI (FOTO & KATALOG PRODUK):
      PERMINTAAN FOTO PRODUK DAN INFORMASI PRODUK ADALAH FITUR UTAMA SISTEM MYPANCA DAN WAJIB DILAYANI PENUH!
      DILARANG KERAS MENOLAK PERMINTAAN FOTO PRODUK!
-     DILARANG KERAS MENYEBUTKAN "tidak diperkenankan menampilkan atau mengirimkan foto produk"!
      Sistem MyPanca memiliki penampil foto produk otomatis. Saat pengguna meminta foto produk (misal: "minta foto produk fumiphos", "foto silogard", "tampilkan gambar"), Anda WAJIB memberikan fotonya menggunakan tag Markdown:
      ![Foto Nama Produk](product-image:KODE_ATAU_ID_PRODUK)
-   - ANDA DILARANG KERAS MEMBERIKAN INFORMASI ATAU MENJAWAB PERTANYAAN NON-BISNIS yang tidak bersumber dari data sistem (misal: resep masakan, berita dunia, politik, hiburan, kode pemrograman umum).
-   - Jawaban Penolakan Standar HANYA UNTUK TOPIK NON-BISNIS:
-     "Mohon maaf **${userName}**, kapasitas saya sebagai asisten Panca AI dibatasi hanya untuk informasi operasional PT Panca Prima Wijaya (CRM, Transaksi, Stok, Task Tim) dan Knowledge Base teknis perusahaan. Saya tidak diperkenankan menjawab pertanyaan di luar lingkup data bisnis tersebut. Silakan tanyakan hal yang berkaitan dengan MyPanca."
+   - PENOLAKAN HANYA UNTUK TOPIK NON-BISNIS:
+     Penolakan standar HANYA berlaku untuk topik non-bisnis yang sama sekali tidak berhubungan dengan PT Panca Prima Wijaya (misal: resep masakan, politik praktis, berita selebriti, hiburan artis, coding umum).
+     Jawaban Penolakan Standar:
+     "Mohon maaf **${userName}**, kapasitas saya sebagai asisten Panca AI difokuskan untuk informasi operasional PT Panca Prima Wijaya (CRM, Transaksi, Stok, Task Tim, serta Knowledge Base & Solusi Resmi Perusahaan). Silakan tanyakan hal seputar produk, operasional, atau solusi bisnis kami."
 
 2. NADA BICARA & FORMAT RESPON:
    - Bersikaplah sopan, profesional, membantu, dan lugas.
@@ -1098,8 +1215,13 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
 10. KNOWLEDGE BASE Q&A TEKNIS (PRIORITAS UTAMA):
     - Jika pengguna bertanya tentang topik teknis (misal: Mitigasi Longsor atau Geohazard), jawab presisi sesuai Q&A.
 
-11. KNOWLEDGE BASE WEBSITE EKSTERNAL (OTORITAS SALES/ADMIN):
-    - Gunakan info profil perusahaan & produk resmi untuk menjawab pertanyaan publik.
+11. KNOWLEDGE BASE 4 WEBSITE EKSTERNAL (OTORITAS RESMI SALES & SUPERADMIN):
+    - Selalu kombinasikan dan rujuk wawasan dari 4 website resmi PT Panca Prima Wijaya:
+      * pancaprimawijaya.id (cabang /sensor untuk Toyo Earthquake Sensors, EWS, BMS, elevator safety & cabang /panca untuk pasca-panen, moisture meter, sampling probe, terpal fumigasi PVC).
+      * sensorgempa.com (spesialisasi monitoring seismik Toyo Jepang, Structural Health Monitoring, standar SNI & mitigasi gempa).
+      * ahlifumigasi.com (jasa fumigasi profesional gudang pangan, kapal, kontainer ekspor AFAS, dokumen sertifikasi karantina, pest management rayap/tikus/kutu, disinfeksi & K3).
+      * pancaprimawijaya.com (hub korporat, produk resmi Fumiphos 56 TB, Silogud 250 EC, mesin lab grading beras, dan mini rice huller).
+    - Jawab secara fleksibel, komprehensif, dan solutif. Dilarang menolak jika pertanyaan berkaitan dengan topik dari 4 website ini.
 
 12. TAMPILKAN GAMBAR / FOTO PRODUK (WAJIB & MUTLAK):
     - Sertakan tag gambar ![Foto Nama Produk](product-image:ID_PRODUK) jika produk memiliki foto di [MENU 4].
@@ -1180,9 +1302,12 @@ PENTING: Sekali lagi, jika pertanyaan tidak berkaitan dengan data di atas, TOLAK
     maxTokens: 8192
   });
 
+  const sources = detectAnswerSources(userPrompt, res.text, {}, ctx.currentUser?.role);
+
   return {
     responseText: res.text,
-    usage: res.usage
+    usage: res.usage,
+    sources
   };
 };
 
@@ -1191,11 +1316,23 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
   const lower = query.toLowerCase();
   const trimmed = lower.trim().replace(/[!\?\.,]/g, '');
   const userName = ctx.currentUser?.nama || 'Bapak/Ibu';
+  const isEngineer = (ctx.currentUser?.role || '').toLowerCase().includes('engineer');
   const agg = compileSystemAggregations(ctx, query);
+
+  // Engineer CRM query rejection
+  if (isEngineer) {
+    const isCrmQuery = /\b(transaksi|omset|omzet|penjualan|deals|invoice|inv|piutang|customer|pelanggan|penawaran|quotation|harga|jual|beli|supplier|vendor|stok gudang)\b/i.test(lower);
+    if (isCrmQuery) {
+      return `Mohon maaf **${userName}**, sebagai akun Engineer Anda tidak memiliki hak akses untuk memeriksa data komersial CRM (transaksi penjualan, omzet, pelanggan, penawaran, maupun harga/stok penjualan). Kapasitas Anda dikhususkan untuk tugas pengerjaan (Task App), dokumen teknis, forum Q&A, serta solusi sensor & keselamatan gedung (pancaprimawijaya.id/sensor & sensorgempa.com).`;
+    }
+  }
 
   // Greetings check
   const greetingList = ['halo', 'hello', 'hi', 'hai', 'pagi', 'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam', 'siang', 'sore', 'malam', 'ping', 'p', "assalamu'alaikum", 'assalamualaikum', 'salam'];
   if (greetingList.includes(trimmed) || trimmed === 'halo ai' || trimmed === 'hi ai') {
+    if (isEngineer) {
+      return `Halo, **${userName}**. Selamat ${new Date().getHours() < 12 ? 'pagi' : new Date().getHours() < 17 ? 'siang' : 'malam'}.\n\nSaya **Panca AI Assistant**, asisten virtual pengerjaan teknis & Task App PT. Panca Prima Wijaya.\n\nAda tugas, kendala teknis, atau sistem sensor apa yang ingin dibahas hari ini? Contoh:\n- "Cek tugas pengerjaan saya"\n- "Bagaimana progres proyek maket EWS?"\n- "Pertanyaan seputar Toyo Earthquake Sensor pada lift"\n- "Cek diskusi forum Q&A teknis"\n\nSilakan tanyakan informasi teknis yang Anda butuhkan.`;
+    }
     return `Halo, **${userName}**. Selamat ${new Date().getHours() < 12 ? 'pagi' : new Date().getHours() < 17 ? 'siang' : 'malam'}.\n\nSaya **Panca AI Assistant**, asisten virtual database PT. Panca Prima Wijaya.\n\nAda data atau informasi bisnis apa yang ingin dicarikan hari ini? Contoh:\n- "Cek transaksi TRX-70" atau "pembelian PT ABC"\n- "Berapa total omzet bulan ini?"\n- "Cek produk yang stoknya menipis"\n- "Tampilkan invoice yang belum lunas"\n\nSilakan tanyakan data yang Anda perlukan.`;
   }
 
