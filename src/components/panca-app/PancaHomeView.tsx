@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Bell, Search, ArrowRight, Sparkles, Send, User, FileText, 
-  Tag, BarChart3, Zap, Target, FileEdit, TrendingUp, LayoutGrid, MessageSquare, FolderKanban, HelpCircle
+  Tag, BarChart3, Zap, Target, FileEdit, TrendingUp, LayoutGrid, MessageSquare, FolderKanban, HelpCircle,
+  CheckSquare, HardDrive
 } from 'lucide-react';
 
 interface PancaHomeViewProps {
@@ -23,6 +24,7 @@ interface PancaHomeViewProps {
   onGoToAI: () => void;
   onOpenProject?: () => void;
   onOpenQA?: () => void;
+  onOpenTugas?: () => void;
   onLogout?: () => void;
 }
 
@@ -31,9 +33,11 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
   unreadNotificationsCount = 2,
   onSelectPrompt,
   onOpenNotifications,
+  onOpenDriveUpload,
   onGoToAI,
   onOpenProject,
   onOpenQA,
+  onOpenTugas,
   onLogout,
 }) => {
   const [chatInput, setChatInput] = useState('');
@@ -186,7 +190,36 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
 
   const canAccessQA = isSuperAdmin || userRole === 'sales' || userRole === 'engineer';
 
-  const fiturLayanan = [
+  const fiturLayanan = userRole === 'engineer' ? [
+    {
+      title: 'Tugas',
+      desc: 'Timeline tugas, update progres pengerjaan & log harian teknis.',
+      icon: CheckSquare,
+      onClick: onOpenTugas,
+      prompt: ''
+    },
+    {
+      title: 'Project',
+      desc: 'Database spek sensor, SOP instalasi, manual book & SLD.',
+      icon: FolderKanban,
+      onClick: onOpenProject,
+      prompt: ''
+    },
+    {
+      title: 'Drive',
+      desc: 'Penyimpanan berkas, foto lapangan, dan dokumen teknis.',
+      icon: HardDrive,
+      onClick: onOpenDriveUpload,
+      prompt: ''
+    },
+    {
+      title: 'Q&A',
+      desc: 'Tanya jawab teknis, kendala SLD, sensor, & solusi lapangan.',
+      icon: HelpCircle,
+      onClick: onOpenQA,
+      prompt: ''
+    }
+  ] : [
     ...(canAccessQA ? [{
       title: 'Q&A',
       desc: 'Tanya jawab teknis, kendala SLD, sensor, & solusi lapangan.',

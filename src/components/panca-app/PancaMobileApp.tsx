@@ -8,13 +8,14 @@ import { PancaDriveView } from './PancaDriveView';
 import { PancaWhatsAppMobileView } from './PancaWhatsAppMobileView';
 import { PancaProjectMobileView } from './PancaProjectMobileView';
 import { PancaQAMobileView } from './PancaQAMobileView';
+import { PancaEngineerTasksView } from './PancaEngineerTasksView';
 import { SharedPostView } from '../../../task/components/SharedPostView';
 import { 
   Bot, MessageSquare, Bell, HardDrive, ArrowLeft, Home as HomeIcon, LayoutGrid, Menu, MessageCircle, FolderKanban
 } from 'lucide-react';
 import { PWAInstallButton } from '../PWAInstallButton';
 
-export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file' | 'whatsapp' | 'project' | 'qa';
+export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file' | 'whatsapp' | 'project' | 'qa' | 'tugas';
 
 interface PancaMobileAppProps {
   currentUser?: {
@@ -181,6 +182,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
               onGoToAI={() => setActiveTab('ai')}
               onOpenProject={() => setActiveTab('project')}
               onOpenQA={() => setActiveTab('qa')}
+              onOpenTugas={() => setActiveTab('tugas')}
               onLogout={onLogout}
             />
           )}
@@ -271,6 +273,15 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
           {activeTab === 'qa' && (
             <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950">
               <PancaQAMobileView 
+                currentUser={currentUser}
+                onBack={() => setActiveTab('home')}
+              />
+            </div>
+          )}
+
+          {activeTab === 'tugas' && (
+            <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950">
+              <PancaEngineerTasksView 
                 currentUser={currentUser}
                 onBack={() => setActiveTab('home')}
               />

@@ -183,6 +183,7 @@ const TypewriterText: React.FC<{
           li: ({ children }) => <li className="leading-relaxed text-[12px]">{children}</li>,
           p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed text-[12px]">{children}</p>,
           strong: ({ children }) => <strong className="font-extrabold text-slate-900 dark:text-zinc-100">{children}</strong>,
+          hr: () => <div className="my-1.5" />,
           code: ({ children }) => (
             <code className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-slate-400 font-mono text-[11px]">
               {children}
@@ -1618,46 +1619,54 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
                             {isOpen && (
                               <div 
-                                onClick={(e) => e.stopPropagation()}
-                                className="absolute left-0 bottom-full mb-1.5 w-72 sm:w-80 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl p-3 shadow-xl z-50 text-slate-700 dark:text-zinc-200 text-xs animate-in fade-in zoom-in-95"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveSourcePopupId(null);
+                                }}
+                                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150"
                               >
-                                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-zinc-800 mb-2">
-                                  <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white text-[11px]">
-                                    <Layers size={13} className="text-indigo-500" />
-                                    <span>Sumber Referensi Data Jawaban</span>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => setActiveSourcePopupId(null)}
-                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 p-0.5 rounded cursor-pointer"
-                                  >
-                                    <X size={12} />
-                                  </button>
-                                </div>
-                                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                                  {sources.map((src, sIdx) => (
-                                    <div key={sIdx} className="bg-slate-50 dark:bg-zinc-800/70 p-2 rounded-lg border border-slate-100 dark:border-zinc-750 text-[11px]">
-                                      <div className="flex items-center justify-between font-semibold text-slate-800 dark:text-zinc-100">
-                                        <span className="flex items-center gap-1">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
-                                          <span>{src.title}</span>
-                                        </span>
-                                        {src.url && (
-                                          <a 
-                                            href={src.url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
-                                            className="text-indigo-600 dark:text-indigo-400 hover:underline text-[10px] inline-flex items-center gap-0.5 ml-1 font-normal"
-                                          >
-                                            Buka <ExternalLink size={9} />
-                                          </a>
-                                        )}
-                                      </div>
-                                      <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1 leading-snug">
-                                        {src.detail}
-                                      </p>
+                                <div 
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-full max-w-sm bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-750 rounded-2xl p-4 shadow-2xl text-slate-700 dark:text-zinc-200 text-xs animate-in zoom-in-95 duration-150 text-left"
+                                >
+                                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-zinc-800 mb-2.5">
+                                    <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white text-xs">
+                                      <Layers size={14} className="text-indigo-500" />
+                                      <span>Sumber Referensi Data Jawaban</span>
                                     </div>
-                                  ))}
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveSourcePopupId(null)}
+                                      className="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                                    {sources.map((src, sIdx) => (
+                                      <div key={sIdx} className="bg-slate-50 dark:bg-zinc-800/70 p-2.5 rounded-xl border border-slate-100 dark:border-zinc-750 text-[11px]">
+                                        <div className="flex items-center justify-between font-semibold text-slate-800 dark:text-zinc-100">
+                                          <span className="flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
+                                            <span>{src.title}</span>
+                                          </span>
+                                          {src.url && (
+                                            <a 
+                                              href={src.url} 
+                                              target="_blank" 
+                                              rel="noopener noreferrer" 
+                                              className="text-indigo-600 dark:text-indigo-400 hover:underline text-[10px] inline-flex items-center gap-0.5 ml-1 font-normal"
+                                            >
+                                              Buka <ExternalLink size={9} />
+                                            </a>
+                                          )}
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1 leading-snug">
+                                          {src.detail}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               </div>
                             )}
