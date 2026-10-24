@@ -277,7 +277,13 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
               Ada yang bisa saya bantu hari ini, {firstName}?
             </h3>
             <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed mt-1.5">
-              Tulis pertanyaan, minta ide, buat konten, atau analisis data bisnis kamu.
+              {userRole === 'engineer'
+                ? 'Tanyakan panduan sensor gempa & EWS, review dokumen project, atau cek progres tugas teknis kamu.'
+                : userRole === 'sales'
+                  ? 'Tanyakan stok produk, buat draf penawaran harga, atau jadwalkan follow-up pelanggan.'
+                  : isSuperAdmin
+                    ? 'Tanya data penjualan, stok gudang, koordinasi tugas tim, atau analisa performa operasional bisnis.'
+                    : 'Tanyakan panduan kerja, status tugas harian, atau koordinasi operasional tim kamu.'}
             </p>
           </div>
 

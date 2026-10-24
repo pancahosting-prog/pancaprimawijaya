@@ -1538,9 +1538,37 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                 className="w-full h-full object-contain"
               />
             </div>
-            <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-zinc-100 max-w-xs leading-relaxed">
-              Selamat datang di Panca AI Assistant, silahkan sampaikan apa saja yang kamu butuhkan
-            </h3>
+            {(() => {
+              const uRole = (currentUser?.role || '').toLowerCase();
+              const uName = currentUser?.nama ? currentUser.nama.split(' ')[0] : 'Rekan';
+              
+              if (uRole === 'engineer') {
+                return (
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-zinc-100 max-w-xs leading-relaxed">
+                    Halo {uName}, asisten AI teknis siap membantu. Tanyakan seputar sensor gempa EWS, wiring & SLD, SOP project, atau cek timeline tugas kamu.
+                  </h3>
+                );
+              }
+              if (uRole === 'sales') {
+                return (
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-zinc-100 max-w-xs leading-relaxed">
+                    Halo {uName}, asisten AI penjualan siap membantu. Tanyakan stok produk, katalog harga, pembuatan penawaran, atau riwayat follow-up pelanggan.
+                  </h3>
+                );
+              }
+              if (isSuperAdmin) {
+                return (
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-zinc-100 max-w-xs leading-relaxed">
+                    Halo {uName}, asisten AI terpadu Panca siap membantu analisa data penjualan, stok gudang, progress tugas tim, maupun operasional.
+                  </h3>
+                );
+              }
+              return (
+                <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-zinc-100 max-w-xs leading-relaxed">
+                  Halo {uName}, selamat datang di Panca AI. Ada yang bisa saya bantu terkait tugas dan aktivitas operasional kamu hari ini?
+                </h3>
+              );
+            })()}
           </div>
         ) : (
           messages.map((m) => {
@@ -1819,14 +1847,16 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                       <Search size={12} className="absolute left-2.5 top-3 text-slate-400" />
                     </div>
 
-                    {/* Task Cards List */}
+                    {/* Task Cards List (Hanya Menampilkan Tugas Belum Selesai) */}
                     <div className="max-h-56 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                       {userVisibleTasks.filter(t => {
+                        if (t.status === 'Selesai') return false;
                         if (!wizardCustSearch.trim()) return true;
                         const q = wizardCustSearch.toLowerCase();
                         return (t.title || '').toLowerCase().includes(q) || (t.companyName || '').toLowerCase().includes(q);
                       }).length > 0 ? (
                         userVisibleTasks.filter(t => {
+                          if (t.status === 'Selesai') return false;
                           if (!wizardCustSearch.trim()) return true;
                           const q = wizardCustSearch.toLowerCase();
                           return (t.title || '').toLowerCase().includes(q) || (t.companyName || '').toLowerCase().includes(q);
