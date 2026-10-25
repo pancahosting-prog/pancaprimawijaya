@@ -4,7 +4,7 @@ import {
   Bot, User, Download, Mic, Square, Volume2, VolumeX,
   AlertCircle, Radio, CheckCircle2, XCircle, Search, Plus, Package,
   ChevronUp, ChevronDown, CheckCircle, MessageSquare, Zap,
-  Info, Layers, ExternalLink, X
+  Info, Layers, ExternalLink, X, ArrowDownLeft, ArrowUpRight, History
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -218,6 +218,7 @@ interface PancaAIChatViewProps {
   setCustomers?: React.Dispatch<React.SetStateAction<any[]>>;
   setTransactions?: React.Dispatch<React.SetStateAction<any[]>>;
   setProducts?: React.Dispatch<React.SetStateAction<any[]>>;
+  setPurchaseOrders?: React.Dispatch<React.SetStateAction<any[]>>;
   syncToSupabase?: (table: string, data: any) => void;
   initialPrompt?: string;
   rolePermissions?: { id: string; canView: boolean; canEdit: boolean }[];
@@ -256,6 +257,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   setCustomers,
   setTransactions,
   setProducts,
+  setPurchaseOrders,
   syncToSupabase,
   initialPrompt = '',
   rolePermissions = [],
@@ -343,12 +345,17 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     'maria', 'yadi', 'superadmin', 'angel1', 'dwi1'
   ])).filter(Boolean);
 
-  // Active Session for guided multi-step form wizard (Customer, Transaksi, Penawaran, Task, Follow-up)
+  const userRole = (currentUser?.role || '').toLowerCase();
+  const isStocklist = userRole === 'stocklist' || userRole === 'purchasing' || userRole === 'gudang';
+
+  // Active Session for guided multi-step form wizard (Customer, Transaksi, Penawaran, Task, Follow-up, Purchase Order, Product Search)
   const [activeSession, setActiveSession] = useState<{
-    type: 'customer' | 'transaction' | 'penawaran' | 'task_new' | 'task_update' | 'followup';
+    type: 'customer' | 'transaction' | 'penawaran' | 'task_new' | 'task_update' | 'followup' | 'purchase_order' | 'product_search';
     step: number;
     data: Record<string, any>;
   } | null>(null);
+
+  const [detailProductModal, setDetailProductModal] = useState<any | null>(null);
 
   // Search box states for interactive form wizards
   const [wizardCustSearch, setWizardCustSearch] = useState('');
@@ -547,6 +554,106 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
         console.error("Gagal menyimpan follow-up:", err);
         alert("Gagal menyimpan data follow-up ke database. Silakan coba kembali.");
       }
+      setActiveSession(null);
+      return;
+    }
+
+    if (type === 'purchase_order') {
+      const supId = data.supplierId;
+      if (!supId) {
+        alert('Mohon pilih Supplier terlebih dahulu.');
+        return;
+      }
+      const rawItems = (data.items || []).filter((i: any) => i.produkId && Number(i.jumlah) > 0);
+      if (rawItems.length === 0) {
+        alert('Mohon pilih minimal 1 produk dengan jumlah lebih dari 0.');
+        return;
+      }
+
+      const activeCompanyId = activeCompany?.id || '1';
+      const poId = 'PO' + Date.now().toString().slice(-4);
+      const supplierObj = (suppliers || []).find(s => s.id === supId);
+      const supplierName = supplierObj?.nama || 'Supplier';
+      const orderDate = data.tanggalPembelian || new Date().toISOString().split('T')[0];
+      const receiveDate = data.tanggalDiterima || orderDate;
+
+      const newPO = {
+        id: poId,
+        supplierId: supId,
+        orderedBy: data.orderedBy || currentUser?.nama || 'Stocklist Team',
+        tanggalPembelian: orderDate,
+        tanggalDiterima: receiveDate,
+        status: data.status || 'Lunas',
+        companyId: activeCompanyId,
+        items: rawItems.map((it: any) => ({
+          produkId: it.produkId,
+          jumlah: Number(it.jumlah) || 1,
+          hpp: 0
+        })),
+        editHistory: [{
+          timestamp: new Date().toLocaleString('id-ID'),
+          user: currentUser?.nama || 'Unknown',
+          role: currentUser?.role || 'Stocklist',
+          changes: 'Purchase Order baru dibuat (Tambah Stok)',
+          type: 'PurchaseOrder',
+          id: poId
+        }]
+      };
+
+      if (setPurchaseOrders) {
+        setPurchaseOrders(prev => [newPO, ...prev]);
+      }
+      if (syncToSupabase) {
+        syncToSupabase('purchase_orders', newPO);
+      }
+
+      // Update product stock and lot
+      const updatedProductsSummary: { nama: string; qtyAdded: number; newStock: number }[] = [];
+      if (setProducts) {
+        setProducts(prev => prev.map(p => {
+          const matchedItem = rawItems.find((it: any) => it.produkId === p.id);
+          if (matchedItem) {
+            const addedQty = Number(matchedItem.jumlah) || 1;
+            const newLot = {
+              lot: Date.now() + Math.floor(Math.random() * 1000),
+              kode: 'AUTO',
+              supplierId: supId,
+              stock: addedQty,
+              hpp: 0,
+              hargaJual: 0,
+              tanggal: receiveDate
+            };
+            const updatedP = {
+              ...p,
+              stok: (Number(p.stok) || 0) + addedQty,
+              lots: [...(p.lots || []), newLot]
+            };
+            updatedProductsSummary.push({
+              nama: p.nama,
+              qtyAdded: addedQty,
+              newStock: updatedP.stok
+            });
+            if (syncToSupabase) {
+              syncToSupabase('products', updatedP);
+            }
+            return updatedP;
+          }
+          return p;
+        }));
+      }
+
+      playTone(850, 0.15);
+      const poItemsTable = updatedProductsSummary.map(u => 
+        `| **${u.nama}** | **+${u.qtyAdded}** | **${u.newStock} unit** |`
+      ).join('\n');
+
+      const successMsg: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `### 📦 PURCHASE ORDER BARU BERHASIL DISIMPAN!\n\n| Detail Dokumen | Data Terdaftar |\n|---|---|\n| **No. Purchase Order** | **${poId}** |\n| **Supplier** | **${supplierName}** |\n| **Order By** | **${newPO.orderedBy}** |\n| **Tanggal Pembelian** | **${orderDate}** |\n| **Tanggal Diterima** | **${receiveDate}** |\n| **Status PO** | **${newPO.status}** |\n\n**Rincian Penambahan Stok Produk:**\n\n| Nama Produk | Jumlah Ditambah | Total Sisa Stok Baru |\n|---|---|---|\n${poItemsTable || '| Produk PO | +' + rawItems.length + ' | Terupdate |'}\n\nStok produk telah bertambah dan tersinkronisasi ke sistem CRM & database Supabase! 🚀`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setMessages(prev => [...prev, successMsg]);
       setActiveSession(null);
       return;
     }
@@ -1076,6 +1183,33 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       return {
         responseText: `### ${isQuote ? '📋 Form CRM Penawaran Harga Baru' : '🛍️ Form CRM Transaksi Penjualan Baru'}\n\nSilakan isi dan periksa rincian transaksi pada **Form CRM Interactive** di bawah ini:`,
         nextSession: { type: isQuote ? 'penawaran' : 'transaction', step: 1, data: { items: [], ppn: false, ongkir: false } }
+      };
+    }
+    if (lower.includes('tambah stock') || lower.includes('tambah stok') || lower.includes('po baru') || lower.includes('purchase order')) {
+      return {
+        responseText: '### 📦 Purchase Order Baru (Tambah Stok)\n\nSilakan lengkapi formulir Purchase Order di bawah ini untuk mencatat stok barang masuk ke sistem:',
+        nextSession: {
+          type: 'purchase_order',
+          step: 1,
+          data: {
+            supplier: suppliers[0]?.nama || 'PT Fumindo Mandiri',
+            orderBy: currentUser?.nama || 'Purchasing',
+            purchaseDate: new Date().toISOString().split('T')[0],
+            status: 'Lunas',
+            receiveDate: new Date().toISOString().split('T')[0],
+            items: []
+          }
+        }
+      };
+    }
+    if (lower.includes('cek stock') || lower.includes('cek stok') || lower.includes('katalog stock') || lower.includes('katalog stok')) {
+      return {
+        responseText: '### 🔍 Cek Stok & Katalog Produk\n\nGunakan pencarian produk di bawah ini untuk melihat ketersediaan stok fisik serta riwayat aktivitas stok produk (tanpa harga):',
+        nextSession: {
+          type: 'product_search',
+          step: 1,
+          data: { searchQuery: '' }
+        }
       };
     }
     return null;
@@ -1737,7 +1871,9 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                  activeSession.type === 'task_update' ? (activeSession.data.selectedTask ? 'Update Laporan Terkini' : 'Lanjutkan Tugas Belum Selesai') :
                  activeSession.type === 'followup' ? 'Tambah Follow-up Penawaran' :
                  activeSession.type === 'penawaran' ? 'Form Penawaran' :
-                 activeSession.type === 'transaction' ? 'Form Transaksi Penjualan' : 'Form Customer Baru'}
+                 activeSession.type === 'transaction' ? 'Form Transaksi Penjualan' :
+                 activeSession.type === 'purchase_order' ? 'Purchase Order Baru' :
+                 activeSession.type === 'product_search' ? 'Cek Stok & Katalog Produk' : 'Form Customer Baru'}
               </h4>
               <button onClick={() => setActiveSession(null)} className="text-slate-400 hover:text-rose-500"><XCircle size={18} /></button>
             </div>
@@ -2732,6 +2868,261 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                 <button onClick={handleDirectSaveFromForm} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg mt-2 transition">Simpan Transaksi Sekarang</button>
               </div>
             )}
+
+            {/* 3. FORM PURCHASE ORDER BARU (Stocklist - Tambah Stok, Matches image_daac5939.png) */}
+            {activeSession.type === 'purchase_order' && (
+              <div className="space-y-3.5 text-xs">
+                <div className="bg-slate-50/80 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/80 rounded-2xl p-3 space-y-2.5">
+                  {/* SUPPLIER * */}
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">
+                      SUPPLIER <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={activeSession.data.supplier || ''}
+                      onChange={(e) => updateActiveData('supplier', e.target.value)}
+                      className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                    >
+                      <option value="">Pilih Supplier...</option>
+                      {(suppliers && suppliers.length > 0 ? suppliers : [
+                        { id: 'SUP-01', nama: 'PT Fumindo Mandiri' },
+                        { id: 'SUP-02', nama: 'PT Agro Kimia Jaya' },
+                        { id: 'SUP-03', nama: 'CV Sarana Agrikultur' }
+                      ]).map((s: any) => (
+                        <option key={s.id || s.nama} value={s.nama || s.id}>{s.nama}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* ORDER BY */}
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">
+                      ORDER BY
+                    </label>
+                    <select
+                      value={activeSession.data.orderBy || currentUser?.nama || 'Purchasing'}
+                      onChange={(e) => updateActiveData('orderBy', e.target.value)}
+                      className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                    >
+                      <option value="">Pilih Employee...</option>
+                      {salesOptions.map((emp: string, idx: number) => (
+                        <option key={idx} value={emp}>{emp}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* TANGGAL PEMBELIAN & STATUS */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">
+                        TANGGAL PEMBELIAN
+                      </label>
+                      <input
+                        type="date"
+                        value={activeSession.data.purchaseDate || new Date().toISOString().split('T')[0]}
+                        onChange={(e) => updateActiveData('purchaseDate', e.target.value)}
+                        className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">
+                        STATUS
+                      </label>
+                      <select
+                        value={activeSession.data.status || 'Lunas'}
+                        onChange={(e) => updateActiveData('status', e.target.value)}
+                        className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                      >
+                        <option value="Lunas">Lunas</option>
+                        <option value="Received">Received</option>
+                        <option value="Draft">Draft</option>
+                        <option value="Pending">Pending</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* TANGGAL DITERIMA */}
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">
+                      TANGGAL DITERIMA
+                    </label>
+                    <input
+                      type="date"
+                      value={activeSession.data.receiveDate || new Date().toISOString().split('T')[0]}
+                      onChange={(e) => updateActiveData('receiveDate', e.target.value)}
+                      className="w-full p-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-slate-800 dark:text-zinc-100"
+                    />
+                  </div>
+                </div>
+
+                {/* Item Produk (+ Tambah Produk) */}
+                <div className="bg-slate-50/80 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/80 rounded-2xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-zinc-200">
+                      ITEM PRODUK
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const curItems = activeSession.data.items || [];
+                        const firstP = effectiveProducts[0];
+                        updateActiveData('items', [
+                          ...curItems,
+                          {
+                            produkId: firstP?.id || '',
+                            nama: firstP?.nama || '',
+                            satuan: firstP?.satuan || 'Unit',
+                            jumlah: 1
+                          }
+                        ]);
+                      }}
+                      className="px-2 py-1 bg-[#2C3E50] hover:bg-[#1A252F] text-white text-[10px] font-black rounded-lg flex items-center gap-1 active:scale-95 transition"
+                    >
+                      <Plus size={11} />
+                      <span>Tambah Produk</span>
+                    </button>
+                  </div>
+
+                  {(!activeSession.data.items || activeSession.data.items.length === 0) ? (
+                    <div className="p-4 border-2 border-dashed border-slate-200 dark:border-zinc-700 rounded-xl text-center text-slate-400 text-[11px]">
+                      Belum ada item produk. Klik <strong>+ Tambah Produk</strong> di atas.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {activeSession.data.items.map((it: any, idx: number) => (
+                        <div key={idx} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl p-2.5 flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <select
+                              value={it.produkId || ''}
+                              onChange={(e) => {
+                                const found = effectiveProducts.find(p => p.id === e.target.value);
+                                const newItems = [...activeSession.data.items];
+                                newItems[idx] = {
+                                  ...newItems[idx],
+                                  produkId: e.target.value,
+                                  nama: found?.nama || newItems[idx].nama,
+                                  satuan: found?.satuan || newItems[idx].satuan || 'Unit'
+                                };
+                                updateActiveData('items', newItems);
+                              }}
+                              className="flex-1 p-2 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg text-xs font-bold text-slate-800 dark:text-zinc-100"
+                            >
+                              <option value="">Pilih Produk...</option>
+                              {effectiveProducts.map(p => (
+                                <option key={p.id} value={p.id}>{p.nama} (Stok: {p.stok || 0} {p.satuan || 'Unit'})</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newItems = activeSession.data.items.filter((_: any, i: number) => i !== idx);
+                                updateActiveData('items', newItems);
+                              }}
+                              className="text-rose-500 hover:text-rose-700 p-1"
+                            >
+                              <X size={15} />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase">JUMLAH:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              value={it.jumlah || 1}
+                              onChange={(e) => {
+                                const newItems = [...activeSession.data.items];
+                                newItems[idx] = {
+                                  ...newItems[idx],
+                                  jumlah: Math.max(1, parseInt(e.target.value) || 1)
+                                };
+                                updateActiveData('items', newItems);
+                              }}
+                              className="w-24 p-1.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg text-xs font-black text-center text-slate-800 dark:text-zinc-100"
+                            />
+                            <span className="text-xs font-semibold text-slate-500">{it.satuan || 'Unit'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveSession(null)}
+                    className="flex-1 py-2.5 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 font-bold rounded-xl text-xs hover:bg-slate-200"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDirectSaveFromForm}
+                    className="flex-[2] py-2.5 bg-[#2C3E50] hover:bg-[#1A252F] text-white font-black rounded-xl text-xs shadow-md transition"
+                  >
+                    Simpan
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 4. FORM CEK STOK & SEARCHBOX KATALOG (Stocklist Tanpa Harga) */}
+            {activeSession.type === 'product_search' && (
+              <div className="space-y-3 text-xs">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={activeSession.data.searchQuery || ''}
+                    onChange={(e) => updateActiveData('searchQuery', e.target.value)}
+                    placeholder="Cari nama barang atau kode produk..."
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-slate-800 dark:text-zinc-100"
+                  />
+                </div>
+                <div className="max-h-72 overflow-y-auto space-y-2 pr-0.5">
+                  {effectiveProducts
+                    .filter(p => {
+                      const q = (activeSession.data.searchQuery || '').toLowerCase();
+                      if (!q) return true;
+                      return (p.nama || '').toLowerCase().includes(q) || (p.kode || '').toLowerCase().includes(q) || (p.kategori || '').toLowerCase().includes(q);
+                    })
+                    .slice(0, 20)
+                    .map((p) => {
+                      const stock = Number(p.stok) || 0;
+                      const minStock = Number(p.minStok) || 10;
+                      const isLow = stock <= minStock;
+                      const isOut = stock === 0;
+
+                      return (
+                        <div key={p.id} className="bg-slate-50/90 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-black text-slate-800 dark:text-zinc-100 text-xs truncate">{p.nama}</span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-300 rounded font-bold">
+                                {p.kode || 'SKU'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500">
+                              <span>Kategori: <strong>{p.kategori || 'Umum'}</strong></span>
+                              <span>•</span>
+                              <span className={`font-black ${isOut ? 'text-rose-600' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                Stok: {stock} {p.satuan || 'Unit'}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setDetailProductModal(p)}
+                            className="px-2.5 py-1.5 bg-slate-900 hover:bg-black text-white dark:bg-white dark:text-slate-900 rounded-lg text-[10px] font-black shrink-0 transition active:scale-95"
+                          >
+                            Lihat Detail
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -2740,7 +3131,35 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       {!inputPrompt && !isListening && (
         <div className="px-3 py-1.5 bg-white dark:bg-zinc-950 flex items-center gap-1.5 overflow-x-auto scrollbar-hide shrink-0 border-t border-slate-100 dark:border-zinc-900">
           {(
-            (isSuperAdmin || (currentUser?.role || '').toLowerCase() === 'sales') ? [
+            isStocklist ? [
+              { 
+                label: '📦 Tambah Stock', 
+                action: () => setActiveSession({
+                  type: 'purchase_order',
+                  step: 1,
+                  data: {
+                    supplier: suppliers[0]?.nama || 'PT Fumindo Mandiri',
+                    orderBy: currentUser?.nama || 'Purchasing',
+                    purchaseDate: new Date().toISOString().split('T')[0],
+                    status: 'Lunas',
+                    receiveDate: new Date().toISOString().split('T')[0],
+                    items: []
+                  }
+                })
+              },
+              { 
+                label: '🔍 Cek Stock', 
+                action: () => setActiveSession({
+                  type: 'product_search',
+                  step: 1,
+                  data: { searchQuery: '' }
+                })
+              },
+              { label: '⚠️ Stok Menipis', prompt: 'Tampilkan produk yang stoknya menipis atau perlu restock' },
+              { label: '📋 Riwayat Mutasi', prompt: 'Tampilkan riwayat pergerakan mutasi stok barang masuk dan keluar terbaru' },
+              { label: '➕ Tugas Baru', action: handleOpenNewTaskModal },
+              { label: '🔄 Update Task', action: handleOpenUpdateTaskPicker }
+            ] : (isSuperAdmin || (currentUser?.role || '').toLowerCase() === 'sales') ? [
               { label: '📞 Followup', action: () => setActiveSession({ type: 'followup', step: 1, data: {} }) },
               { label: '➕ Tugas Baru', action: handleOpenNewTaskModal },
               { label: '🔄 Lanjutkan Task', action: handleOpenUpdateTaskPicker },
@@ -2807,6 +3226,234 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           </div>
         </form>
       </div>
+      {/* MODAL LIHAT DETAIL PRODUK & RIWAYAT STOK (Role Stocklist Tanpa Harga) */}
+      {detailProductModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-lg max-h-[88vh] bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-zinc-800">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-800/40">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-2xl bg-[#2C3E50] text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Package size={18} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-slate-800 dark:text-zinc-100 truncate">
+                    {detailProductModal.nama}
+                  </h3>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium">
+                    <span className="font-mono bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 px-1.5 py-0.2 rounded font-bold">
+                      {detailProductModal.kode || 'SKU'}
+                    </span>
+                    <span>•</span>
+                    <span>{detailProductModal.kategori || 'Umum'}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailProductModal(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-400 hover:text-slate-700 flex items-center justify-center transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Stok Status Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="bg-slate-50 dark:bg-zinc-800/60 p-3 rounded-2xl border border-slate-100 dark:border-zinc-800">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Stok Fisik</span>
+                  <span className="text-base font-black text-slate-800 dark:text-zinc-100 mt-0.5 block">
+                    {Number(detailProductModal.stok) || 0}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">{detailProductModal.satuan || 'Unit'}</span>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-zinc-800/60 p-3 rounded-2xl border border-slate-100 dark:border-zinc-800">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Status</span>
+                  {(() => {
+                    const st = Number(detailProductModal.stok) || 0;
+                    const mn = Number(detailProductModal.minStok) || 10;
+                    if (st === 0) return <span className="text-xs font-black text-rose-600 mt-1 block">Habis</span>;
+                    if (st <= mn) return <span className="text-xs font-black text-amber-600 mt-1 block">Menipis</span>;
+                    return <span className="text-xs font-black text-emerald-600 mt-1 block">Aman</span>;
+                  })()}
+                  <span className="text-[10px] text-slate-400 font-medium">Min: {detailProductModal.minStok || 10}</span>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-zinc-800/60 p-3 rounded-2xl border border-slate-100 dark:border-zinc-800">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Satuan</span>
+                  <span className="text-xs font-black text-slate-800 dark:text-zinc-100 mt-1 block">
+                    {detailProductModal.satuan || 'Unit'}
+                  </span>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-zinc-800/60 p-3 rounded-2xl border border-slate-100 dark:border-zinc-800">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Kategori</span>
+                  <span className="text-xs font-black text-slate-800 dark:text-zinc-100 mt-1 block truncate">
+                    {detailProductModal.kategori || 'Umum'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Deskripsi & Detail */}
+              {(detailProductModal.deskripsi || detailProductModal.spesifikasi || detailProductModal.fungsiUtama || detailProductModal.mainApplication) && (
+                <div className="bg-slate-50/70 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-slate-200 dark:border-zinc-800 space-y-1.5">
+                  <span className="text-[10px] font-black uppercase text-slate-500 dark:text-zinc-400 tracking-wider flex items-center gap-1">
+                    <Info size={12} />
+                    <span>Deskripsi & Spesifikasi Produk</span>
+                  </span>
+                  <p className="text-xs text-slate-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                    {detailProductModal.deskripsi || detailProductModal.spesifikasi || detailProductModal.fungsiUtama || detailProductModal.mainApplication}
+                  </p>
+                </div>
+              )}
+
+              {/* Riwayat Stok & Aktivitas (In/Out History) */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase text-slate-700 dark:text-zinc-200 tracking-wider flex items-center gap-1.5">
+                    <History size={14} className="text-[#2C3E50] dark:text-blue-400" />
+                    <span>Riwayat Stok & Aktivitas</span>
+                  </span>
+                </div>
+
+                {(() => {
+                  const historyList: any[] = [];
+                  (purchaseOrders || [])
+                    .filter((po: any) => po.status === 'Received' || po.status === 'Lunas')
+                    .forEach((po: any) => {
+                      if (po.items && po.items.length > 0) {
+                        const it = po.items.find((i: any) => i.produkId === detailProductModal.id);
+                        if (it) {
+                          historyList.push({
+                            type: 'IN',
+                            source: 'Purchase Order',
+                            date: po.tanggalDiterima || po.tanggalPembelian || po.createdAt || '-',
+                            qty: Number(it.jumlah) || 1,
+                            user: po.orderedBy || 'Purchasing',
+                            ref: po.id
+                          });
+                        }
+                      } else if (po.produkId === detailProductModal.id) {
+                        historyList.push({
+                          type: 'IN',
+                          source: 'Purchase Order',
+                          date: po.tanggalDiterima || po.tanggalPembelian || po.createdAt || '-',
+                          qty: Number(po.jumlah) || 1,
+                          user: po.orderedBy || 'Purchasing',
+                          ref: po.id
+                        });
+                      }
+                    });
+
+                  (transactions || []).forEach((trx: any) => {
+                    if (trx.items && trx.items.length > 0) {
+                      const it = trx.items.find((i: any) => i.produkId === detailProductModal.id || i.id === detailProductModal.id);
+                      if (it) {
+                        historyList.push({
+                          type: 'OUT',
+                          source: 'Penjualan CRM',
+                          date: trx.tanggal || trx.createdAt || '-',
+                          qty: Number(it.qty || it.jumlah) || 1,
+                          user: trx.sales || 'Sales',
+                          ref: trx.noTrx || trx.id
+                        });
+                      }
+                    }
+                  });
+
+                  historyList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                  if (historyList.length === 0) {
+                    return (
+                      <div className="p-4 border-2 border-dashed border-slate-200 dark:border-zinc-800 rounded-2xl text-center text-slate-400 text-xs">
+                        Belum ada riwayat mutasi stok tercatat untuk produk ini.
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {historyList.map((h, i) => (
+                        <div
+                          key={i}
+                          className="p-3 rounded-2xl bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700/80 flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${h.type === 'IN' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400'}`}>
+                              {h.type === 'IN' ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`text-[10px] font-black uppercase px-1.5 py-0.2 rounded ${h.type === 'IN' ? 'bg-emerald-200/60 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300' : 'bg-rose-200/60 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300'}`}>
+                                  {h.type === 'IN' ? 'Stok Masuk' : 'Stok Keluar'}
+                                </span>
+                                <span className="font-bold text-slate-700 dark:text-zinc-200 text-[11px] truncate">
+                                  {h.source}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">
+                                Ref: <span className="font-mono">{h.ref}</span> • Oleh: {h.user}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className={`text-xs font-black ${h.type === 'IN' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                              {h.type === 'IN' ? `+${h.qty}` : `-${h.qty}`} {detailProductModal.satuan || 'Unit'}
+                            </span>
+                            <div className="text-[9px] text-slate-400 mt-0.5">{h.date}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-800/40 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDetailProductModal(null)}
+                className="flex-1 py-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 font-bold rounded-xl text-xs hover:bg-slate-300 transition"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetProd = detailProductModal;
+                  setDetailProductModal(null);
+                  setActiveSession({
+                    type: 'purchase_order',
+                    step: 1,
+                    data: {
+                      supplier: suppliers[0]?.nama || 'PT Fumindo Mandiri',
+                      orderBy: currentUser?.nama || 'Purchasing',
+                      purchaseDate: new Date().toISOString().split('T')[0],
+                      status: 'Lunas',
+                      receiveDate: new Date().toISOString().split('T')[0],
+                      items: [{
+                        produkId: targetProd.id,
+                        nama: targetProd.nama,
+                        satuan: targetProd.satuan || 'Unit',
+                        jumlah: 1
+                      }]
+                    }
+                  });
+                }}
+                className="flex-[2] py-2.5 bg-[#2C3E50] hover:bg-[#1A252F] text-white font-black rounded-xl text-xs shadow-md transition flex items-center justify-center gap-1.5"
+              >
+                <Plus size={14} />
+                <span>Tambah Stok (PO)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

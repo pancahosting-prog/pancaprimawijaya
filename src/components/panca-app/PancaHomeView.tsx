@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Bell, Search, ArrowRight, Sparkles, Send, User, FileText, 
   Tag, BarChart3, Zap, Target, FileEdit, TrendingUp, LayoutGrid, MessageSquare, FolderKanban, HelpCircle,
-  CheckSquare, HardDrive
+  CheckSquare, HardDrive, Package, History, AlertTriangle
 } from 'lucide-react';
 
 interface PancaHomeViewProps {
@@ -103,9 +103,17 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
 
   const userRole = (currentUser?.role || '').toLowerCase();
   const isSuperAdmin = !currentUser || userRole.includes('admin') || currentUser?.username?.toLowerCase() === 'superadmin' || currentUser?.nama?.toLowerCase() === 'superadmin';
-  const isSalesOrAdmin = isSuperAdmin || userRole === 'sales';
+  const isStocklist = userRole === 'stocklist' || userRole === 'purchasing' || userRole === 'gudang';
+  const isSalesOrAdmin = (isSuperAdmin || userRole === 'sales') && !isStocklist;
 
-  const tindakanCepat = isSalesOrAdmin ? [
+  const tindakanCepat = isStocklist ? [
+    { label: '📦 Tambah Stock', icon: Package, prompt: 'tambah stock' },
+    { label: '🔍 Cek Stock', icon: Search, prompt: 'cek stock' },
+    { label: '⚠️ Stok Menipis', icon: AlertTriangle, prompt: 'cek stok menipis' },
+    { label: '📋 Riwayat Mutasi', icon: History, prompt: 'tampilkan riwayat mutasi stok produk' },
+    { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
+    { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
+  ] : isSalesOrAdmin ? [
     { label: '📞 Followup', icon: MessageSquare, prompt: 'followup penawaran' },
     { label: 'Tambah Customer', icon: User, prompt: 'tambah customer baru' },
     { label: 'Transaksi Baru', icon: FileText, prompt: 'tambah transaksi baru' },
@@ -124,7 +132,44 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
     { label: '📊 Analisa Pekerjaan', icon: Target, prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
   ];
 
-  const pilihanCepatAI = isSalesOrAdmin ? [
+  const pilihanCepatAI = isStocklist ? [
+    {
+      title: '📦 Tambah Stock (PO Baru)',
+      desc: 'Form Purchase Order Baru untuk menambah stok produk ke gudang',
+      icon: Package,
+      prompt: 'tambah stock'
+    },
+    {
+      title: '🔍 Cek Stock & Detail Produk',
+      desc: 'Cari spesifikasi produk, sisa stok, & log mutasi tanpa harga',
+      icon: Search,
+      prompt: 'cek stock'
+    },
+    {
+      title: '⚠️ Cek Stok Menipis',
+      desc: 'Daftar SKU produk yang berada di bawah batas minimum stok',
+      icon: AlertTriangle,
+      prompt: 'cek stok produk yang menipis'
+    },
+    {
+      title: '📋 Riwayat Mutasi Stok',
+      desc: 'Periksa log pergerakan barang masuk & keluar terkini',
+      icon: History,
+      prompt: 'tampilkan riwayat mutasi stok produk'
+    },
+    {
+      title: '➕ Tambah Tugas Baru',
+      desc: 'Input pekerjaan / task baru ke sistem database',
+      icon: FileEdit,
+      prompt: 'tugas baru'
+    },
+    {
+      title: '🔄 Lanjutkan / Update Task',
+      desc: 'Pilih tugas aktif dan perbarui progress & log pengerjaan',
+      icon: Zap,
+      prompt: 'update task'
+    }
+  ] : isSalesOrAdmin ? [
     {
       title: '📞 Follow-up Penawaran',
       desc: 'Pilih penawaran & catat hasil komunikasi follow-up terbaru',
@@ -279,11 +324,13 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
             <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed mt-1.5">
               {userRole === 'engineer'
                 ? 'Tanyakan panduan sensor gempa & EWS, review dokumen project, atau cek progres tugas teknis kamu.'
-                : userRole === 'sales'
-                  ? 'Tanyakan stok produk, buat draf penawaran harga, atau jadwalkan follow-up pelanggan.'
-                  : isSuperAdmin
-                    ? 'Tanya data penjualan, stok gudang, koordinasi tugas tim, atau analisa performa operasional bisnis.'
-                    : 'Tanyakan panduan kerja, status tugas harian, atau koordinasi operasional tim kamu.'}
+                : isStocklist
+                  ? 'Input Purchase Order stok, cek persediaan barang gudang, atau periksa riwayat mutasi produk.'
+                  : userRole === 'sales'
+                    ? 'Tanyakan stok produk, buat draf penawaran harga, atau jadwalkan follow-up pelanggan.'
+                    : isSuperAdmin
+                      ? 'Tanya data penjualan, stok gudang, koordinasi tugas tim, atau analisa performa operasional bisnis.'
+                      : 'Tanyakan panduan kerja, status tugas harian, atau koordinasi operasional tim kamu.'}
             </p>
           </div>
 

@@ -489,24 +489,27 @@ export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string =
     return engDigest;
   }
 
+  const userRole = (ctx.currentUser?.role || '').toLowerCase();
+  const isStocklist = userRole === 'stocklist' || userRole === 'purchasing' || userRole === 'gudang';
+
   let digest = `=== DATABASE REAL-TIME SISTEM MYPANCA (PT. PANCA PRIMA WIJAYA) ===
 - Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
 - Status Akses Pengguna: ${allowedListStr}
 - Total Seluruh Transaksi: ${agg.compTransactions.length} Transaksi Tercatat
 - Skema Nomor Transaksi: Transaksi LAMA memakai "TRX-..." | Transaksi BARU memakai "PP-..."
-- Total Omzet Real (Selesai/Lunas): Rp ${agg.totalOmzetLunas.toLocaleString('id-ID')}
+- Total Omzet Real (Selesai/Lunas): ${isStocklist ? '[Akses Dibatasi - Role Stocklist]' : `Rp ${agg.totalOmzetLunas.toLocaleString('id-ID')}`}
 - Total Pelanggan Terdaftar: ${agg.compCustomers.length} Pelanggan
 - Total SKU Produk: ${agg.compProducts.length} SKU (Stok Menipis: ${agg.lowStockProducts.length} SKU)
-- Total Piutang Belum Lunas: Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan belum lunas)
+- Total Piutang Belum Lunas: ${isStocklist ? '[Akses Dibatasi - Role Stocklist]' : `Rp ${agg.totalPiutangAmount.toLocaleString('id-ID')} (${agg.unpaidInvoicesList.length} tagihan belum lunas)`}
 
 --- [REKAP OMZET PER BULAN] ---
-${Object.entries(agg.monthlyOmzetMap).map(([m, data]) => `* Periode ${m}: Total Omzet Selesai Rp ${data.omzetSelesai.toLocaleString('id-ID')} (${data.totalDeals} transaksi: ${data.customers.join(', ')})`).join('\n') || '* (Akses terbatas atau belum ada data)'}
+${isStocklist ? '* (Akses omzet dibatasi untuk role Stocklist)' : (Object.entries(agg.monthlyOmzetMap).map(([m, data]) => `* Periode ${m}: Total Omzet Selesai Rp ${data.omzetSelesai.toLocaleString('id-ID')} (${data.totalDeals} transaksi: ${data.customers.join(', ')})`).join('\n') || '* (Akses terbatas atau belum ada data)')}
 
 --- [MENU 1: TRANSAKSI PENJUALAN (TRX & PP)] ---
 * Status Pesanan Breakdown: ${Object.entries(agg.tradeStatusCounts).map(([k, v]) => `${k}: ${v} transaksi`).join(' | ')}
 * Status Pembayaran: ${Object.entries(agg.paymentStatusCounts).map(([k, v]) => `${k}: ${v} transaksi`).join(' | ')}
 * Performa Sales Rep:
-${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.count} trx deals | Total Omzet: Rp ${d.omzet.toLocaleString('id-ID')}`).join('\n') || '  (Akses terbatas atau belum ada data)'}
+${isStocklist ? '  (Akses omzet dan data penjualan dibatasi untuk role Stocklist)' : (Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.count} trx deals | Total Omzet: Rp ${d.omzet.toLocaleString('id-ID')}`).join('\n') || '  (Akses terbatas atau belum ada data)')}
 
 `;
 
@@ -579,7 +582,8 @@ ${Object.entries(agg.salesPerformance).map(([s, d]) => `  - Sales ${s}: ${d.coun
         const price = Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0;
         const hasImgUrl = Boolean(getProductImageUrl(p, agg.compProducts));
         const imgTag = hasImgUrl ? `![Foto ${p.nama || p.name}](product-image:${p.id || p.kode})` : 'Foto belum ada di sistem';
-        return `  - SKU [${p.kode || p.id}] ${p.nama || p.name} (SISA STOK AKURAT: ${stockVal} ${p.satuan || p.unit || 'unit'}) | Harga Jual: Rp ${price.toLocaleString('id-ID')} | Foto/Gambar: ${imgTag}
+        const priceDisplay = isStocklist ? '[Role Stocklist - Akses Harga Dibatasi]' : `Harga Jual: Rp ${price.toLocaleString('id-ID')}`;
+        return `  - SKU [${p.kode || p.id}] ${p.nama || p.name} (SISA STOK AKURAT: ${stockVal} ${p.satuan || p.unit || 'unit'}) | ${priceDisplay} | Foto/Gambar: ${imgTag}
     * Fungsi: ${mainFunc} | Aplikasi: ${mainApp} | Dimensi: ${dim} | Berat: ${weight} | Spesifikasi: ${specStr}`;
       }).join('\n') + '\n';
     } else {
@@ -1126,10 +1130,11 @@ export const queryPancaAI = async ({
     ctx.currentUser.nama?.toLowerCase() === 'superadmin';
 
   const isEngineer = (ctx.currentUser?.role || '').toLowerCase().includes('engineer');
+  const isStocklist = (ctx.currentUser?.role || '').toLowerCase() === 'stocklist' || (ctx.currentUser?.role || '').toLowerCase() === 'purchasing' || (ctx.currentUser?.role || '').toLowerCase() === 'gudang';
 
   const systemPrompt = `Anda adalah "Panca AI Assistant", asisten kecerdasan buatan terpadu yang profesional, ramah, dan analis data bisnis untuk PT. Panca Prima Wijaya (MyPanca CRM, ERP, & Task App).
 Nama Pengguna: ${userName}
-Peran Pengguna: ${ctx.currentUser?.role || 'Staff'} (Akses Superadmin: ${isSuperAdmin ? 'YA - Wewenang Penuh Analisa & Konsultasi Seluruh Tim' : 'TIDAK'} | Role Engineer: ${isEngineer ? 'YA - AKSES KHUSUS TASK APP & SENSOR WEBSITE' : 'TIDAK'})
+Peran Pengguna: ${ctx.currentUser?.role || 'Staff'} (Akses Superadmin: ${isSuperAdmin ? 'YA - Wewenang Penuh Analisa & Konsultasi Seluruh Tim' : 'TIDAK'} | Role Engineer: ${isEngineer ? 'YA - AKSES KHUSUS TASK APP & SENSOR WEBSITE' : 'TIDAK'} | Role Stocklist: ${isStocklist ? 'YA - AKSES KHUSUS STOK & PRODUK TANPA HARGA' : 'TIDAK'})
 Perusahaan Aktif: ${ctx.activeCompany?.nama || 'PT. PANCA PRIMA WIJAYA'}
 
 WAKTU & TANGGAL SISTEM SAAT INI (REAL-TIME REFERENCE):
@@ -1140,6 +1145,22 @@ WAKTU & TANGGAL SISTEM SAAT INI (REAL-TIME REFERENCE):
 - BULAN INI: ${thisMonthName}
 - BULAN LALU / KEMARIN: ${prevMonthName}
 
+${isStocklist ? `================================================================================
+KEBIJAKAN MUTLAK HAK AKSES KHUSUS ROLE STOCKLIST & PURCHASING (STRICT NO-PRICE POLICY):
+================================================================================
+1. BLOKIR PENUH AKSES HARGA JUAL, HARGA BELI (HPP), OMZET, PROFIT, & PIUTANG:
+   - Pengguna saat ini berstatus peran STOCKLIST / PURCHASING.
+   - Sesuai kebijakan keamanan dan tata kelola perusahaan, Role Stocklist TIDAK MEMILIKI AKSES ke seluruh data harga jual, harga pokok pembelian (HPP), margin, nilai omzet penjualan, piutang, maupun total nominal uang pada transaksi/penawaran.
+   - JIKA PENGGUNA STOCKLIST BERTANYA TENTANG HARGA/NILAI UANG (misal: "berapa harganya", "berapa hpp", "berapa omzet", "total nilai po", "berapa laba"):
+     Anda WAJIB MENOLAK secara sopan dan tegas:
+     "Mohon maaf **${userName}**, sebagai akun Role Stocklist/Purchasing akun Anda dibatasi untuk tidak mengakses data nilai keuangan, harga, omzet, maupun piutang. Saya siap membantu Anda memeriksa kuantitas fisik stok produk, satuan, batas minimum stok, status barang menipis, atau riwayat mutasi barang masuk/keluar."
+
+2. CAKUPAN PENGETAHUAN RESMI ROLE STOCKLIST:
+   - Stocklist MEMILIKI AKSES PENUH untuk memeriksa dan menanyakan:
+     a. Sisa jumlah fisik stok barang real-time, satuan (unit/dus/kaleng/kg), batas min. stok, dan status restock (stok menipis).
+     b. Spesifikasi teknis produk, fungsi utama, aplikasi/kegunaan, dan foto/gambar produk.
+     c. Pengadaan Purchase Order baru dan riwayat mutasi pergerakan barang masuk & keluar (tanpa nilai nominal rupiah).
+` : ''}
 ${isEngineer ? `================================================================================
 KEBIJAKAN MUTLAK HAK AKSES KHUSUS ROLE ENGINEER (STRICT CRM ISOLATION):
 ================================================================================
@@ -1316,9 +1337,19 @@ PENTING: Sekali lagi, jika pertanyaan tidak berkaitan dengan data di atas, TOLAK
 export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext): string => {
   const lower = query.toLowerCase();
   const trimmed = lower.trim().replace(/[!\?\.,]/g, '');
-  const userName = ctx.currentUser?.nama || 'Bapak/Ibu';
-  const isEngineer = (ctx.currentUser?.role || '').toLowerCase().includes('engineer');
+  const userRole = (ctx.currentUser?.role || '').toLowerCase();
+  const userName = ctx.currentUser?.nama ? ctx.currentUser.nama.split(' ')[0] : 'Rekan';
+  const isEngineer = userRole.includes('engineer');
+  const isStocklist = userRole === 'stocklist' || userRole === 'purchasing' || userRole === 'gudang';
   const agg = compileSystemAggregations(ctx, query);
+
+  // Stocklist financial query rejection
+  if (isStocklist) {
+    const isFinancialQuery = /\b(omset|omzet|pendapatan|keuntungan|profit|margin|harga jual|harga beli|hpp|nilai proyek|total uang|piutang|tagihan)\b/i.test(lower);
+    if (isFinancialQuery && !lower.includes('stok') && !lower.includes('stock') && !lower.includes('po') && !lower.includes('mutasi')) {
+      return `Mohon maaf **${userName}**, sebagai akun Role Stocklist / Purchasing akun Anda dibatasi untuk tidak mengakses data nilai keuangan, harga, omzet, maupun piutang. Saya siap membantu Anda memeriksa kuantitas fisik stok produk, satuan, batas minimum stok, status barang menipis, atau riwayat mutasi barang masuk/keluar.`;
+    }
+  }
 
   // Engineer CRM query rejection
   if (isEngineer) {
@@ -1331,6 +1362,9 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
   // Greetings check
   const greetingList = ['halo', 'hello', 'hi', 'hai', 'pagi', 'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam', 'siang', 'sore', 'malam', 'ping', 'p', "assalamu'alaikum", 'assalamualaikum', 'salam'];
   if (greetingList.includes(trimmed) || trimmed === 'halo ai' || trimmed === 'hi ai') {
+    if (isStocklist) {
+      return `Halo, **${userName}**. Selamat ${new Date().getHours() < 12 ? 'pagi' : new Date().getHours() < 17 ? 'siang' : 'malam'}.\n\nSaya **Panca AI Assistant**, asisten manajemen stok & inventaris PT. Panca Prima Wijaya.\n\nAda informasi produk atau stok gudang apa yang ingin dicek hari ini? Contoh:\n- "Cek stok produk Fumiphos"\n- "Tampilkan produk yang stoknya menipis"\n- "Riwayat mutasi stok barang masuk"\n- "Berapa sisa stok Silogard?"\n\nSilakan tanyakan informasi stok fisik yang Anda butuhkan.`;
+    }
     if (isEngineer) {
       return `Halo, **${userName}**. Selamat ${new Date().getHours() < 12 ? 'pagi' : new Date().getHours() < 17 ? 'siang' : 'malam'}.\n\nSaya **Panca AI Assistant**, asisten virtual pengerjaan teknis & Task App PT. Panca Prima Wijaya.\n\nAda tugas, kendala teknis, atau sistem sensor apa yang ingin dibahas hari ini? Contoh:\n- "Cek tugas pengerjaan saya"\n- "Bagaimana progres proyek maket EWS?"\n- "Pertanyaan seputar Toyo Earthquake Sensor pada lift"\n- "Cek diskusi forum Q&A teknis"\n\nSilakan tanyakan informasi teknis yang Anda butuhkan.`;
     }
@@ -1428,12 +1462,21 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
     }
 
     if (displayProducts.length > 0) {
-      res += `| No | SKU / Kode | Nama Produk | Sisa Stok Real | Harga Jual |\n|---|---|---|---|---|\n`;
-      displayProducts.slice(0, 30).forEach((p, i) => {
-        const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
-        const isLow = stockVal < (Number(p.minStok) || 10);
-        res += `| ${i + 1} | **${p.kode || p.id}** | **${p.nama || p.name}** | **${stockVal} ${p.satuan || p.unit || 'unit'}**${isLow ? ' (Menipis)' : ''} | Rp ${(Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0).toLocaleString('id-ID')} |\n`;
-      });
+      if (isStocklist) {
+        res += `| No | SKU / Kode | Nama Produk | Sisa Stok Real | Satuan |\n|---|---|---|---|---|\n`;
+        displayProducts.slice(0, 30).forEach((p, i) => {
+          const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
+          const isLow = stockVal < (Number(p.minStok) || 10);
+          res += `| ${i + 1} | **${p.kode || p.id}** | **${p.nama || p.name}** | **${stockVal} ${p.satuan || p.unit || 'unit'}**${isLow ? ' (⚠️ Menipis)' : ''} | ${p.satuan || p.unit || 'Unit'} |\n`;
+        });
+      } else {
+        res += `| No | SKU / Kode | Nama Produk | Sisa Stok Real | Harga Jual |\n|---|---|---|---|---|\n`;
+        displayProducts.slice(0, 30).forEach((p, i) => {
+          const stockVal = getProductStock(p, agg.allPOs, agg.compTransactions);
+          const isLow = stockVal < (Number(p.minStok) || 10);
+          res += `| ${i + 1} | **${p.kode || p.id}** | **${p.nama || p.name}** | **${stockVal} ${p.satuan || p.unit || 'unit'}**${isLow ? ' (Menipis)' : ''} | Rp ${(Number(p.hargaJual) || Number(p.harga) || Number(p.price) || 0).toLocaleString('id-ID')} |\n`;
+        });
+      }
 
       // Display product photos if matched or requested
       if (isSpecificSearch || lower.includes('foto') || lower.includes('gambar') || lower.includes('lihat')) {

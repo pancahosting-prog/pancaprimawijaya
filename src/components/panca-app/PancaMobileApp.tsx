@@ -9,13 +9,14 @@ import { PancaWhatsAppMobileView } from './PancaWhatsAppMobileView';
 import { PancaProjectMobileView } from './PancaProjectMobileView';
 import { PancaQAMobileView } from './PancaQAMobileView';
 import { PancaEngineerTasksView } from './PancaEngineerTasksView';
+import { PancaProductMobileView } from './PancaProductMobileView';
 import { SharedPostView } from '../../../task/components/SharedPostView';
 import { 
-  Bot, MessageSquare, Bell, HardDrive, ArrowLeft, Home as HomeIcon, LayoutGrid, Menu, MessageCircle, FolderKanban
+  Bot, MessageSquare, Bell, HardDrive, ArrowLeft, Home as HomeIcon, LayoutGrid, Menu, MessageCircle, FolderKanban, Package
 } from 'lucide-react';
 import { PWAInstallButton } from '../PWAInstallButton';
 
-export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file' | 'whatsapp' | 'project' | 'qa' | 'tugas';
+export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file' | 'whatsapp' | 'project' | 'qa' | 'tugas' | 'produk';
 
 interface PancaMobileAppProps {
   currentUser?: {
@@ -34,6 +35,7 @@ interface PancaMobileAppProps {
   setCustomers?: React.Dispatch<React.SetStateAction<any[]>>;
   setTransactions?: React.Dispatch<React.SetStateAction<any[]>>;
   setProducts?: React.Dispatch<React.SetStateAction<any[]>>;
+  setPurchaseOrders?: React.Dispatch<React.SetStateAction<any[]>>;
   syncToSupabase?: (table: string, data: any) => void;
   onOpenDesktopCRM?: () => void;
   onLogout?: () => void;
@@ -55,6 +57,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
   setCustomers,
   setTransactions,
   setProducts,
+  setPurchaseOrders,
   syncToSupabase,
   onOpenDesktopCRM,
   onLogout,
@@ -153,12 +156,14 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
     </div>
   );
 
-  const isEngineer = (currentUser?.role || '').toLowerCase() === 'engineer';
+  const userRole = (currentUser?.role || '').toLowerCase();
+  const isStocklist = userRole === 'stocklist' || userRole === 'purchasing' || userRole === 'gudang';
+  const isEngineer = userRole === 'engineer';
   const isSalesOrSuperadmin = 
     currentUser?.role === 'sales' || 
     currentUser?.role === 'superadmin' || 
     currentUser?.username === 'superadmin' ||
-    (currentUser?.role || '').toLowerCase().includes('admin');
+    userRole.includes('admin');
 
   return (
     <div className="min-h-screen w-full bg-slate-900 dark:bg-zinc-950 flex items-center justify-center p-0 sm:p-4 font-sans select-none">
@@ -202,6 +207,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
                 setCustomers={setCustomers}
                 setTransactions={setTransactions}
                 setProducts={setProducts}
+                setPurchaseOrders={setPurchaseOrders}
                 syncToSupabase={syncToSupabase}
                 initialPrompt={pendingPromptForAI}
                 rolePermissions={rolePermissions}
@@ -287,104 +293,187 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
               />
             </div>
           )}
+
+          {activeTab === 'produk' && (
+            <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden bg-slate-50 dark:bg-zinc-950">
+              <PancaProductMobileView
+                products={products}
+                purchaseOrders={purchaseOrders}
+                transactions={transactions}
+                setProducts={setProducts}
+                syncToSupabase={syncToSupabase}
+                currentUser={currentUser}
+                activeCompany={activeCompany}
+                onGoToChatWithPrompt={handleSelectPromptFromHome}
+              />
+            </div>
+          )}
         </div>
 
         {/* Bottom Navigation Bar */}
         {activeTab !== 'ai' && (
           <div className="shrink-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-zinc-800 px-4 py-2 z-30 flex items-center justify-around shadow-[0_-4px_15px_rgba(0,0,0,0.03)]">
-            {/* 1. Beranda */}
-            <button
-              onClick={() => {
-                setPendingPromptForAI('');
-                setActiveTab('home');
-              }}
-              className={`flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
-                activeTab === 'home'
-                  ? 'text-slate-900 dark:text-white font-extrabold'
-                  : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-              }`}
-            >
-              <div className="p-1 rounded-xl">
-                <HomeIcon className={`w-5 h-5 ${activeTab === 'home' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
-              </div>
-              <span className={`text-[10px] ${activeTab === 'home' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Beranda</span>
-            </button>
+            {isStocklist ? (
+              <>
+                {/* 1. Beranda */}
+                <button
+                  onClick={() => {
+                    setPendingPromptForAI('');
+                    setActiveTab('home');
+                  }}
+                  className={`flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                    activeTab === 'home'
+                      ? 'text-slate-900 dark:text-white font-extrabold'
+                      : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  <div className="p-1 rounded-xl">
+                    <HomeIcon className={`w-5 h-5 ${activeTab === 'home' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                  </div>
+                  <span className={`text-[10px] ${activeTab === 'home' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Beranda</span>
+                </button>
 
-            {/* 2. Chat */}
-            <button
-              onClick={() => setActiveTab('ai')}
-              className="flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300"
-            >
-              <div className="p-1 rounded-xl">
-                <MessageSquare className="w-5 h-5 stroke-[1.8]" />
-              </div>
-              <span className="text-[10px] font-semibold mt-0.5">Chat</span>
-            </button>
+                {/* 2. Chat */}
+                <button
+                  onClick={() => setActiveTab('ai')}
+                  className="flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300"
+                >
+                  <div className="p-1 rounded-xl">
+                    <MessageSquare className="w-5 h-5 stroke-[1.8]" />
+                  </div>
+                  <span className="text-[10px] font-semibold mt-0.5">Chat</span>
+                </button>
 
-            {/* 3. Drive */}
-            <button
-              onClick={() => {
-                setOpenUploadInDrive(false);
-                setActiveTab('file');
-              }}
-              className={`flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
-                activeTab === 'file'
-                  ? 'text-slate-900 dark:text-white font-extrabold'
-                  : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-              }`}
-            >
-              <div className="p-1 rounded-xl">
-                <HardDrive className={`w-5 h-5 ${activeTab === 'file' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
-              </div>
-              <span className={`text-[10px] ${activeTab === 'file' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Drive</span>
-            </button>
+                {/* 3. Produk */}
+                <button
+                  onClick={() => setActiveTab('produk')}
+                  className={`flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                    activeTab === 'produk'
+                      ? 'text-[#2C3E50] dark:text-blue-400 font-extrabold'
+                      : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  <div className="p-1 rounded-xl">
+                    <Package className={`w-5 h-5 ${activeTab === 'produk' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                  </div>
+                  <span className={`text-[10px] ${activeTab === 'produk' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Produk</span>
+                </button>
 
-            {/* 4. Khusus Engineer: Project (Menggantikan WhatsApp). Role Lain: WhatsApp atau Lainnya */}
-            {isEngineer ? (
-              <button
-                onClick={() => setActiveTab('project')}
-                className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
-                  activeTab === 'project'
-                    ? 'text-blue-600 dark:text-blue-400 font-extrabold'
-                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-                }`}
-              >
-                <div className="p-1 rounded-xl">
-                  <FolderKanban className={`w-5 h-5 ${activeTab === 'project' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
-                </div>
-                <span className={`text-[10px] ${activeTab === 'project' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Project</span>
-              </button>
-            ) : isSalesOrSuperadmin ? (
-              <button
-                onClick={() => setActiveTab('whatsapp')}
-                className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
-                  activeTab === 'whatsapp'
-                    ? 'text-emerald-600 dark:text-emerald-400 font-extrabold'
-                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-                }`}
-              >
-                <div className="p-1 rounded-xl">
-                  <MessageCircle className={`w-5 h-5 ${activeTab === 'whatsapp' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
-                </div>
-                <span className={`text-[10px] ${activeTab === 'whatsapp' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>WhatsApp</span>
-              </button>
+                {/* 4. Drive */}
+                <button
+                  onClick={() => {
+                    setOpenUploadInDrive(false);
+                    setActiveTab('file');
+                  }}
+                  className={`flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                    activeTab === 'file'
+                      ? 'text-slate-900 dark:text-white font-extrabold'
+                      : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  <div className="p-1 rounded-xl">
+                    <HardDrive className={`w-5 h-5 ${activeTab === 'file' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                  </div>
+                  <span className={`text-[10px] ${activeTab === 'file' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Drive</span>
+                </button>
+              </>
             ) : (
-              <button
-                onClick={() => setActiveTab('notifikasi')}
-                className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
-                  activeTab === 'notifikasi' || activeTab === 'pesan'
-                    ? 'text-slate-900 dark:text-white font-extrabold'
-                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-                }`}
-              >
-                <div className="p-1 rounded-xl">
-                  <Menu className={`w-5 h-5 ${activeTab === 'notifikasi' || activeTab === 'pesan' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
-                </div>
-                {unreadNotifCount > 0 && (
-                  <span className="absolute top-1 right-3 w-2 h-2 bg-rose-500 rounded-full" />
+              <>
+                {/* 1. Beranda */}
+                <button
+                  onClick={() => {
+                    setPendingPromptForAI('');
+                    setActiveTab('home');
+                  }}
+                  className={`flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                    activeTab === 'home'
+                      ? 'text-slate-900 dark:text-white font-extrabold'
+                      : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  <div className="p-1 rounded-xl">
+                    <HomeIcon className={`w-5 h-5 ${activeTab === 'home' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                  </div>
+                  <span className={`text-[10px] ${activeTab === 'home' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Beranda</span>
+                </button>
+
+                {/* 2. Chat */}
+                <button
+                  onClick={() => setActiveTab('ai')}
+                  className="flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300"
+                >
+                  <div className="p-1 rounded-xl">
+                    <MessageSquare className="w-5 h-5 stroke-[1.8]" />
+                  </div>
+                  <span className="text-[10px] font-semibold mt-0.5">Chat</span>
+                </button>
+
+                {/* 3. Drive */}
+                <button
+                  onClick={() => {
+                    setOpenUploadInDrive(false);
+                    setActiveTab('file');
+                  }}
+                  className={`flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                    activeTab === 'file'
+                      ? 'text-slate-900 dark:text-white font-extrabold'
+                      : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  <div className="p-1 rounded-xl">
+                    <HardDrive className={`w-5 h-5 ${activeTab === 'file' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                  </div>
+                  <span className={`text-[10px] ${activeTab === 'file' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Drive</span>
+                </button>
+
+                {/* 4. Khusus Engineer: Project (Menggantikan WhatsApp). Role Lain: WhatsApp atau Lainnya */}
+                {isEngineer ? (
+                  <button
+                    onClick={() => setActiveTab('project')}
+                    className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                      activeTab === 'project'
+                        ? 'text-blue-600 dark:text-blue-400 font-extrabold'
+                        : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <div className="p-1 rounded-xl">
+                      <FolderKanban className={`w-5 h-5 ${activeTab === 'project' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                    </div>
+                    <span className={`text-[10px] ${activeTab === 'project' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Project</span>
+                  </button>
+                ) : isSalesOrSuperadmin ? (
+                  <button
+                    onClick={() => setActiveTab('whatsapp')}
+                    className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                      activeTab === 'whatsapp'
+                        ? 'text-emerald-600 dark:text-emerald-400 font-extrabold'
+                        : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <div className="p-1 rounded-xl">
+                      <MessageCircle className={`w-5 h-5 ${activeTab === 'whatsapp' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                    </div>
+                    <span className={`text-[10px] ${activeTab === 'whatsapp' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>WhatsApp</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setActiveTab('notifikasi')}
+                    className={`relative flex flex-col items-center justify-center py-1 px-3 transition active:scale-95 ${
+                      activeTab === 'notifikasi' || activeTab === 'pesan'
+                        ? 'text-slate-900 dark:text-white font-extrabold'
+                        : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <div className="p-1 rounded-xl">
+                      <Menu className={`w-5 h-5 ${activeTab === 'notifikasi' || activeTab === 'pesan' ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                    </div>
+                    {unreadNotifCount > 0 && (
+                      <span className="absolute top-1 right-3 w-2 h-2 bg-rose-500 rounded-full" />
+                    )}
+                    <span className={`text-[10px] ${activeTab === 'notifikasi' || activeTab === 'pesan' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Lainnya</span>
+                  </button>
                 )}
-                <span className={`text-[10px] ${activeTab === 'notifikasi' || activeTab === 'pesan' ? 'font-extrabold' : 'font-semibold'} mt-0.5`}>Lainnya</span>
-              </button>
+              </>
             )}
           </div>
         )}

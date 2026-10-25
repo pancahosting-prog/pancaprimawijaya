@@ -4950,6 +4950,8 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
         appUsers={appUsers}
         setCustomers={setCustomers}
         setTransactions={setTransactions}
+        setProducts={setProducts}
+        setPurchaseOrders={setPurchaseOrders}
         syncToSupabase={syncToSupabase}
         onOpenDesktopCRM={handleClosePancaApp}
         onOpenTaskApp={() => setShowTaskApp(true)}
