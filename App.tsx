@@ -1,7 +1,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { supabase, testSupabaseConnection, withRetry } from "./src/lib/supabase";
-import { loadDataFromSupabase, saveTransactionToSupabase, saveProductToSupabase, savePurchaseOrderToSupabase, saveAllToSupabase, saveRecycledItemToSupabase, deleteRecycledItemFromSupabase, saveUserLogToSupabase, saveTutorialToSupabase } from "./src/lib/supabaseSync";
+import { loadDataFromSupabase, saveTransactionToSupabase, saveProductToSupabase, savePurchaseOrderToSupabase, saveAllToSupabase, saveRecycledItemToSupabase, deleteRecycledItemFromSupabase, saveUserLogToSupabase, saveTutorialToSupabase, saveCustomerToSupabase, saveSupplierToSupabase, saveCompanyToSupabase } from "./src/lib/supabaseSync";
 import { supabaseService as taskSupabaseService } from "./task/services/supabaseService";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import html2pdf from 'html2pdf.js';
@@ -2708,85 +2708,46 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
 
   // Generic helper for Supabase sync
   const syncToSupabase = async (table: string, data: any) => {
-    if (import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY) {
-      try {
-        if (table === 'transactions') {
-            await saveTransactionToSupabase(data);
-        } else if (table === 'products') {
-            await saveProductToSupabase(data);
-        } else if (table === 'purchase_orders') {
-            await savePurchaseOrderToSupabase(data);
-        } else if (table === 'tutorials') {
-            await saveTutorialToSupabase(data);
-        } else if (table === 'customers') {
-            await withRetry(() => supabase.from('customers').upsert({
-                id: data.id,
-                kode: data.kode,
-                nama: data.nama,
-                jenis: data.jenis,
-                phone: data.phone,
-                phone_code: data.phoneCode || data.phone_code,
-                email: data.email,
-                alamat: data.alamat,
-                sales: data.sales,
-                lead_type: data.leadType || data.lead_type,
-                source: data.source,
-                npwp: data.npwp,
-                keterangan: data.keterangan || '',
-                negara: data.negara,
-                company_id: data.companyId || data.company_id
-                // Note: editHistory is not synced to DB to keep payload small and avoid schema errors
-            }));
-        } else if (table === 'suppliers') {
-            await withRetry(() => supabase.from('suppliers').upsert({
-                id: data.id,
-                nama: data.nama,
-                kode: data.kode,
-                npwp: data.npwp,
-                phone: data.phone,
-                phone_code: data.phoneCode || data.phone_code || '+62',
-                email: data.email,
-                website: data.website,
-                keterangan: data.keterangan || '',
-                company_id: data.companyId || data.company_id
-            }));
-        } else if (table === 'user_accounts') {
-            const userPayload: any = {
-                id: data.id,
-                nama: data.nama,
-                username: data.username,
-                whatsapp: data.whatsapp,
-                role: data.role,
-                permissions: data.permissions,
-                company_id: data.companyId || data.company_id,
-                created_at: data.createdAt || data.created_at
-            };
-            if (data.password) {
-                userPayload.password = data.password;
-            }
-            console.log(`Supabase Sync: Upserting user_account ${data.username} (hasPassword: ${!!data.password})`);
-            const { error } = await withRetry(() => supabase.from('user_accounts').upsert(userPayload));
-            if (error) console.error('Supabase Sync Error [user_accounts]:', error.message);
-        } else if (table === 'companies') {
-            const { error } = await withRetry(() => supabase.from('companies').upsert({
-                id: data.id,
-                nama: data.nama,
-                email: data.email,
-                telepon: data.telepon,
-                alamat: data.alamat,
-                npwp: data.npwp,
-                logo: data.logo || null,
-                bank_name: data.bankName || null,
-                bank_account_name: data.bankAccountName || null,
-                bank_account_number: data.bankAccountNumber || null
-            }));
-            if (error) console.error('Supabase Sync Error [companies]:', error.message);
-        } else {
-            await supabase.from(table).upsert(data);
-        }
-      } catch (err: any) {
-        console.error(`Supabase Sync Exception (${table}):`, err.message);
+    try {
+      if (table === 'transactions') {
+          await saveTransactionToSupabase(data);
+      } else if (table === 'products') {
+          await saveProductToSupabase(data);
+      } else if (table === 'purchase_orders') {
+          await savePurchaseOrderToSupabase(data);
+      } else if (table === 'tutorials') {
+          await saveTutorialToSupabase(data);
+      } else if (table === 'customers') {
+          await saveCustomerToSupabase(data);
+      } else if (table === 'suppliers') {
+          await saveSupplierToSupabase(data);
+      } else if (table === 'companies') {
+          await saveCompanyToSupabase(data);
+      } else if (table === 'user_accounts') {
+          const userPayload: any = {
+              id: String(data.id),
+              nama: data.nama,
+              username: data.username,
+              whatsapp: data.whatsapp || '',
+              role: data.role || 'user',
+              permissions: data.permissions || null,
+              company_id: String(data.companyId || data.company_id || '1'),
+              created_at: data.createdAt || data.created_at || new Date().toISOString()
+          };
+          if (data.password) {
+              userPayload.password = data.password;
+          }
+          console.log(`Supabase Sync: Upserting user_account ${data.username} (hasPassword: ${!!data.password})`);
+          const { error } = await withRetry(() => supabase.from('user_accounts').upsert(userPayload));
+          if (error) console.error('Supabase Sync Error [user_accounts]:', error.message);
+      } else {
+          await withRetry(() => supabase.from(table).upsert(data));
       }
+      console.log(`[SupabaseSync] Success syncing ${table}:`, data.id || data.noTrx || data.nama);
+      return { success: true };
+    } catch (err: any) {
+      console.error(`Supabase Sync Exception (${table}):`, err.message || err);
+      return { success: false, error: err.message || String(err) };
     }
   };
 
@@ -4478,10 +4439,9 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
             companyId: activeCompanyId
         } as Transaction;
         setTransactions(prev => {
-            const result = currentTrx.id ? prev.map(t => t.id === newTrx.id ? newTrx : t) : [newTrx, ...prev];
-            syncToSupabase('transactions', newTrx);
-            return result;
+            return currentTrx.id ? prev.map(t => t.id === newTrx.id ? newTrx : t) : [newTrx, ...prev];
         });
+        syncToSupabase('transactions', newTrx);
         logUserAction(currentTrx.id ? 'UPDATE' : 'CREATE', `${currentTrx.id ? 'Mengubah' : 'Membuat'} transaksi ${newTrx.noTrx}`, 'Transaction');
         if (newTrx.status === 'Invoice') {
             setActiveView('Invoice');
@@ -4591,10 +4551,9 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
             }
 
             setCustomers(prev => {
-                const result = currentCust.id ? prev.map(c => c.id === newCust.id ? newCust : c) : [...prev, newCust];
-                syncToSupabase('customers', newCust);
-                return result;
+                return currentCust.id ? prev.map(c => c.id === newCust.id ? newCust : c) : [...prev, newCust];
             });
+            syncToSupabase('customers', newCust);
             setShowDrawer(null);
             setConfirmModal(null);
         } catch (error) {

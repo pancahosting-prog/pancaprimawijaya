@@ -150,128 +150,209 @@ export const loadDataFromSupabase = async () => {
 export const saveTransactionToSupabase = async (trx: any) => {
     const { items, ...mainTrx } = trx;
     
+    // Sanitize dates (avoid Postgres 22007 invalid input syntax for empty strings)
+    const sanitizeDate = (val: any) => {
+        if (!val || typeof val !== 'string' || !val.trim()) return null;
+        return val.trim();
+    };
+
+    const trxId = mainTrx.id || ('TRX-' + Date.now());
+    const grandTotal = Number(mainTrx.nilaiProyek ?? mainTrx.total ?? 0);
+    const received = Number(mainTrx.pembayaranDiterima ?? mainTrx.pembayaran_diterima ?? 0);
+    const remaining = Number(mainTrx.sisaPembayaran ?? mainTrx.sisa_pembayaran ?? (grandTotal - received));
+
     // 1. Upsert Transaction record
     const { error: trxError } = await withRetry(() => supabase.from('transactions').upsert({
-        id: mainTrx.id,
-        no_trx: mainTrx.noTrx,
-        tanggal: mainTrx.tanggal,
-        customer_name: mainTrx.customerName || mainTrx.customer_name || '',
-        status: mainTrx.status,
-        nilai_proyek: mainTrx.nilaiProyek || 0,
+        id: trxId,
+        no_trx: mainTrx.noTrx || mainTrx.no_trx || trxId,
+        tanggal: sanitizeDate(mainTrx.tanggal) || new Date().toISOString().split('T')[0],
+        customer_name: mainTrx.customerName || mainTrx.customer_name || 'Pelanggan Umum',
+        status: mainTrx.status || 'Invoice',
+        nilai_proyek: grandTotal,
         ppn: mainTrx.ppn ?? true,
         ongkir: mainTrx.ongkir ?? false,
-        biaya_ongkir: mainTrx.biayaOngkir || 0,
-        jasa_kirim: mainTrx.jasaKirim,
-        no_resi: mainTrx.noResi,
-        statuses: mainTrx.statuses || [],
-        sales: mainTrx.sales,
+        biaya_ongkir: Number(mainTrx.biayaOngkir ?? mainTrx.biaya_ongkir ?? 0),
+        jasa_kirim: mainTrx.jasaKirim || mainTrx.jasa_kirim || null,
+        no_resi: mainTrx.noResi || mainTrx.no_resi || null,
+        statuses: Array.isArray(mainTrx.statuses) && mainTrx.statuses.length > 0 ? mainTrx.statuses : [mainTrx.status || 'Invoice'],
+        sales: mainTrx.sales || 'Sales',
         keterangan: mainTrx.keterangan || '',
-        payment_status: mainTrx.paymentStatus || 'Belum Lunas',
-        pembayaran_diterima: mainTrx.pembayaranDiterima || 0,
-        sisa_pembayaran: mainTrx.sisaPembayaran || 0,
-        jatuh_tempo: mainTrx.jatuhTempo,
-        follow_up_date: mainTrx.followUpDate,
-        follow_up_method: mainTrx.followUpMethod,
-        follow_ups: mainTrx.followUps || [],
-        edit_history: mainTrx.editHistory || [],
-        payment_history: mainTrx.paymentHistory || [],
-        company_id: mainTrx.companyId
+        payment_status: mainTrx.paymentStatus || mainTrx.payment_status || 'Belum Lunas',
+        pembayaran_diterima: received,
+        sisa_pembayaran: remaining,
+        jatuh_tempo: sanitizeDate(mainTrx.jatuhTempo || mainTrx.jatuh_tempo),
+        follow_up_date: sanitizeDate(mainTrx.followUpDate || mainTrx.follow_up_date),
+        follow_up_method: mainTrx.followUpMethod || mainTrx.follow_up_method || null,
+        follow_ups: Array.isArray(mainTrx.followUps || mainTrx.follow_ups) ? (mainTrx.followUps || mainTrx.follow_ups) : [],
+        edit_history: Array.isArray(mainTrx.editHistory || mainTrx.edit_history) ? (mainTrx.editHistory || mainTrx.edit_history) : [],
+        payment_history: Array.isArray(mainTrx.paymentHistory || mainTrx.payment_history) ? (mainTrx.paymentHistory || mainTrx.payment_history) : [],
+        company_id: String(mainTrx.companyId || mainTrx.company_id || '1')
     }));
 
     if (trxError) throw trxError;
 
-    // 2. Delete old items and insert new ones (or use upsert if you have IDs)
+    // 2. Delete old items and insert new ones
     if (items && items.length > 0) {
-        // Simple approach: delete and re-insert for the transaction
-        await withRetry(() => supabase.from('transaction_items').delete().eq('transaction_id', mainTrx.id));
+        await withRetry(() => supabase.from('transaction_items').delete().eq('transaction_id', trxId));
         
         const { error: itemsError } = await withRetry(() => supabase.from('transaction_items').upsert(
             items.map((it: any) => ({
-                id: it.id || `${mainTrx.id}_${Math.random().toString(36).substr(2, 9)}`,
-                transaction_id: mainTrx.id,
-                produk_id: it.produkId,
-                nama: it.nama,
-                kode: it.kode,
-                harga: it.harga,
-                qty: it.qty,
-                diskon: it.diskon || 0
+                id: it.id || `${trxId}_${Math.random().toString(36).substr(2, 9)}`,
+                transaction_id: trxId,
+                produk_id: it.produkId || it.produk_id || null,
+                nama: it.nama || 'Item Transaksi',
+                kode: it.kode || '',
+                harga: Number(it.harga || 0),
+                qty: Number(it.qty || 1),
+                diskon: Number(it.diskon || 0)
             }))
         ));
         if (itemsError) throw itemsError;
     }
 };
 
+export const saveCustomerToSupabase = async (cust: any) => {
+    const custId = String(cust.id || ('CUST-' + Date.now()));
+    const custKode = cust.kode || ('CUST-' + custId.slice(-4));
+
+    const { error } = await withRetry(() => supabase.from('customers').upsert({
+        id: custId,
+        kode: custKode,
+        nama: cust.nama || cust.pic || 'Kontak Baru',
+        jenis: cust.jenis || cust.jenisKontak || 'Perusahaan',
+        phone: cust.phone || cust.whatsapp || cust.no_hp || '',
+        phone_code: cust.phoneCode || cust.phone_code || '+62',
+        email: cust.email || '',
+        alamat: cust.alamat || '',
+        sales: cust.sales || 'Sales',
+        lead_type: cust.leadType || cust.lead_type || 'Belum Transaksi',
+        source: cust.source || 'Organic',
+        npwp: cust.npwp || '',
+        keterangan: cust.keterangan || '',
+        negara: cust.negara || 'Indonesia',
+        company_id: String(cust.companyId || cust.company_id || '1')
+    }));
+
+    if (error) throw error;
+    return { success: true };
+};
+
+export const saveSupplierToSupabase = async (supp: any) => {
+    const suppId = String(supp.id || ('SUPP-' + Date.now()));
+    const { error } = await withRetry(() => supabase.from('suppliers').upsert({
+        id: suppId,
+        nama: supp.nama || 'Supplier Baru',
+        kode: supp.kode || ('SUP-' + suppId.slice(-4)),
+        npwp: supp.npwp || null,
+        phone: supp.phone || supp.whatsapp || '',
+        phone_code: supp.phoneCode || supp.phone_code || '+62',
+        email: supp.email || null,
+        website: supp.website || null,
+        keterangan: supp.keterangan || null,
+        company_id: String(supp.companyId || supp.company_id || '1')
+    }));
+
+    if (error) throw error;
+    return { success: true };
+};
+
+export const saveCompanyToSupabase = async (comp: any) => {
+    const compId = String(comp.id || '1');
+    // Note: Do not send bank_name, bank_account_name, bank_account_number as they don't exist in Supabase schema
+    const { error } = await withRetry(() => supabase.from('companies').upsert({
+        id: compId,
+        nama: comp.nama,
+        email: comp.email || null,
+        telepon: comp.telepon || null,
+        alamat: comp.alamat || null,
+        npwp: comp.npwp || null,
+        logo: comp.logo || null
+    }));
+
+    if (error) throw error;
+    return { success: true };
+};
+
 export const saveProductToSupabase = async (prod: any) => {
     const { lots, ...mainProd } = prod;
 
+    // Note: Do NOT include stok, hpp, harga_jual on products table because they exist on product_lots
     const { error: prodError } = await withRetry(() => supabase.from('products').upsert({
-        id: mainProd.id,
+        id: String(mainProd.id),
         nama: mainProd.nama,
         kode: mainProd.kode,
-        stok: mainProd.stok ?? mainProd.stock ?? 0,
-        hpp: mainProd.hpp || 0,
-        harga_jual: mainProd.hargaJual || mainProd.harga || 0,
-        satuan: mainProd.satuan,
-        berat: mainProd.berat,
-        panjang: mainProd.panjang,
-        lebar: mainProd.lebar,
-        tinggi: mainProd.tinggi,
-        images: mainProd.images,
-        specifications: mainProd.specifications,
-        main_function: mainProd.mainFunction,
-        main_application: mainProd.mainApplication,
-        remarks: mainProd.remarks,
-        company_id: mainProd.companyId
+        satuan: mainProd.satuan || 'Pcs',
+        berat: Number(mainProd.berat || 0),
+        panjang: Number(mainProd.panjang || 0),
+        lebar: Number(mainProd.lebar || 0),
+        tinggi: Number(mainProd.tinggi || 0),
+        images: mainProd.images || null,
+        specifications: mainProd.specifications || null,
+        main_function: mainProd.mainFunction || mainProd.main_function || null,
+        main_application: mainProd.mainApplication || mainProd.main_application || null,
+        remarks: mainProd.remarks || null,
+        company_id: String(mainProd.companyId || mainProd.company_id || '1')
     }));
 
     if (prodError) throw prodError;
 
     if (lots && lots.length > 0) {
         const { error: lotsError } = await withRetry(() => supabase.from('product_lots').upsert(
-            lots.map((l: any) => ({
-                id: l.id || `${mainProd.id}_lot_${l.lot}`,
-                product_id: mainProd.id,
-                lot: l.lot,
-                kode: l.kode,
-                supplier_id: l.supplierId,
-                stock: l.stock,
-                hpp: l.hpp,
-                harga_jual: l.hargaJual,
-                tanggal: l.tanggal
-            }))
+            lots.map((l: any) => {
+                let parsedLot = typeof l.lot === 'number' ? l.lot : parseInt(String(l.lot).replace(/\D/g, ''), 10);
+                if (isNaN(parsedLot) || parsedLot <= 0) parsedLot = Date.now();
+
+                return {
+                    id: l.id || `${mainProd.id}_lot_${parsedLot}`,
+                    product_id: String(mainProd.id),
+                    lot: parsedLot,
+                    kode: l.kode || mainProd.kode,
+                    supplier_id: l.supplierId || l.supplier_id || null,
+                    stock: Number(l.stock ?? l.stok ?? 0),
+                    hpp: Number(l.hpp || 0),
+                    harga_jual: Number(l.hargaJual || l.harga_jual || l.harga || 0),
+                    tanggal: l.tanggal && String(l.tanggal).trim() ? String(l.tanggal).trim() : new Date().toISOString().split('T')[0]
+                };
+            })
         ));
         if (lotsError) throw lotsError;
     }
-
 };
 
 export const savePurchaseOrderToSupabase = async (po: any) => {
     const { items, ...mainPO } = po;
 
+    const sanitizeDate = (val: any) => {
+        if (!val || typeof val !== 'string' || !val.trim()) return null;
+        return val.trim();
+    };
+
+    const poId = String(mainPO.id || ('PO-' + Date.now()));
+
     const { error: poError } = await withRetry(() => supabase.from('purchase_orders').upsert({
-        id: mainPO.id,
-        tanggal_pembelian: mainPO.tanggalPembelian,
-        supplier_id: mainPO.supplierId,
-        status: mainPO.status,
-        tanggal_diterima: mainPO.tanggalDiterima,
-        ordered_by: mainPO.orderedBy,
-        company_id: mainPO.companyId
+        id: poId,
+        tanggal_pembelian: sanitizeDate(mainPO.tanggalPembelian || mainPO.tanggal_pembelian) || new Date().toISOString().split('T')[0],
+        supplier_id: mainPO.supplierId || mainPO.supplier_id || null,
+        status: mainPO.status || 'Pending',
+        tanggal_diterima: sanitizeDate(mainPO.tanggalDiterima || mainPO.tanggal_diterima),
+        ordered_by: mainPO.orderedBy || mainPO.ordered_by || 'Admin',
+        company_id: String(mainPO.companyId || mainPO.company_id || '1')
     }));
 
     if (poError) throw poError;
 
     if (items && items.length > 0) {
-        await withRetry(() => supabase.from('purchase_order_items').delete().eq('purchase_order_id', mainPO.id));
+        await withRetry(() => supabase.from('purchase_order_items').delete().eq('purchase_order_id', poId));
         const { error: itemsError } = await withRetry(() => supabase.from('purchase_order_items').upsert(
             items.map((it: any) => ({
-                id: it.id || `${mainPO.id}_${Math.random().toString(36).substr(2, 9)}`,
-                purchase_order_id: mainPO.id,
-                produk_id: it.produkId,
-                nama: it.nama,
-                kode: it.kode,
-                jumlah: it.jumlah,
-                hpp: it.hpp,
-                harga: it.harga
+                id: it.id || `${poId}_${Math.random().toString(36).substr(2, 9)}`,
+                purchase_order_id: poId,
+                produk_id: it.produkId || it.produk_id || null,
+                nama: it.nama || 'Item PO',
+                kode: it.kode || '',
+                jumlah: Number(it.jumlah || it.qty || 1),
+                hpp: Number(it.hpp || 0),
+                harga: Number(it.harga || it.hpp || 0)
             }))
         ));
         if (itemsError) throw itemsError;
@@ -285,47 +366,38 @@ export const saveAllToSupabase = async (data: any) => {
 
     // 1. Companies
     if (companies?.length > 0) {
-        console.log(`Syncing ${companies.length} companies...`);
-        const { error } = await withRetry(() => supabase.from('companies').upsert(companies.map((c: any) => ({
-            id: c.id, 
-            nama: c.nama, 
-            email: c.email, 
-            telepon: c.telepon, 
-            alamat: c.alamat, 
-            npwp: c.npwp,
-            logo: c.logo || null,
-            bank_name: c.bankName || null,
-            bank_account_name: c.bankAccountName || null,
-            bank_account_number: c.bankAccountNumber || null
-        }))));
-        if (error) console.error('Sync Error [companies]:', error.message);
+        for (const c of companies) {
+            try {
+                await saveCompanyToSupabase(c);
+            } catch (e: any) {
+                console.error(`Company sync failed [${c.nama}]:`, e.message);
+            }
+        }
     }
 
     // 2. Suppliers
     if (suppliers?.length > 0) {
-        console.log(`Syncing ${suppliers.length} suppliers...`);
-        const { error } = await withRetry(() => supabase.from('suppliers').upsert(suppliers.map((s: any) => ({
-            id: s.id, nama: s.nama, kode: s.kode, npwp: s.npwp, 
-            phone: s.phone, phone_code: s.phoneCode, email: s.email, website: s.website, keterangan: s.keterangan,
-            company_id: s.companyId
-        }))));
-        if (error) console.error('Sync Error [suppliers]:', error.message);
+        for (const s of suppliers) {
+            try {
+                await saveSupplierToSupabase(s);
+            } catch (e: any) {
+                console.error(`Supplier sync failed [${s.nama}]:`, e.message);
+            }
+        }
     }
 
     // 3. Customers
     if (customers?.length > 0) {
-        console.log(`Syncing ${customers.length} customers...`);
-        const { error } = await withRetry(() => supabase.from('customers').upsert(customers.map((c: any) => ({
-            id: c.id, kode: c.kode, nama: c.nama, jenis: c.jenis, phone: c.phone,
-            phone_code: c.phoneCode, email: c.email, alamat: c.alamat, sales: c.sales,
-            lead_type: c.leadType, source: c.source, npwp: c.npwp, keterangan: c.keterangan || '',
-            negara: c.negara, company_id: c.companyId
-        }))));
-        if (error) console.error('Sync Error [customers]:', error.message);
+        for (const c of customers) {
+            try {
+                await saveCustomerToSupabase(c);
+            } catch (e: any) {
+                console.error(`Customer sync failed [${c.nama}]:`, e.message);
+            }
+        }
     }
 
     // 4. Products (individual saves because of lots)
-    console.log(`Syncing ${products?.length || 0} products...`);
     for (const p of products || []) {
         try {
             await saveProductToSupabase(p);
@@ -335,7 +407,6 @@ export const saveAllToSupabase = async (data: any) => {
     }
 
     // 5. Transactions (individual saves because of items)
-    console.log(`Syncing ${transactions?.length || 0} transactions...`);
     for (const t of transactions || []) {
         try {
             await saveTransactionToSupabase(t);

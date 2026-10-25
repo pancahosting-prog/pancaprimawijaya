@@ -559,13 +559,17 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       const city = data.kota?.trim() || 'Surabaya';
       const salesName = data.sales || currentUser?.nama || 'maria';
 
+      const custId = 'CUST-' + Date.now();
+      const phoneNum = data.whatsapp || data.phone || wa || '';
       const newCust = {
-        id: 'CUST-' + Date.now(),
+        id: custId,
+        kode: 'CUST-' + custId.slice(-4),
         nama: name,
-        perusahaan: data.perusahaan || name,
-        jenisKontak: data.jenisKontak || 'Perusahaan',
-        whatsapp: wa,
-        phone: wa,
+        jenis: data.jenisKontak || data.jenis || 'Perusahaan',
+        jenisKontak: data.jenisKontak || data.jenis || 'Perusahaan',
+        whatsapp: phoneNum,
+        phone: phoneNum,
+        phoneCode: '+62',
         email: data.email || '',
         negara: data.negara || 'Indonesia',
         alamat: data.alamat || '',
@@ -640,8 +644,9 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       sisaPembayaran: sisaPay,
       sales: data.sales || currentUser?.nama || 'General Sales',
       keterangan: data.keterangan || 'Input via Panca AI Assistant',
-      followUpDate: data.followUpDate || '',
-      followUpMethod: data.followUpMethod || '',
+      followUpDate: data.followUpDate && data.followUpDate.trim() ? data.followUpDate.trim() : null,
+      followUpMethod: data.followUpMethod || null,
+      jatuhTempo: null,
       companyId: activeCompanyId,
       company_id: activeCompanyId,
       createdAt: new Date().toISOString()
@@ -1085,13 +1090,19 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
     try {
       if (type === 'customer') {
+        const cId = 'CUST-' + Date.now();
+        const pNum = payload.whatsapp || payload.phone || '08123456789';
         const newCust = {
-          id: 'CUST-' + Date.now(),
+          id: cId,
+          kode: 'CUST-' + cId.slice(-4),
           nama: payload.nama,
+          jenis: payload.jenis || 'Perusahaan',
+          jenisKontak: payload.jenisKontak || payload.jenis || 'Perusahaan',
           perusahaan: payload.perusahaan || payload.nama,
           kota: payload.kota || 'Surabaya',
-          whatsapp: payload.whatsapp || '08123456789',
-          phone: payload.whatsapp || '08123456789',
+          whatsapp: pNum,
+          phone: pNum,
+          phoneCode: '+62',
           sales: payload.sales || currentUser?.nama || 'General Sales',
           leadType: payload.leadType || 'Belum Transaksi',
           pic: payload.pic || payload.nama,
@@ -1133,6 +1144,9 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
           sisaPembayaran: payload.sisaPembayaran || 0,
           sales: payload.sales || currentUser?.nama || 'General Sales',
           keterangan: payload.keterangan || 'Input via Panca AI Assistant',
+          followUpDate: payload.followUpDate && String(payload.followUpDate).trim() ? String(payload.followUpDate).trim() : null,
+          followUpMethod: payload.followUpMethod || null,
+          jatuhTempo: payload.jatuhTempo && String(payload.jatuhTempo).trim() ? String(payload.jatuhTempo).trim() : null,
           companyId: activeCompanyId,
           company_id: activeCompanyId,
           createdAt: new Date().toISOString()

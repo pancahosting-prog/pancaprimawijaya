@@ -2589,13 +2589,18 @@ AI telah mengekstrak parameter data sesuai Form Asli MyPanca:
 
     try {
       if (type === 'customer') {
+        const cId = 'CUST-' + Date.now();
+        const pNum = payload.whatsapp || payload.phone || '08123456789';
         const newCust: Customer = {
-          id: 'CUST-' + Date.now(),
+          id: cId,
+          kode: 'CUST-' + cId.slice(-4),
           nama: payload.nama,
+          jenis: payload.jenis || 'Perusahaan',
           perusahaan: payload.perusahaan || payload.nama,
           kota: payload.kota || 'Surabaya',
-          whatsapp: payload.whatsapp || '08123456789',
-          phone: payload.whatsapp || '08123456789',
+          whatsapp: pNum,
+          phone: pNum,
+          phoneCode: '+62',
           sales: payload.sales || currentUser?.nama || 'General Sales',
           leadType: payload.leadType || 'Belum Transaksi',
           pic: payload.pic || payload.nama,
@@ -2618,12 +2623,14 @@ AI telah mengekstrak parameter data sesuai Form Asli MyPanca:
           return m;
         }));
       } else if (type === 'transaction' || type === 'penawaran') {
+        const trxDocId = 'TRX-' + Date.now();
         const newTrx: Transaction = {
-          id: 'TRX-' + Date.now(),
-          noTrx: payload.noTrx || ('TRX-' + Date.now()),
+          id: trxDocId,
+          noTrx: payload.noTrx || trxDocId,
           customerName: payload.customerName,
           tanggal: payload.tanggal || new Date().toISOString().split('T')[0],
           total: payload.total || 1000000,
+          nilaiProyek: payload.total || 1000000,
           status: payload.status || 'Selesai',
           paymentStatus: payload.paymentStatus || 'Belum Lunas',
           sales: payload.sales || currentUser?.nama || 'General Sales',
