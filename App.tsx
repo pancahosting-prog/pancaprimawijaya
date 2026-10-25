@@ -8743,7 +8743,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
         <div className="fixed inset-0 z-[60] flex justify-end">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setShowDrawer(null)} />
           <div className={`relative w-full ${showDrawer === 'inputResi' ? 'max-w-xl' : (showDrawer === 'printPenawaran' || (showDrawer === 'printInvoice' && printDocType === 'PI')) ? 'max-w-4xl' : showDrawer === 'printInvoice' ? 'max-w-xl' : 'lg:max-w-xl'} bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border-l border-slate-200 dark:border-slate-800 h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-250`}>
-            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+            <div className="flex justify-between items-center px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
               <h3 className="text-base font-semibold tracking-tight text-foreground">
                 {showDrawer === 'trx' ? (currentTrx.status === 'Penawaran' ? 'Penawaran Baru' : 'Transaksi Baru') : 
                   showDrawer === 'trxDetail' ? (currentTrx.status === 'Penawaran' ? 'Detail Penawaran' : 'Detail Transaksi') :
@@ -8774,7 +8774,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-6">
               
               {/* --- RECYCLE DETAIL --- */}
               {showDrawer === 'recycleDetail' && recycleDetailItem && (
@@ -10527,9 +10527,9 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                         </div>
                         <div className="col-span-1 md:col-span-2">
                             <label className={labelClass}>Telepon / WhatsApp</label>
-                            <div className="flex gap-2">
+                            <div className="grid grid-cols-[115px_1fr] sm:grid-cols-[150px_1fr] gap-2 w-full">
                                 <select 
-                                    className={`${inputClass} w-40 shrink-0`} 
+                                    className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-2 py-2 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-900 dark:focus:border-zinc-100 focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100 transition-colors shadow-xs truncate" 
                                     value={currentCust.phoneCode || '+62'} 
                                     onChange={e => {
                                         const newCode = e.target.value;
@@ -10547,8 +10547,8 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                                     ))}
                                 </select>
                                 <input 
-                                    type="text"
-                                    className={`${inputClass} flex-1`} 
+                                    type="tel"
+                                    className="w-full min-w-0 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-900 dark:focus:border-zinc-100 focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100 transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-500 shadow-xs" 
                                     value={currentCust.phone || ''} 
                                     onChange={e => {
                                         let val = e.target.value.replace(/\D/g, '');

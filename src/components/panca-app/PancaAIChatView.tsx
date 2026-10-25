@@ -2040,11 +2040,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
 
                 <div>
                   <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1 block">TELEPON / WHATSAPP</label>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-[115px_1fr] sm:grid-cols-[140px_1fr] gap-2 w-full">
                     <select 
                       value={activeSession.data.phoneCode || '+62'} 
                       onChange={(e) => updateActiveData('phoneCode', e.target.value)} 
-                      className="w-36 p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100 shrink-0"
+                      className="w-full p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-zinc-100 truncate"
                     >
                       <option value="+62">ID +62 (Indonesia)</option>
                       <option value="+65">SG +65 (Singapore)</option>
@@ -2052,11 +2052,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
                       <option value="+1">US +1 (USA)</option>
                     </select>
                     <input 
-                      type="text" 
+                      type="tel" 
                       value={activeSession.data.whatsapp || ''} 
                       onChange={(e) => updateActiveData('whatsapp', e.target.value)} 
                       placeholder="8123456789" 
-                      className="flex-1 p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400" 
+                      className="w-full min-w-0 p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-400" 
                     />
                   </div>
                 </div>

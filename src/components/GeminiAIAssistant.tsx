@@ -53,11 +53,14 @@ interface Transaction {
 
 interface Customer {
   id: string;
+  kode?: string;
   nama: string;
+  jenis?: string;
   perusahaan?: string;
   whatsapp?: string;
   telepon?: string;
   phone?: string;
+  phoneCode?: string;
   kota?: string;
   leadType?: string;
   pic?: string;
