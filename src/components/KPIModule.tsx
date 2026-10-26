@@ -370,7 +370,31 @@ export const KPI_SATUAN_OPTIONS = [
 // Helper to format any number with dot thousands separator (e.g. 1.000.000 or 1.000.000,50)
 export const formatDotNumber = (val: number | string | undefined | null): string => {
   if (val === undefined || val === null || val === '') return '';
-  const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\./g, '').replace(',', '.'));
+  if (typeof val === 'number') {
+    if (isNaN(val)) return '';
+    const parts = val.toString().split('.');
+    const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return parts.length > 1 ? `${intPart},${parts[1]}` : intPart;
+  }
+
+  const str = String(val).trim();
+  if (!str) return '';
+
+  // If input is standard JS decimal format like "79.57" or "100.00" (single dot, no commas)
+  if (/^-?\d+\.\d+$/.test(str)) {
+    const parts = str.split('.');
+    const intPart = parseInt(parts[0], 10).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return `${intPart},${parts[1]}`;
+  }
+
+  // If input is simple integer string like "100" or "0"
+  if (/^-?\d+$/.test(str)) {
+    return str.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  // For Indonesian formatted string input e.g. "133.716.920" or "133.716.920,50"
+  const clean = str.replace(/\./g, '').replace(',', '.');
+  const num = parseFloat(clean);
   if (isNaN(num)) return '';
   const parts = num.toString().split('.');
   const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -1477,12 +1501,11 @@ export default function KPIModule({
       if (t.id !== tplId) return t;
       let finalValue = value;
       if (field === 'bobot') {
-        let bobotVal = Math.max(0, parseInt(value) || 0);
+        const bobotVal = value === '' ? '' : Math.min(100, Math.max(0, parseInt(value) || 0));
         const otherBobot = t.indicators.reduce((acc, curr) => curr.id !== indId ? acc + (curr.bobot || 0) : acc, 0);
-        const maxAllowed = Math.max(0, 100 - otherBobot);
-        if (bobotVal > maxAllowed) {
-          setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian A tidak boleh melebihi 100%! Nilai dibatasi maksimal ${maxAllowed}%.`);
-          bobotVal = maxAllowed;
+        const currentBobot = parseInt(bobotVal) || 0;
+        if (otherBobot + currentBobot > 100) {
+          setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian A saat ini ${otherBobot + currentBobot}% (melebihi 100%)!`);
         } else {
           setWeightWarningPengaturan(null);
         }
@@ -1535,12 +1558,11 @@ export default function KPIModule({
       const currentSS = t.softSkills && t.softSkills.length > 0 ? t.softSkills : DEFAULT_SOFT_SKILL_INDICATORS;
       let finalValue = value;
       if (field === 'bobot') {
-        let bobotVal = Math.max(0, parseInt(value) || 0);
+        const bobotVal = value === '' ? '' : Math.min(100, Math.max(0, parseInt(value) || 0));
         const otherBobot = currentSS.reduce((acc, curr) => curr.id !== ssId ? acc + (curr.bobot || 0) : acc, 0);
-        const maxAllowed = Math.max(0, 100 - otherBobot);
-        if (bobotVal > maxAllowed) {
-          setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian B (Soft Skill) tidak boleh melebihi 100%! Nilai dibatasi maksimal ${maxAllowed}%.`);
-          bobotVal = maxAllowed;
+        const currentBobot = parseInt(bobotVal) || 0;
+        if (otherBobot + currentBobot > 100) {
+          setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian B (Soft Skill) saat ini ${otherBobot + currentBobot}% (melebihi 100%)!`);
         } else {
           setWeightWarningPengaturan(null);
         }
@@ -1849,16 +1871,18 @@ export default function KPIModule({
       const updated = [...prev];
       let finalVal = value;
       if (field === 'bobot') {
-        let bobotVal = Math.max(0, parseFloat(value) || 0);
+        if (value === '' || value === null || value === undefined) {
+          finalVal = '';
+        } else {
+          finalVal = Math.min(100, Math.max(0, parseFloat(value) || 0));
+        }
         const otherBobot = prev.reduce((sum, it, i) => i !== idx ? sum + (parseFloat(it.bobot) || 0) : sum, 0);
-        const maxAllowed = Math.max(0, 100 - otherBobot);
-        if (bobotVal > maxAllowed) {
-          setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI tidak boleh melebihi 100%! Nilai dibatasi maksimal ${maxAllowed}%.`);
-          bobotVal = maxAllowed;
+        const currentBobot = parseFloat(finalVal) || 0;
+        if (otherBobot + currentBobot > 100) {
+          setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI saat ini ${otherBobot + currentBobot}% (melebihi 100%)! Harap sesuaikan.`);
         } else {
           setWeightWarningPenilaian(null);
         }
-        finalVal = bobotVal;
       }
 
       const item = { ...updated[idx], [field]: finalVal };
@@ -1920,16 +1944,18 @@ export default function KPIModule({
       const updated = [...prev];
       let finalVal = value;
       if (field === 'bobot') {
-        let bobotVal = Math.max(0, parseFloat(value) || 0);
+        if (value === '' || value === null || value === undefined) {
+          finalVal = '';
+        } else {
+          finalVal = Math.min(100, Math.max(0, parseFloat(value) || 0));
+        }
         const otherBobot = prev.reduce((sum, it, i) => i !== idx ? sum + (parseFloat(it.bobot) || 0) : sum, 0);
-        const maxAllowed = Math.max(0, 100 - otherBobot);
-        if (bobotVal > maxAllowed) {
-          setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot Soft Skill (Bagian B) tidak boleh melebihi 100%! Nilai dibatasi maksimal ${maxAllowed}%.`);
-          bobotVal = maxAllowed;
+        const currentBobot = parseFloat(finalVal) || 0;
+        if (otherBobot + currentBobot > 100) {
+          setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot Soft Skill saat ini ${otherBobot + currentBobot}% (melebihi 100%)!`);
         } else {
           setWeightWarningPenilaian(null);
         }
-        finalVal = bobotVal;
       }
 
       const item = { ...updated[idx], [field]: finalVal };
@@ -2617,41 +2643,47 @@ export default function KPIModule({
     };
   }, [filteredRecapRows, calculatedOmsetBersih]);
 
-  // Export recap to CSV formatted for Excel
+  // Export recap to CSV formatted for Excel (Rincian Slip Gaji THP)
   const handleExportExcel = () => {
     const headers = [
       'No',
-      'Nama',
+      'Nama Karyawan',
+      'NIK',
       'Jabatan',
       'Departemen',
-      'Periode KPI',
-      'Score KPI',
+      'Periode',
+      'Skor KPI',
       'Grade KPI',
+      'Status KPI',
       'Gaji Pokok',
-      'Persentase Bonus',
-      'Bonus Bulanan',
-      'Bonus Project/ Komisi',
-      'Additonal Bonus',
-      'Total All Bonus',
-      'Persentase Total Bonus/ Omset'
+      'Bonus KPI (Profit Share)',
+      'Bonus Proyek',
+      'Total THP',
+      'Pending Bonus'
     ];
 
     const rows = filteredRecapRows.map((item, idx) => [
       idx + 1,
-      `"${item.nama}"`,
+      `"${item.employee.nama}"`,
+      `"${item.employee.nik || '-'}"`,
       `"${item.jabatanName}"`,
       `"${item.departemen}"`,
       `"${item.periodeKPI}"`,
       item.kpiScore !== null ? item.kpiScore.toFixed(2).replace('.', ',') : '-',
       `"${item.kpiGrade?.code || '-'}"`,
+      item.kpiApproved ? '"Approved"' : '"Draft"',
       item.gajiPokok,
-      `${item.persentaseBonus}%`,
-      item.bonusBulanan,
+      item.calculatedBonus,
       item.bonusProjectKomisi,
-      item.additionalBonus,
-      item.totalAllBonus,
-      `${item.persentaseTotalBonusOmset.toFixed(2).replace('.', ',')}%`
+      item.totalTakeHomePay,
+      item.deferredProjectBonus
     ]);
+
+    const totalGaji = filteredRecapRows.reduce((sum, r) => sum + (r.gajiPokok || 0), 0);
+    const totalBonusKPI = filteredRecapRows.reduce((sum, r) => sum + (r.calculatedBonus || 0), 0);
+    const totalBonusProyek = filteredRecapRows.reduce((sum, r) => sum + (r.bonusProjectKomisi || 0), 0);
+    const totalTHP = filteredRecapRows.reduce((sum, r) => sum + (r.totalTakeHomePay || 0), 0);
+    const totalPending = filteredRecapRows.reduce((sum, r) => sum + (r.deferredProjectBonus || 0), 0);
 
     const totalRow = [
       '',
@@ -2661,13 +2693,13 @@ export default function KPIModule({
       '',
       '',
       '',
-      rekapTotals.gajiPokok,
-      '-',
-      rekapTotals.bonusBulanan,
-      rekapTotals.bonusProjectKomisi,
-      rekapTotals.additionalBonus,
-      rekapTotals.totalAllBonus,
-      `${rekapTotals.persentaseTotalBonusOmset.toFixed(2).replace('.', ',')}%`
+      '',
+      '',
+      totalGaji,
+      totalBonusKPI,
+      totalBonusProyek,
+      totalTHP,
+      totalPending
     ];
 
     const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';')), totalRow.join(';')].join('\n');
@@ -2675,10 +2707,70 @@ export default function KPIModule({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Bonus_Bulanan_KPI_${filterYear}_${filterMonth}.csv`);
+    link.setAttribute('download', `Rincian_Slip_Gaji_THP_${filterYear}_${filterMonth}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Helper to open print preview modal for an employee from the Recap table
+  const handleOpenPrintPreviewForEmployee = (empItem: (typeof filteredRecapRows)[0]) => {
+    const empId = empItem.employee.id;
+    const existingRecord = kpiRecords.find(r => r.id === `kpi-${empId}-${filterMonth}-${filterYear}`);
+    const indSheet = employeeIndividualSheets[empId];
+    const tpl = activeTemplateForEmployee(empItem.employee);
+    
+    const hardKPIs = (existingRecord?.hardKPIs && existingRecord.hardKPIs.length > 0)
+      ? existingRecord.hardKPIs
+      : (indSheet?.hardKPIs && indSheet.hardKPIs.length > 0)
+        ? indSheet.hardKPIs
+        : (tpl?.indicators || []).map(ind => {
+            const realVal = existingRecord?.scores?.[ind.id] ?? 80;
+            const targetVal = ind.target || 100;
+            const bobotVal = ind.bobot || 0;
+            return {
+              indicatorId: ind.id,
+              name: ind.name,
+              bobot: bobotVal,
+              metode: (ind.metode || 'Maximize') as 'Maximize' | 'Minimize',
+              target: targetVal,
+              satuan: ind.satuan || '%',
+              realisasi: realVal,
+              score: Math.round((bobotVal * (realVal / Math.max(targetVal, 1))) * 100) / 100
+            };
+          });
+
+    const softSkills = (existingRecord?.softSkills && existingRecord.softSkills.length > 0)
+      ? existingRecord.softSkills
+      : (indSheet?.softSkills && indSheet.softSkills.length > 0)
+        ? indSheet.softSkills
+        : ((tpl?.softSkills && tpl.softSkills.length > 0) ? tpl.softSkills : DEFAULT_SOFT_SKILL_INDICATORS).map(ss => ({
+            name: ss.name,
+            bobot: ss.bobot,
+            nilai: 80,
+            score: Math.round(((ss.bobot / 100) * 80) * 100) / 100
+          }));
+
+    const hardWeight = existingRecord?.hardWeight ?? indSheet?.hardWeight ?? tpl?.hardWeight ?? 80;
+    const softWeight = existingRecord?.softWeight ?? indSheet?.softWeight ?? tpl?.softWeight ?? 20;
+    const finalScore = empItem.kpiScore ?? 80;
+
+    const printObj: KPIRecord = {
+      id: existingRecord?.id || `kpi-${empId}-${filterMonth}-${filterYear}`,
+      employeeId: empId,
+      month: filterMonth,
+      year: filterYear,
+      scores: existingRecord?.scores || {},
+      status: empItem.kpiApproved ? 'approved' : 'draft',
+      notes: existingRecord?.notes || '',
+      hardKPIs,
+      softSkills,
+      hardWeight,
+      softWeight,
+      finalScore
+    };
+
+    setPrintModalRecord(printObj);
   };
 
   // Sync active month financials from live company financials
@@ -3275,19 +3367,19 @@ export default function KPIModule({
                       </div>
                     )}
 
-                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
                       <table className="w-full text-left border-collapse">
                         <thead>
                           <tr className="bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
                             <th className="p-3 w-8 text-center">No</th>
-                            <th className="p-3 min-w-[180px]">Key Result Area & Indikator</th>
-                            <th className="p-3 w-16 text-center">Bobot</th>
-                            <th className="p-3 w-20 text-center">Metode</th>
-                            <th className="p-3 w-16 text-center">Target</th>
-                            <th className="p-3 w-14 text-center">Satuan</th>
-                            <th className="p-3 w-20 text-center">Realisasi</th>
-                            <th className="p-3 w-14 text-center">Satuan</th>
-                            <th className="p-3 w-16 text-right">Nilai</th>
+                            <th className="p-3 min-w-[240px]">Key Result Area & Indikator</th>
+                            <th className="p-3 w-20 text-center">Bobot</th>
+                            <th className="p-3 w-24 text-center">Metode</th>
+                            <th className="p-3 min-w-[130px] text-center">Target</th>
+                            <th className="p-3 w-16 text-center">Satuan</th>
+                            <th className="p-3 min-w-[130px] text-center">Realisasi</th>
+                            <th className="p-3 w-16 text-center">Satuan</th>
+                            <th className="p-3 w-20 text-right">Nilai</th>
                             <th className="p-3 w-10 text-center">Aksi</th>
                           </tr>
                         </thead>
@@ -3305,10 +3397,10 @@ export default function KPIModule({
                                     placeholder="Nama Indikator KPI..."
                                     className="p-1.5 bg-white border border-slate-200 hover:border-violet-300 focus:border-violet-500 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-violet-500 transition-colors"
                                   />
-                                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                                     {idx === 0 && isSalesRole(selectedEmployee) ? (
                                       <div className="flex flex-wrap items-center gap-1.5 w-full">
-                                        <span className="text-[9px] font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1 shadow-xs">
+                                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-300 inline-flex items-center gap-1 shadow-xs">
                                           ✓ Terhubung Otomatis ke Pencapaian (Omset Kotor) Bonus Project
                                         </span>
                                         <button
@@ -3325,7 +3417,7 @@ export default function KPIModule({
                                               updateHardKPIField(0, 'metode', 'Maximize');
                                             }
                                           }}
-                                          className="text-[9px] font-bold text-violet-700 hover:text-violet-900 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-2 py-0.5 rounded inline-flex items-center gap-1 transition-colors"
+                                          className="text-[10px] font-bold text-violet-700 hover:text-violet-900 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1 transition-colors shrink-0 shadow-xs"
                                           title="Sinkronkan ulang data dari Tabel Bonus Project Bulan Ini"
                                         >
                                           <RefreshCw className="w-2.5 h-2.5" />
@@ -3347,11 +3439,11 @@ export default function KPIModule({
                                       type="number"
                                       min="0"
                                       max="100"
-                                      value={item.bobot}
-                                      onChange={(e) => updateHardKPIField(idx, 'bobot', parseFloat(e.target.value) || 0)}
-                                      className="w-12 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-violet-500 outline-none"
+                                      value={item.bobot === '' ? '' : item.bobot}
+                                      onChange={(e) => updateHardKPIField(idx, 'bobot', e.target.value)}
+                                      className="w-14 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-violet-500 outline-none"
                                     />
-                                    <span>%</span>
+                                    <span className="text-slate-400 font-bold">%</span>
                                   </div>
                                 </td>
                                 <td className="p-3 text-center">
@@ -3368,7 +3460,7 @@ export default function KPIModule({
                                   <FormattedNumberInput
                                     value={item.target}
                                     onChange={(val) => updateHardKPIField(idx, 'target', val)}
-                                    className="w-20 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold font-mono focus:ring-1 focus:ring-violet-500 outline-none"
+                                    className="w-28 sm:w-32 p-1.5 text-center bg-white border border-slate-200 rounded text-xs font-bold font-mono focus:ring-1 focus:ring-violet-500 outline-none"
                                     allowDecimal
                                   />
                                 </td>
@@ -3387,7 +3479,7 @@ export default function KPIModule({
                                   <FormattedNumberInput
                                     value={item.realisasi}
                                     onChange={(val) => updateHardKPIField(idx, 'realisasi', val)}
-                                    className="w-20 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-violet-700 font-mono focus:ring-1 focus:ring-violet-500 outline-none"
+                                    className="w-28 sm:w-32 p-1.5 text-center bg-white border border-slate-200 rounded text-xs font-black text-violet-700 font-mono focus:ring-1 focus:ring-violet-500 outline-none"
                                     allowDecimal
                                   />
                                 </td>
@@ -3448,27 +3540,38 @@ export default function KPIModule({
                             const isValid = total === 100;
                             const isOver = total > 100;
                             return (
-                              <tr className={`font-bold ${isOver ? 'bg-red-50 text-red-900' : isValid ? 'bg-slate-50 text-slate-700' : 'bg-amber-50/60 text-amber-900'}`}>
-                                <td colSpan={2} className="p-3 text-right text-[10px] uppercase tracking-wider text-slate-500">
-                                  Total Akumulasi Bobot KPI (Hard)
+                              <tr className={`font-bold ${isOver ? 'bg-red-50/70 text-red-900 border-t-2 border-red-200' : isValid ? 'bg-slate-50 text-slate-700 border-t-2 border-slate-200' : 'bg-amber-50/70 text-amber-900 border-t-2 border-amber-200'}`}>
+                                <td colSpan={2} className="p-3 text-right text-[11px] uppercase tracking-wider text-slate-600 font-bold">
+                                  TOTAL AKUMULASI BOBOT KPI (HARD)
                                 </td>
-                                <td className="p-3 text-center">
-                                  <span className={`inline-flex items-center gap-1 font-mono font-black px-2 py-0.5 rounded text-xs ${
-                                    isOver ? 'bg-red-100 text-red-700 border border-red-300 animate-pulse' :
-                                    isValid ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                    'bg-amber-100 text-amber-800 border border-amber-300'
+                                <td className="p-3 text-center whitespace-nowrap">
+                                  <span className={`font-mono font-black text-xs px-2.5 py-1 rounded border inline-block ${
+                                    isOver ? 'bg-red-100 text-red-700 border-red-300' :
+                                    isValid ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                                    'bg-amber-100 text-amber-800 border-amber-300'
                                   }`}>
-                                    {total}% {isOver ? '(⚠️ Melebihi 100%!)' : isValid ? '(100% Valid)' : `(Tersisa ${100 - total}%)`}
+                                    {total}%
                                   </span>
                                 </td>
-                                <td colSpan={6}>
-                                  {isOver && (
-                                    <span className="text-[10px] text-red-600 font-bold">
-                                      ⚠️ Peringatan: Total bobot melebihi 100%! Harap kurangi bobot indikator sebelum menyimpan.
+                                <td colSpan={5} className="p-3">
+                                  {isOver ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-100/60 px-3 py-1 rounded-lg border border-red-200">
+                                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600" />
+                                      <span>⚠️ Peringatan: Total bobot melebihi 100%! Harap kurangi bobot indikator sebelum menyimpan.</span>
+                                    </span>
+                                  ) : isValid ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-100/60 px-3 py-1 rounded-lg border border-emerald-200">
+                                      <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                                      <span>✓ 100% Valid (Total bobot pas 100%)</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-100/60 px-3 py-1 rounded-lg border border-amber-200">
+                                      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                      <span>Tersisa {100 - total}% lagi untuk mencapai 100%</span>
                                     </span>
                                   )}
                                 </td>
-                                <td className="p-3 text-right font-black font-mono text-slate-900">{formatDotNumber(getHardKPITotal(hardKPIInputs).toFixed(2))}</td>
+                                <td className="p-3 text-right font-black font-mono text-slate-900 whitespace-nowrap">{formatDotNumber(getHardKPITotal(hardKPIInputs).toFixed(2))}</td>
                                 <td></td>
                               </tr>
                             );
@@ -3575,11 +3678,11 @@ export default function KPIModule({
                                     type="number"
                                     min="0"
                                     max="100"
-                                    value={item.bobot}
-                                    onChange={(e) => updateSoftSkillField(idx, 'bobot', parseFloat(e.target.value) || 0)}
-                                    className="w-12 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-emerald-500 outline-none"
+                                    value={item.bobot === '' ? '' : item.bobot}
+                                    onChange={(e) => updateSoftSkillField(idx, 'bobot', e.target.value)}
+                                    className="w-14 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-emerald-500 outline-none"
                                   />
-                                  <span>%</span>
+                                  <span className="text-slate-400 font-bold">%</span>
                                 </div>
                               </td>
                               <td className="p-3 text-center">
@@ -3610,27 +3713,38 @@ export default function KPIModule({
                             const isValid = totalSoftBobot === 100;
                             const isOver = totalSoftBobot > 100;
                             return (
-                              <tr className={`font-bold ${isOver ? 'bg-red-50 text-red-900' : isValid ? 'bg-slate-50 text-slate-700' : 'bg-amber-50/60 text-amber-900'}`}>
-                                <td colSpan={2} className="p-3 text-right text-[10px] uppercase tracking-wider text-slate-500">
-                                  Total Akumulasi Bobot Soft Skill (Bagian B)
+                              <tr className={`font-bold ${isOver ? 'bg-red-50/70 text-red-900 border-t-2 border-red-200' : isValid ? 'bg-slate-50 text-slate-700 border-t-2 border-slate-200' : 'bg-amber-50/70 text-amber-900 border-t-2 border-amber-200'}`}>
+                                <td colSpan={2} className="p-3 text-right text-[11px] uppercase tracking-wider text-slate-600 font-bold">
+                                  TOTAL AKUMULASI BOBOT SOFT SKILL (BAGIAN B)
                                 </td>
-                                <td className="p-3 text-center">
-                                  <span className={`inline-flex items-center gap-1 font-mono font-black px-2 py-0.5 rounded text-xs ${
-                                    isOver ? 'bg-red-100 text-red-700 border border-red-300 animate-pulse' :
-                                    isValid ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                    'bg-amber-100 text-amber-800 border border-amber-300'
+                                <td className="p-3 text-center whitespace-nowrap">
+                                  <span className={`font-mono font-black text-xs px-2.5 py-1 rounded border inline-block ${
+                                    isOver ? 'bg-red-100 text-red-700 border-red-300' :
+                                    isValid ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                                    'bg-amber-100 text-amber-800 border-amber-300'
                                   }`}>
-                                    {totalSoftBobot}% {isOver ? '(⚠️ Melebihi 100%!)' : isValid ? '(100% Valid)' : `(Tersisa ${100 - totalSoftBobot}%)`}
+                                    {totalSoftBobot}%
                                   </span>
                                 </td>
-                                <td colSpan={1}>
-                                  {isOver && (
-                                    <span className="text-[10px] text-red-600 font-bold">
-                                      ⚠️ Melebihi 100%!
+                                <td colSpan={1} className="p-3">
+                                  {isOver ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-100/60 px-2.5 py-0.5 rounded-lg border border-red-200">
+                                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600" />
+                                      <span>⚠️ Melebihi 100%!</span>
+                                    </span>
+                                  ) : isValid ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-100/60 px-2.5 py-0.5 rounded-lg border border-emerald-200">
+                                      <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                                      <span>✓ 100% Valid</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-100/60 px-2.5 py-0.5 rounded-lg border border-amber-200">
+                                      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                      <span>Tersisa {100 - totalSoftBobot}%</span>
                                     </span>
                                   )}
                                 </td>
-                                <td className="p-3 text-right font-black font-mono text-slate-900">{formatDotNumber(getSoftSkillTotal(softSkillInputs).toFixed(2))}</td>
+                                <td className="p-3 text-right font-black font-mono text-slate-900 whitespace-nowrap">{formatDotNumber(getSoftSkillTotal(softSkillInputs).toFixed(2))}</td>
                                 <td></td>
                               </tr>
                             );
@@ -3808,25 +3922,32 @@ export default function KPIModule({
             </div>
           </div>
 
-          {/* Master Excel BONUS BULANAN Table as in Attachment */}
-          <div className="bg-white rounded-2xl border border-slate-300 shadow-md overflow-hidden font-sans">
-            {/* Top Bar with Excel-style title and Total Omset Bersih widget */}
+          {/* Rincian Slip Gaji Karyawan & Take Home Pay (THP) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden font-sans">
+            {/* Top Bar with title and Total THP widget */}
             <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="bg-[#00a2e8] text-white px-5 py-2 rounded-lg font-black text-sm tracking-wider uppercase flex items-center gap-2 shadow-sm border border-sky-400">
-                  <span>BONUS BULANAN</span>
-                  <span className="text-yellow-300 text-xs">▼</span>
+                <div className="p-2.5 bg-violet-600 text-white rounded-xl shadow-sm">
+                  <FileText size={18} />
                 </div>
-                <div className="text-xs text-slate-500 font-semibold hidden sm:block">
-                  Format tabel sinkron 1:1 dengan acuan KPI.xlsx & Live Financial
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <span>Rincian Slip Gaji & Rekap Kinerja Karyawan</span>
+                    <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                      Periode {filterMonth}/{filterYear}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Rekapitulasi gaji pokok, capaian skor KPI, profit sharing bonus, bonus proyek, dan total take home pay (THP)
+                  </p>
                 </div>
               </div>
 
-              {/* Total Omset Bersih widget on top right */}
+              {/* Total THP widget on top right */}
               <div className="flex items-center gap-2.5 self-end md:self-auto">
-                <span className="text-xs font-black text-slate-700 uppercase tracking-tight">Total Omset Bersih</span>
-                <div className="bg-[#fef08a] border-2 border-amber-300 px-4 py-1.5 rounded-lg text-xs font-mono font-black text-slate-900 shadow-sm">
-                  {formatRupiah(calculatedOmsetBersih)}
+                <span className="text-xs font-black text-slate-700 uppercase tracking-tight">Total Seluruh THP</span>
+                <div className="bg-emerald-50 border-2 border-emerald-300 px-4 py-1.5 rounded-xl text-xs font-mono font-black text-emerald-800 shadow-xs">
+                  {formatRupiah(rekapTotals.gajiPokok + rekapTotals.totalAllBonus)}
                 </div>
               </div>
             </div>
@@ -3834,7 +3955,7 @@ export default function KPIModule({
             {/* Filter & Action Toolbar */}
             <div className="p-3.5 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm">
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs">
                   <Filter size={13} className="text-slate-400" />
                   <span className="font-bold text-slate-500 text-[11px] uppercase">Departemen:</span>
                   <select
@@ -3850,7 +3971,7 @@ export default function KPIModule({
                   </select>
                 </div>
 
-                <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm">
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs">
                   <User size={13} className="text-slate-400" />
                   <input
                     type="text"
@@ -3860,250 +3981,35 @@ export default function KPIModule({
                     className="font-bold text-slate-700 bg-transparent outline-none w-36 placeholder:text-slate-400 text-xs"
                   />
                 </div>
-
-                <button
-                  onClick={handleSyncWithLiveFinancials}
-                  className="px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold rounded-xl border border-violet-200 transition-colors flex items-center gap-1.5 shadow-sm text-xs"
-                  title="Sinkronkan dengan nilai Live Financial Parameters"
-                >
-                  <RefreshCw size={12} />
-                  <span>Samakan dg Live Financial</span>
-                </button>
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="flex items-center bg-slate-200/80 p-0.5 rounded-xl text-[11px] font-bold">
-                  <button
-                    onClick={() => setRekapViewMode('excel')}
-                    className={`px-3 py-1 rounded-lg transition-all ${rekapViewMode === 'excel' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
-                  >
-                    Tabel Bonus Bulanan
-                  </button>
-                  <button
-                    onClick={() => setRekapViewMode('slip')}
-                    className={`px-3 py-1 rounded-lg transition-all ${rekapViewMode === 'slip' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
-                  >
-                    Rincian Slip Gaji THP
-                  </button>
-                </div>
-
                 <button
                   onClick={handleExportExcel}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center gap-1.5 text-xs"
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 text-xs"
                 >
-                  <FileSpreadsheet size={13} />
+                  <FileSpreadsheet size={14} />
                   <span>Export Excel</span>
                 </button>
               </div>
             </div>
-
-            {/* Table Content */}
-            {rekapViewMode === 'excel' ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse border border-slate-300 text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-300">
-                      {/* Blue Headers */}
-                      <th className="bg-[#00a2e8] text-white border border-slate-300 p-2.5 text-center font-black min-w-[45px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>No</span>
-                          <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded border border-white/40">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#00a2e8] text-white border border-slate-300 p-2.5 text-left font-black min-w-[130px]">
-                        <div className="flex items-center justify-between gap-1">
-                          <span>Nama</span>
-                          <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded border border-white/40">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#00a2e8] text-white border border-slate-300 p-2.5 text-left font-black min-w-[150px]">
-                        <div className="flex items-center justify-between gap-1">
-                          <span>Jabatan</span>
-                          <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded border border-white/40">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#00a2e8] text-white border border-slate-300 p-2.5 text-left font-black min-w-[110px]">
-                        <div className="flex items-center justify-between gap-1">
-                          <span>Departemen</span>
-                          <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded border border-white/40">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#00a2e8] text-white border border-slate-300 p-2.5 text-center font-black min-w-[100px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Periode KPI</span>
-                          <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded border border-white/40">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#00a2e8] text-white border border-slate-300 p-2.5 text-center font-black min-w-[90px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Score KPI</span>
-                          <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded border border-white/40">▼</span>
-                        </div>
-                      </th>
-                      {/* Yellow Headers */}
-                      <th className="bg-[#fef08a] text-slate-900 border border-slate-300 p-2.5 text-center font-black min-w-[80px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Grade KPI</span>
-                          <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded border border-black/20">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#fef08a] text-slate-900 border border-slate-300 p-2.5 text-center font-black min-w-[120px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Gaji Pokok</span>
-                          <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded border border-black/20">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#fef08a] text-slate-900 border border-slate-300 p-2.5 text-center font-black min-w-[100px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Persentase Bonus</span>
-                          <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded border border-black/20">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#fef08a] text-slate-900 border border-slate-300 p-2.5 text-center font-black min-w-[110px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Bonus Bulanan</span>
-                          <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded border border-black/20">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#fef08a] text-slate-900 border border-slate-300 p-2.5 text-center font-black min-w-[130px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Bonus Project/ Komisi</span>
-                          <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded border border-black/20">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#fef08a] text-slate-900 border border-slate-300 p-2.5 text-center font-black min-w-[110px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Additonal Bonus</span>
-                          <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded border border-black/20">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#fef08a] text-slate-900 border border-slate-300 p-2.5 text-center font-black min-w-[120px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Total All Bonus</span>
-                          <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded border border-black/20">▼</span>
-                        </div>
-                      </th>
-                      <th className="bg-[#fef08a] text-slate-900 border border-slate-300 p-2.5 text-center font-black min-w-[115px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Persentase Total Bonus/ Omset</span>
-                          <span className="text-[9px] bg-black/10 px-1 py-0.5 rounded border border-black/20">▼</span>
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-300 text-slate-800">
-                    {filteredRecapRows.map((item, idx) => {
-                      return (
-                        <tr key={item.employee.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-2.5 text-center font-bold text-slate-700 bg-white border border-slate-300">
-                            {idx + 1}
-                          </td>
-                          <td className="p-2.5 font-bold text-slate-900 bg-[#fef08a] border border-slate-300">
-                            {item.nama}
-                          </td>
-                          <td className="p-2.5 font-semibold text-slate-800 bg-white border border-slate-300">
-                            {item.jabatanName}
-                          </td>
-                          <td className="p-2.5 text-slate-700 bg-white border border-slate-300">
-                            {item.departemen}
-                          </td>
-                          <td className="p-2.5 text-center text-slate-700 font-medium bg-white border border-slate-300">
-                            {item.periodeKPI}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-bold text-slate-800 bg-white border border-slate-300">
-                            {item.kpiScore !== null ? item.kpiScore.toFixed(2).replace('.', ',') : '-'}
-                          </td>
-                          <td className={`p-2.5 text-center font-black border border-slate-300 ${
-                            item.kpiGrade?.code === 'A' ? 'bg-[#dcfce7] text-[#15803d]' :
-                            item.kpiGrade?.code === 'B' ? 'bg-[#dbeafe] text-[#1d4ed8]' :
-                            item.kpiGrade?.code === 'C' ? 'bg-[#fef08a] text-[#854d0e]' :
-                            item.kpiGrade?.code === 'D' ? 'bg-[#fed7aa] text-[#c2410c]' :
-                            item.kpiGrade?.code === 'E' ? 'bg-[#f87171] text-white font-black' :
-                            'bg-slate-50 text-slate-600'
-                          }`}>
-                            {item.kpiGrade?.code || '-'}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-bold bg-[#00a2e8] text-white border border-slate-300">
-                            {formatRupiah(item.gajiPokok)}
-                          </td>
-                          <td className="p-2.5 text-center font-mono font-bold text-slate-800 bg-white border border-slate-300">
-                            {item.persentaseBonus > 0 ? `${item.persentaseBonus}%` : '0'}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-semibold text-slate-800 bg-white border border-slate-300">
-                            {item.bonusBulanan > 0 ? formatRupiah(item.bonusBulanan) : 'Rp -'}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-bold text-slate-900 bg-[#e2e8f0] border border-slate-300">
-                            {item.bonusProjectKomisi > 0 ? formatRupiah(item.bonusProjectKomisi) : 'Rp -'}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-bold text-slate-900 bg-[#e2e8f0] border border-slate-300">
-                            <FormattedNumberInput
-                              value={item.additionalBonus || 0}
-                              onChange={(val) => {
-                                setAdditionalBonuses(prev => ({
-                                  ...prev,
-                                  [item.employee.id]: val
-                                }));
-                              }}
-                              placeholder="0"
-                              className="w-24 p-1 text-right bg-transparent border-b border-transparent hover:border-slate-400 focus:border-violet-500 outline-none font-mono font-bold text-xs"
-                            />
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-black text-slate-900 bg-[#dcfce7] border border-slate-300">
-                            {item.totalAllBonus > 0 ? formatRupiah(item.totalAllBonus) : 'Rp -'}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-black text-slate-900 bg-[#dcfce7] border border-slate-300">
-                            {item.persentaseTotalBonusOmset.toFixed(2).replace('.', ',')}%
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  {/* Summary Total Row */}
-                  <tfoot>
-                    <tr className="bg-slate-100 font-bold border-t-2 border-slate-400 text-xs">
-                      <td colSpan={7} className="p-3 text-right uppercase tracking-wider text-slate-700 font-black border border-slate-300">
-                        TOTAL:
-                      </td>
-                      <td className="p-3 text-right font-mono font-black bg-[#00a2e8] text-white border border-slate-300">
-                        {formatRupiah(rekapTotals.gajiPokok)}
-                      </td>
-                      <td className="p-3 text-center border border-slate-300 text-slate-500 font-mono">
-                        -
-                      </td>
-                      <td className="p-3 text-right font-mono font-black text-slate-800 border border-slate-300">
-                        {rekapTotals.bonusBulanan > 0 ? formatRupiah(rekapTotals.bonusBulanan) : 'Rp -'}
-                      </td>
-                      <td className="p-3 text-right font-mono font-black text-slate-900 bg-[#e2e8f0] border border-slate-300">
-                        {rekapTotals.bonusProjectKomisi > 0 ? formatRupiah(rekapTotals.bonusProjectKomisi) : 'Rp -'}
-                      </td>
-                      <td className="p-3 text-right font-mono font-black text-slate-900 bg-[#e2e8f0] border border-slate-300">
-                        {rekapTotals.additionalBonus > 0 ? formatRupiah(rekapTotals.additionalBonus) : 'Rp -'}
-                      </td>
-                      <td className="p-3 text-right font-mono font-black text-slate-900 bg-[#dcfce7] border border-slate-300">
-                        {rekapTotals.totalAllBonus > 0 ? formatRupiah(rekapTotals.totalAllBonus) : 'Rp -'}
-                      </td>
-                      <td className="p-3 text-right font-mono font-black text-slate-900 bg-[#dcfce7] border border-slate-300">
-                        {rekapTotals.persentaseTotalBonusOmset.toFixed(2).replace('.', ',')}%
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            ) : (
+              
               /* Pay slip view */
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100">
-                      <th className="p-4">Nama Karyawan</th>
-                      <th className="p-4">Jabatan</th>
-                      <th className="p-4">Skor KPI</th>
-                      <th className="p-4">Status KPI</th>
-                      <th className="p-4">Gaji Pokok</th>
-                      <th className="p-4">Bonus KPI (Profit Share)</th>
-                      <th className="p-4">Bonus Proyek</th>
-                      <th className="p-4">Total THP</th>
-                      <th className="p-4">Pending Bonus</th>
+                    <tr className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase border-b border-slate-200">
+                      <th className="p-3 w-10 text-center">No</th>
+                      <th className="p-3 min-w-[180px]">Nama Karyawan</th>
+                      <th className="p-3 min-w-[140px]">Jabatan</th>
+                      <th className="p-3 w-28 text-center">Skor & Grade</th>
+                      <th className="p-3 w-24 text-center">Status KPI</th>
+                      <th className="p-3 min-w-[130px] text-right">Gaji Pokok</th>
+                      <th className="p-3 min-w-[130px] text-right">Bonus KPI (Profit Share)</th>
+                      <th className="p-3 min-w-[130px] text-right">Bonus Proyek</th>
+                      <th className="p-3 min-w-[140px] text-right bg-slate-100/60 font-black text-slate-900">Total THP</th>
+                      <th className="p-3 w-28 text-center">Pending Bonus</th>
+                      <th className="p-3 w-24 text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
@@ -4112,13 +4018,16 @@ export default function KPIModule({
                         <td colSpan={9} className="p-8 text-center text-slate-400">Belum ada rekap data bulan ini.</td>
                       </tr>
                     ) : (
-                      filteredRecapRows.map(item => {
+                      filteredRecapRows.map((item, idx) => {
                         const salaryVisible = showSalaryMap[item.employee.id] || false;
                         const hasReadPermission = isAuthorizedToSeeSalary || currentUser?.nama === item.employee.nama;
 
                         return (
-                          <tr key={item.employee.id} className="hover:bg-slate-50/50">
-                            <td className="p-4">
+                          <tr key={item.employee.id} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="p-3 text-center font-mono text-[11px] text-slate-400">
+                              {idx + 1}
+                            </td>
+                            <td className="p-3">
                               <span className="font-bold text-slate-900 block">{item.employee.nama}</span>
                               <span className="text-[9px] text-slate-400 uppercase font-mono mt-0.5">NIK: {item.employee.nik || '-'}</span>
                             </td>
@@ -4182,24 +4091,63 @@ export default function KPIModule({
                                 <span className="text-slate-400"><Lock size={12} className="inline mr-1" /> Terkunci</span>
                               )}
                             </td>
-                            <td className="p-4">
+                            <td className="p-3 text-center">
                               {item.deferredProjectBonus > 0 ? (
-                                <div className="flex items-center gap-1 text-amber-600 font-bold" title="Bonus ditangguhkan karena Invoice Belum Lunas">
-                                  <AlertCircle size={12} />
+                                <div className="inline-flex items-center gap-1 text-amber-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md text-[11px]" title="Bonus ditangguhkan karena Invoice Belum Lunas">
+                                  <AlertCircle size={11} />
                                   <span className="font-mono">{formatRupiah(item.deferredProjectBonus)}</span>
                                 </div>
                               ) : (
                                 <span className="text-slate-300">-</span>
                               )}
                             </td>
+                            <td className="p-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPrintPreviewForEmployee(item)}
+                                className="px-2.5 py-1 bg-white hover:bg-violet-50 text-violet-700 hover:text-violet-900 border border-violet-200 hover:border-violet-300 rounded-lg text-xs font-bold transition-all shadow-2xs inline-flex items-center gap-1 cursor-pointer"
+                                title={`Preview Lembar KPI & Slip Gaji ${item.employee.nama}`}
+                              >
+                                <Printer size={12} />
+                                <span>Cetak</span>
+                              </button>
+                            </td>
                           </tr>
                         );
                       })
                     )}
                   </tbody>
-                </table>
+                {/* Summary Total Row */}
+                {filteredRecapRows.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-slate-100/90 font-bold border-t-2 border-slate-300 text-xs">
+                      <td colSpan={5} className="p-3.5 text-right uppercase tracking-wider text-slate-800 font-black">
+                        TOTAL KESELURUHAN:
+                      </td>
+                      <td className="p-3.5 text-right font-mono font-black text-slate-900">
+                        {isAuthorizedToSeeSalary ? formatRupiah(filteredRecapRows.reduce((sum, r) => sum + (r.gajiPokok || 0), 0)) : '••••••••'}
+                      </td>
+                      <td className="p-3.5 text-right font-mono font-black text-slate-900">
+                        {isAuthorizedToSeeSalary ? formatRupiah(filteredRecapRows.reduce((sum, r) => sum + (r.calculatedBonus || 0), 0)) : '••••••••'}
+                      </td>
+                      <td className="p-3.5 text-right font-mono font-black text-slate-900">
+                        {isAuthorizedToSeeSalary ? formatRupiah(filteredRecapRows.reduce((sum, r) => sum + (r.bonusProjectKomisi || 0), 0)) : '••••••••'}
+                      </td>
+                      <td className="p-3.5 text-right font-mono font-black text-emerald-800 bg-emerald-100/70">
+                        {isAuthorizedToSeeSalary ? formatRupiah(filteredRecapRows.reduce((sum, r) => sum + (r.totalTakeHomePay || 0), 0)) : '••••••••'}
+                      </td>
+                      <td className="p-3.5 text-center font-mono font-bold text-amber-800">
+                        {(() => {
+                          const defTotal = filteredRecapRows.reduce((sum, r) => sum + (r.deferredProjectBonus || 0), 0);
+                          return defTotal > 0 ? formatRupiah(defTotal) : '-';
+                        })()}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
               </div>
-            )}
           </div>
         </div>
       )}
@@ -6368,15 +6316,52 @@ export default function KPIModule({
             <div className="p-10 overflow-y-auto flex-1 space-y-6 print:overflow-visible print:p-0 font-sans text-slate-800 bg-white" id="printable-kpi-sheet">
               {/* Header Letterhead */}
               <div className="text-center border-b-2 border-slate-900 pb-4 space-y-1">
-                <h1 className="text-xl font-black uppercase tracking-wide text-slate-900">PT PANCA PILAR TANGGUH</h1>
+                <h1 className="text-xl font-black uppercase tracking-wide text-slate-900">PT PANCA PRIMA WIJAYA</h1>
                 <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">LEMBAR KEY PERFORMANCE INDICATOR (KPI)</h2>
                 <div className="text-[10px] text-slate-400 font-mono">Bulan: {printModalRecord.month} | Tahun: {printModalRecord.year}</div>
               </div>
 
               {/* Employee & Company Meta Grid */}
               {(() => {
-                const emp = employees.find(e => e.id === printModalRecord.employeeId);
+                const emp = companyEmployees.find(e => e.id === printModalRecord.employeeId) || employees.find(e => e.id === printModalRecord.employeeId);
+                const empJab = jabatans.find(j => j.id === (emp as any)?.jabatanId);
+                const empJabatanName = empJab?.name || (emp as any)?.jabatan || (emp as any)?.role || 'Staff';
                 const gradeObj = getKPIGrade(printModalRecord.finalScore || 0);
+
+                // Ensure indicators and soft skills fallback if not in record
+                const activeEmpSheet = emp ? employeeIndividualSheets[emp.id] : null;
+                const activeEmpTemplate = emp ? activeTemplateForEmployee(emp) : null;
+
+                const hardKPIsToRender = (printModalRecord.hardKPIs && printModalRecord.hardKPIs.length > 0)
+                  ? printModalRecord.hardKPIs
+                  : (activeEmpSheet?.hardKPIs && activeEmpSheet.hardKPIs.length > 0)
+                    ? activeEmpSheet.hardKPIs
+                    : (activeEmpTemplate?.indicators || []).map(ind => {
+                        const realVal = printModalRecord.scores?.[ind.id] ?? 80;
+                        const targetVal = ind.target || 100;
+                        const bobotVal = ind.bobot || 0;
+                        return {
+                          indicatorId: ind.id,
+                          name: ind.name,
+                          bobot: bobotVal,
+                          metode: (ind.metode || 'Maximize') as 'Maximize' | 'Minimize',
+                          target: targetVal,
+                          satuan: ind.satuan || '%',
+                          realisasi: realVal,
+                          score: Math.round((bobotVal * (realVal / Math.max(targetVal, 1))) * 100) / 100
+                        };
+                      });
+
+                const softSkillsToRender = (printModalRecord.softSkills && printModalRecord.softSkills.length > 0)
+                  ? printModalRecord.softSkills
+                  : (activeEmpSheet?.softSkills && activeEmpSheet.softSkills.length > 0)
+                    ? activeEmpSheet.softSkills
+                    : ((activeEmpTemplate?.softSkills && activeEmpTemplate.softSkills.length > 0) ? activeEmpTemplate.softSkills : DEFAULT_SOFT_SKILL_INDICATORS).map(ss => ({
+                        name: ss.name,
+                        bobot: ss.bobot,
+                        nilai: 80,
+                        score: Math.round(((ss.bobot / 100) * 80) * 100) / 100
+                      }));
 
                 return (
                   <>
@@ -6390,7 +6375,7 @@ export default function KPIModule({
                         <div className="flex">
                           <span className="w-28 text-slate-400 font-medium">JABATAN</span>
                           <span className="w-4 text-slate-400">:</span>
-                          <span className="font-bold text-slate-700 uppercase">{emp?.jabatan || emp?.role || 'STAFF'}</span>
+                          <span className="font-bold text-slate-700 uppercase">{empJabatanName.toUpperCase()}</span>
                         </div>
                         <div className="flex">
                           <span className="w-28 text-slate-400 font-medium">NIK</span>
@@ -6438,7 +6423,7 @@ export default function KPIModule({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
-                          {(printModalRecord.hardKPIs ?? []).map((item: any, idx: number) => (
+                          {hardKPIsToRender.map((item: any, idx: number) => (
                             <tr key={idx} className="bg-white">
                               <td className="p-2 border-r border-slate-300 text-center font-mono text-slate-400">{idx + 1}</td>
                               <td className="p-2 border-r border-slate-300 font-semibold text-slate-800">{item.name}</td>
@@ -6453,7 +6438,7 @@ export default function KPIModule({
                             <td colSpan={2} className="p-2 border-r border-slate-300 text-right uppercase text-[10px] tracking-wide text-slate-400">Total Nilai KPI (A)</td>
                             <td className="p-2 border-r border-slate-300 text-center">100%</td>
                             <td colSpan={3} className="border-r border-slate-300"></td>
-                            <td className="p-2 text-right font-black text-slate-950 font-mono">{formatDotNumber(getHardKPITotal(printModalRecord.hardKPIs ?? []).toFixed(2))}</td>
+                            <td className="p-2 text-right font-black text-slate-950 font-mono">{formatDotNumber(getHardKPITotal(hardKPIsToRender).toFixed(2))}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -6477,7 +6462,7 @@ export default function KPIModule({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
-                          {(printModalRecord.softSkills ?? []).map((item: any, idx: number) => (
+                          {softSkillsToRender.map((item: any, idx: number) => (
                             <tr key={idx} className="bg-white">
                               <td className="p-2 border-r border-slate-300 text-center font-mono text-slate-400">{idx + 1}</td>
                               <td className="p-2 border-r border-slate-300 font-semibold text-slate-800">{item.name}</td>
@@ -6490,7 +6475,7 @@ export default function KPIModule({
                             <td colSpan={2} className="p-2 border-r border-slate-300 text-right uppercase text-[10px] tracking-wide text-slate-400">Total Nilai Soft Skill (B)</td>
                             <td className="p-2 border-r border-slate-300 text-center">100%</td>
                             <td className="border-r border-slate-300"></td>
-                            <td className="p-2 text-right font-black text-slate-950 font-mono">{formatDotNumber(getSoftSkillTotal(printModalRecord.softSkills ?? []).toFixed(2))}</td>
+                            <td className="p-2 text-right font-black text-slate-950 font-mono">{formatDotNumber(getSoftSkillTotal(softSkillsToRender).toFixed(2))}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -6502,13 +6487,13 @@ export default function KPIModule({
                         <div className="flex justify-between">
                           <span className="text-slate-500 font-semibold">Skor KPI (A) Weighted ({printModalRecord.hardWeight ?? 80}%):</span>
                           <span className="font-bold text-slate-700">
-                            {((getHardKPITotal(printModalRecord.hardKPIs ?? []) * (printModalRecord.hardWeight ?? 80)) / 100).toFixed(2)}
+                            {((getHardKPITotal(hardKPIsToRender) * (printModalRecord.hardWeight ?? 80)) / 100).toFixed(2)}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-500 font-semibold">Skor Soft Skill (B) Weighted ({printModalRecord.softWeight ?? 20}%):</span>
                           <span className="font-bold text-slate-700">
-                            {((getSoftSkillTotal(printModalRecord.softSkills ?? []) * (printModalRecord.softWeight ?? 20)) / 100).toFixed(2)}
+                            {((getSoftSkillTotal(softSkillsToRender) * (printModalRecord.softWeight ?? 20)) / 100).toFixed(2)}
                           </span>
                         </div>
                         <div className="flex justify-between border-t border-slate-200 pt-1.5 font-black text-sm text-slate-900">
@@ -6540,8 +6525,8 @@ export default function KPIModule({
 
                       <div className="space-y-14">
                         <div>Disetujui oleh,</div>
-                        <div className="border-b border-slate-400 mx-6 pb-1 font-bold uppercase">RUDI</div>
-                        <div className="text-slate-400 text-[10px] -mt-1">Direktur PPT</div>
+                        <div className="border-b border-slate-400 mx-6 pb-1 font-bold uppercase">Patrick Prayoga</div>
+                        <div className="text-slate-400 text-[10px] -mt-1">Direktur</div>
                       </div>
                     </div>
                   </>
