@@ -603,12 +603,27 @@ export default function KPIModule({
 
   const [salesCommissions, setSalesCommissions] = useState<SalesCommission[]>(() => {
     const saved = localStorage.getItem('mypanca_kpi_commissions');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.some((p: any) => p.pencapaian.includes('100') && p.komisi === 3)) {
+          return [
+            { id: 'com-1', pencapaian: '120 %', komisi: 3 },
+            { id: 'com-2', pencapaian: '100 %', komisi: 2 },
+            { id: 'com-3', pencapaian: '80 %', komisi: 1 },
+            { id: 'com-4', pencapaian: '< 80 %', komisi: 0 }
+          ];
+        }
+        return parsed;
+      } catch (e) {
+        console.error(e);
+      }
+    }
     return [
-      { id: 'com-1', pencapaian: '120 %', komisi: 4 },
-      { id: 'com-2', pencapaian: '100 %', komisi: 3 },
-      { id: 'com-3', pencapaian: '80 %', komisi: 2 },
-      { id: 'com-4', pencapaian: '< 80 %', komisi: 1 }
+      { id: 'com-1', pencapaian: '120 %', komisi: 3 },
+      { id: 'com-2', pencapaian: '100 %', komisi: 2 },
+      { id: 'com-3', pencapaian: '80 %', komisi: 1 },
+      { id: 'com-4', pencapaian: '< 80 %', komisi: 0 }
     ];
   });
 
@@ -968,22 +983,22 @@ export default function KPIModule({
     return months[num - 1] || 'Juli';
   };
 
-  // Commission % lookup from Sales Commissions table
+  // Commission % lookup from Sales Commissions table (Matching KPI.xlsx Main T&C C32:D35)
   const getSalesCommissionPercent = (capaianPct: number): number => {
     if (capaianPct >= 120) {
       const match = salesCommissions.find(s => s.pencapaian.includes('120'));
-      if (match) return match.komisi;
+      return match ? match.komisi : 3;
     }
     if (capaianPct >= 100) {
       const match = salesCommissions.find(s => s.pencapaian.includes('100'));
-      if (match) return match.komisi;
+      return match ? match.komisi : 2;
     }
     if (capaianPct >= 80) {
       const match = salesCommissions.find(s => s.pencapaian.includes('80') && !s.pencapaian.includes('<'));
-      if (match) return match.komisi;
+      return match ? match.komisi : 1;
     }
     const match = salesCommissions.find(s => s.pencapaian.includes('<'));
-    return match ? match.komisi : 1;
+    return match ? match.komisi : 0;
   };
 
   // Active month's project bonus sheet
@@ -2260,6 +2275,13 @@ export default function KPIModule({
     alert(`Penilaian Lembar KPI berhasil disimpan sebagai ${status === 'approved' ? 'Disetujui' : 'Draft'}!`);
   };
 
+  const handleUnlockRecord = () => {
+    if (!selectedEmployeeId) return;
+    const key = `kpi-${selectedEmployeeId}-${filterMonth}-${filterYear}`;
+    setKpiRecords(prev => prev.map(r => (r.id === key || r.id === editingRecordId) ? { ...r, status: 'draft' } : r));
+    alert(`Status penilaian KPI untuk ${selectedEmployee?.nama || 'karyawan'} dikembalikan ke Draft. Sekarang Anda dapat mengedit penilaian kembali.`);
+  };
+
   // Reset or Load existing record (Auto-applies Role Template + Individual Custom Indicators)
   useEffect(() => {
     if (!selectedEmployeeId) {
@@ -3267,171 +3289,451 @@ export default function KPIModule({
                   </button>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Employee Header Info */}
-                <div className="flex justify-between items-start border-b border-slate-100 pb-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-base font-black text-slate-800">{selectedEmployee.nama}</h2>
-                      <button
-                        type="button"
-                        onClick={() => openEditEmployeeModal(selectedEmployee)}
-                        className="p-1 text-slate-400 hover:text-violet-600 hover:bg-slate-100 rounded-lg transition-colors"
-                        title="Edit Data & Gaji Karyawan"
-                      >
-                        <Edit size={13} />
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <span className="text-[9px] font-bold px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 rounded uppercase">
-                        NIK: {selectedEmployee.nik || '-'}
-                      </span>
-                      <span className="text-[9px] font-bold px-2 py-0.5 bg-violet-50 border border-violet-100 text-violet-600 rounded uppercase">
-                        Jabatan: {jabatans.find(j => j.id === selectedEmployee.jabatanId)?.name || selectedEmployee.jabatan || selectedEmployee.role || 'Staff'}
-                      </span>
-                      <span className="text-[9px] font-bold px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded font-mono">
-                        Gaji Pokok: {formatRupiah(selectedEmployee.gaji || 0)}
-                      </span>
-                    </div>
-                  </div>
+            ) : (() => {
+              const activeRecord = kpiRecords.find(r => r.employeeId === selectedEmployee.id && r.month === filterMonth && r.year === filterYear);
+              const isRecordApproved = activeRecord?.status === 'approved';
 
-                  {editingRecordId && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded bg-amber-50 text-amber-600 border border-amber-200 animate-pulse">
-                        {kpiRecords.find(r => r.id === editingRecordId)?.status === 'approved' ? '✓ Disetujui' : '✍ Draft'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Score Input Block */}
+              return (
                 <div className="space-y-6">
-                  {/* Summary of Weight Settings */}
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  {/* Employee Header Info */}
+                  <div className="flex justify-between items-start border-b border-slate-100 pb-4">
                     <div>
-                      <h4 className="text-xs font-bold text-slate-700">Proporsi Bobot Lembar KPI</h4>
-                      <p className="text-[10px] text-slate-400">Sesuaikan pembagian persentase antara KPI Teknis (A) dan Soft Skill (B).</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-slate-500 font-bold">KPI (A):</span>
-                        <input
-                          type="number"
-                          value={hardWeight}
-                          onChange={(e) => {
-                            const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
-                            setHardWeight(val);
-                            setSoftWeight(100 - val);
-                          }}
-                          className="w-12 p-1 text-center text-xs font-bold bg-white border border-slate-200 rounded focus:ring-1 focus:ring-violet-500 outline-none"
-                        />
-                        <span className="text-xs text-slate-400">%</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-slate-500 font-bold">Soft Skill (B):</span>
-                        <input
-                          type="number"
-                          value={softWeight}
-                          disabled
-                          className="w-12 p-1 text-center text-xs font-bold bg-slate-100 text-slate-500 border border-slate-200 rounded outline-none"
-                        />
-                        <span className="text-xs text-slate-400">%</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Section A: Hard KPIs */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                        <Activity className="w-4 h-4 text-violet-500" />
-                        A. PENILAIAN KEY PERFORMANCE INDICATOR (BOBOT {hardWeight}%)
-                      </h3>
-                      <span className="text-[10px] font-bold text-slate-400">Total Akumulasi Maksimal: 100%</span>
-                    </div>
-
-                    {weightWarningPenilaian && (
-                      <div className="bg-amber-50 border border-amber-300 text-amber-900 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-3 shadow-xs animate-in fade-in duration-150">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span>{weightWarningPenilaian}</span>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base font-black text-slate-800">{selectedEmployee.nama}</h2>
                         <button
                           type="button"
-                          onClick={() => setWeightWarningPenilaian(null)}
-                          className="text-amber-600 hover:text-amber-800 text-xs px-1.5 py-0.5 rounded hover:bg-amber-100 font-bold"
+                          onClick={() => openEditEmployeeModal(selectedEmployee)}
+                          className="p-1 text-slate-400 hover:text-violet-600 hover:bg-slate-100 rounded-lg transition-colors"
+                          title="Edit Data & Gaji Karyawan"
                         >
-                          ✕
+                          <Edit size={13} />
                         </button>
                       </div>
-                    )}
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        <span className="text-[9px] font-bold px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 rounded uppercase">
+                          NIK: {selectedEmployee.nik || '-'}
+                        </span>
+                        <span className="text-[9px] font-bold px-2 py-0.5 bg-violet-50 border border-violet-100 text-violet-600 rounded uppercase">
+                          Jabatan: {jabatans.find(j => j.id === selectedEmployee.jabatanId)?.name || selectedEmployee.jabatan || selectedEmployee.role || 'Staff'}
+                        </span>
+                        <span className="text-[9px] font-bold px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded font-mono">
+                          Gaji Pokok: {formatRupiah(selectedEmployee.gaji || 0)}
+                        </span>
+                      </div>
+                    </div>
 
-                    <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
-                            <th className="p-3 w-8 text-center">No</th>
-                            <th className="p-3 min-w-[240px]">Key Result Area & Indikator</th>
-                            <th className="p-3 w-20 text-center">Bobot</th>
-                            <th className="p-3 w-24 text-center">Metode</th>
-                            <th className="p-3 min-w-[130px] text-center">Target</th>
-                            <th className="p-3 w-16 text-center">Satuan</th>
-                            <th className="p-3 min-w-[130px] text-center">Realisasi</th>
-                            <th className="p-3 w-16 text-center">Satuan</th>
-                            <th className="p-3 w-20 text-right">Nilai</th>
-                            <th className="p-3 w-10 text-center">Aksi</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs">
-                          {hardKPIInputs.map((item, idx) => {
-                            const isCustomInd = item.indicatorId?.startsWith('ind-custom-') || item.isCustom;
-                            return (
-                              <tr key={idx} className={`hover:bg-slate-50/50 ${isCustomInd ? 'bg-violet-50/20' : ''}`}>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded border shadow-2xs ${
+                        isRecordApproved 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold' 
+                          : 'bg-amber-50 text-amber-600 border-amber-200 animate-pulse'
+                      }`}>
+                        {isRecordApproved ? '✓ Disetujui (Status Hijau)' : '✍ Draft'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Lock Banner when Approved */}
+                  {isRecordApproved && (
+                    <div className="bg-emerald-50/90 border border-emerald-200 p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3 text-emerald-950 text-xs font-bold shadow-2xs animate-in fade-in duration-150">
+                      <div className="flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Penilaian Karyawan Ini Berstatus Disetujui (Status Hijau) & Dikunci. Data Key Performance Indicator dan Soft Skill tidak dapat diedit lagi.</span>
+                      </div>
+                      {isAuthorizedToApprove && (
+                        <button
+                          type="button"
+                          onClick={handleUnlockRecord}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-black text-[11px] uppercase tracking-wider rounded-lg transition-colors flex items-center gap-1 shadow-2xs shrink-0 cursor-pointer"
+                        >
+                          <Unlock size={13} />
+                          Buka Kunci (Edit)
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Score Input Block */}
+                  <div className="space-y-6">
+                    {/* Summary of Weight Settings */}
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-700">Proporsi Bobot Lembar KPI</h4>
+                        <p className="text-[10px] text-slate-400">Sesuaikan pembagian persentase antara KPI Teknis (A) dan Soft Skill (B).</p>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-500 font-bold">KPI (A):</span>
+                          <input
+                            type="number"
+                            value={hardWeight}
+                            disabled={isRecordApproved}
+                            onChange={(e) => {
+                              const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                              setHardWeight(val);
+                              setSoftWeight(100 - val);
+                            }}
+                            className="w-12 p-1 text-center text-xs font-bold bg-white border border-slate-200 rounded focus:ring-1 focus:ring-violet-500 outline-none disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
+                          />
+                          <span className="text-xs text-slate-400">%</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-500 font-bold">Soft Skill (B):</span>
+                          <input
+                            type="number"
+                            value={softWeight}
+                            disabled
+                            className="w-12 p-1 text-center text-xs font-bold bg-slate-100 text-slate-500 border border-slate-200 rounded outline-none"
+                          />
+                          <span className="text-xs text-slate-400">%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section A: Hard KPIs */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <Activity className="w-4 h-4 text-violet-500" />
+                          A. PENILAIAN KEY PERFORMANCE INDICATOR (BOBOT {hardWeight}%)
+                        </h3>
+                        <span className="text-[10px] font-bold text-slate-400">Total Akumulasi Maksimal: 100%</span>
+                      </div>
+
+                      {weightWarningPenilaian && (
+                        <div className="bg-amber-50 border border-amber-300 text-amber-900 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-3 shadow-2xs animate-in fade-in duration-150">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>{weightWarningPenilaian}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setWeightWarningPenilaian(null)}
+                            className="text-amber-600 hover:text-amber-800 text-xs px-1.5 py-0.5 rounded hover:bg-amber-100 font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
+                              <th className="p-3 w-8 text-center">No</th>
+                              <th className="p-3 min-w-[240px]">Key Result Area & Indikator</th>
+                              <th className="p-3 w-20 text-center">Bobot</th>
+                              <th className="p-3 w-24 text-center">Metode</th>
+                              <th className="p-3 min-w-[130px] text-center">Target</th>
+                              <th className="p-3 w-16 text-center">Satuan</th>
+                              <th className="p-3 min-w-[130px] text-center">Realisasi</th>
+                              <th className="p-3 w-16 text-center">Satuan</th>
+                              <th className="p-3 w-20 text-right">Nilai</th>
+                              {!isRecordApproved && <th className="p-3 w-10 text-center">Aksi</th>}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-xs">
+                            {hardKPIInputs.map((item, idx) => {
+                              const isCustomInd = item.indicatorId?.startsWith('ind-custom-') || item.isCustom;
+                              return (
+                                <tr key={idx} className={`hover:bg-slate-50/50 ${isCustomInd ? 'bg-violet-50/20' : ''}`}>
+                                  <td className="p-3 text-center font-mono text-[10px] text-slate-400">{idx + 1}</td>
+                                  <td className="p-3">
+                                    <input
+                                      type="text"
+                                      value={item.name}
+                                      disabled={isRecordApproved}
+                                      onChange={(e) => updateHardKPIField(idx, 'name', e.target.value)}
+                                      placeholder="Nama Indikator KPI..."
+                                      className="p-1.5 bg-white border border-slate-200 hover:border-violet-300 focus:border-violet-500 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-violet-500 transition-colors disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+                                    />
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                      {idx === 0 && isSalesRole(selectedEmployee) ? (
+                                        <div className="flex flex-wrap items-center gap-1.5 w-full">
+                                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                                            ✓ Terhubung Otomatis ke Pencapaian (Omset Kotor) Bonus Project
+                                          </span>
+                                          {!isRecordApproved && (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const bonusRow = getSalesBonusRowForEmployee(selectedEmployee);
+                                                if (bonusRow) {
+                                                  const nextTarget = bonusRow.targetBulanan || 200000000;
+                                                  const nextReal = bonusRow.pencapaian || 0;
+                                                  updateHardKPIField(0, 'name', 'Target Penjualan');
+                                                  updateHardKPIField(0, 'target', nextTarget);
+                                                  updateHardKPIField(0, 'realisasi', nextReal);
+                                                  updateHardKPIField(0, 'satuan', 'Rp');
+                                                  updateHardKPIField(0, 'metode', 'Maximize');
+                                                }
+                                              }}
+                                              className="text-[10px] font-bold text-violet-700 hover:text-violet-900 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1 transition-colors shrink-0 shadow-2xs"
+                                              title="Sinkronkan ulang data dari Tabel Bonus Project Bulan Ini"
+                                            >
+                                              <RefreshCw className="w-2.5 h-2.5" />
+                                              Sinkronkan Ulang
+                                            </button>
+                                          )}
+                                        </div>
+                                      ) : isCustomInd ? (
+                                        <span className="text-[9px] font-bold text-violet-700 bg-violet-100/70 px-1.5 py-0.5 rounded border border-violet-200 inline-flex items-center gap-1">
+                                          ★ Custom Individu
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] text-slate-400 font-mono">Template: {item.indicatorId} (Custom Individu)</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <div className="flex items-center gap-1 justify-center">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={item.bobot === '' ? '' : item.bobot}
+                                        disabled={isRecordApproved}
+                                        onChange={(e) => updateHardKPIField(idx, 'bobot', e.target.value)}
+                                        className="w-14 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-violet-500 outline-none disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+                                      />
+                                      <span className="text-slate-400 font-bold">%</span>
+                                    </div>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <select
+                                      value={item.metode}
+                                      disabled={isRecordApproved}
+                                      onChange={(e) => updateHardKPIField(idx, 'metode', e.target.value)}
+                                      className="p-1 bg-white border border-slate-200 rounded text-[10px] font-bold text-slate-700 focus:ring-1 focus:ring-violet-500 outline-none disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+                                    >
+                                      <option value="Maximize">Maximize</option>
+                                      <option value="Minimize">Minimize</option>
+                                    </select>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <FormattedNumberInput
+                                      value={item.target}
+                                      disabled={isRecordApproved}
+                                      onChange={(val) => updateHardKPIField(idx, 'target', val)}
+                                      className="w-28 sm:w-32 p-1.5 text-center bg-white border border-slate-200 rounded text-xs font-bold font-mono focus:ring-1 focus:ring-violet-500 outline-none disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+                                      allowDecimal
+                                    />
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <select
+                                      value={item.satuan || '%'}
+                                      disabled={isRecordApproved}
+                                      onChange={(e) => updateHardKPIField(idx, 'satuan', e.target.value)}
+                                      className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-center w-16 outline-none focus:ring-1 focus:ring-violet-500 cursor-pointer text-slate-700 disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+                                    >
+                                      {KPI_SATUAN_OPTIONS.map(opt => (
+                                        <option key={opt} value={opt}>{opt}</option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <FormattedNumberInput
+                                      value={item.realisasi}
+                                      disabled={isRecordApproved}
+                                      onChange={(val) => updateHardKPIField(idx, 'realisasi', val)}
+                                      className="w-28 sm:w-32 p-1.5 text-center bg-white border border-slate-200 rounded text-xs font-black text-violet-700 font-mono focus:ring-1 focus:ring-violet-500 outline-none disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+                                      allowDecimal
+                                    />
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <select
+                                      value={item.satuan || '%'}
+                                      disabled={isRecordApproved}
+                                      onChange={(e) => updateHardKPIField(idx, 'satuan', e.target.value)}
+                                      className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-center w-16 outline-none focus:ring-1 focus:ring-violet-500 cursor-pointer text-slate-600 disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+                                    >
+                                      {KPI_SATUAN_OPTIONS.map(opt => (
+                                        <option key={opt} value={opt}>{opt}</option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="p-3 text-right font-black font-mono text-slate-700">{formatDotNumber(item.score)}</td>
+                                  {!isRecordApproved && (
+                                    <td className="p-3 text-center">
+                                      <button
+                                        onClick={() => {
+                                          const targetItem = hardKPIInputs[idx];
+                                          const nextInputs = hardKPIInputs.filter((_, i) => i !== idx);
+                                          setHardKPIInputs(nextInputs);
+                                          setWeightWarningPenilaian(null);
+                                          if (selectedEmployeeId) {
+                                            setEmployeeIndividualSheets(curr => {
+                                              const updated = {
+                                                ...curr,
+                                                [selectedEmployeeId]: {
+                                                  hardKPIs: nextInputs,
+                                                  softSkills: softSkillInputs,
+                                                  hardWeight,
+                                                  softWeight
+                                                }
+                                              };
+                                              safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', updated);
+                                              return updated;
+                                            });
+                                          }
+                                          if (selectedEmployeeId && targetItem && (targetItem.indicatorId?.startsWith('ind-custom-') || targetItem.isCustom)) {
+                                            setEmployeeCustomIndicators(curr => {
+                                              const filtered = (curr[selectedEmployeeId] || []).filter(ci => ci.indicatorId !== targetItem.indicatorId);
+                                              const updated = { ...curr, [selectedEmployeeId]: filtered };
+                                              safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', updated);
+                                              return updated;
+                                            });
+                                          }
+                                        }}
+                                        className="text-red-500 hover:text-red-700 p-1 bg-red-50 rounded"
+                                        title="Hapus Indikator"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                            {(() => {
+                              const total = hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
+                              const isValid = total === 100;
+                              const isOver = total > 100;
+                              return (
+                                <tr className={`font-bold ${isOver ? 'bg-red-50/70 text-red-900 border-t-2 border-red-200' : isValid ? 'bg-slate-50 text-slate-700 border-t-2 border-slate-200' : 'bg-amber-50/70 text-amber-900 border-t-2 border-amber-200'}`}>
+                                  <td colSpan={2} className="p-3 text-right text-[11px] uppercase tracking-wider text-slate-600 font-bold">
+                                    TOTAL AKUMULASI BOBOT KPI (HARD)
+                                  </td>
+                                  <td className="p-3 text-center whitespace-nowrap">
+                                    <span className={`font-mono font-black text-xs px-2.5 py-1 rounded border inline-block ${
+                                      isOver ? 'bg-red-100 text-red-700 border-red-300' :
+                                      isValid ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                                      'bg-amber-100 text-amber-800 border-amber-300'
+                                    }`}>
+                                      {total}%
+                                    </span>
+                                  </td>
+                                  <td colSpan={5} className="p-3">
+                                    {isOver ? (
+                                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-100/60 px-3 py-1 rounded-lg border border-red-200">
+                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600" />
+                                        <span>⚠️ Peringatan: Total bobot melebihi 100%! Harap kurangi bobot indikator sebelum menyimpan.</span>
+                                      </span>
+                                    ) : isValid ? (
+                                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-100/60 px-3 py-1 rounded-lg border border-emerald-200">
+                                        <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                                        <span>✓ 100% Valid (Total bobot pas 100%)</span>
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-100/60 px-3 py-1 rounded-lg border border-amber-200">
+                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                        <span>Tersisa {100 - total}% lagi untuk mencapai 100%</span>
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-right font-black font-mono text-slate-900 whitespace-nowrap">{formatDotNumber(getHardKPITotal(hardKPIInputs).toFixed(2))}</td>
+                                  {!isRecordApproved && <td></td>}
+                                </tr>
+                              );
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {!isRecordApproved && (
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const currentTotal = hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
+                              const remaining = Math.max(0, 100 - currentTotal);
+                              if (remaining <= 0) {
+                                alert("Peringatan: Total akumulasi bobot sudah mencapai 100%! Harap kurangi bobot indikator lain terlebih dahulu sebelum menambahkan indikator baru.");
+                                setWeightWarningPenilaian("⚠️ Peringatan: Total akumulasi bobot sudah mencapai 100%! Kurangi bobot indikator lain terlebih dahulu.");
+                                return;
+                              }
+                              const newBobot = Math.min(10, remaining);
+                              setWeightWarningPenilaian(null);
+                              const newInd = {
+                                indicatorId: `ind-custom-${Date.now()}`,
+                                name: 'Indikator Khusus Karyawan Ini',
+                                bobot: newBobot,
+                                metode: 'Maximize' as 'Maximize' | 'Minimize',
+                                target: 100,
+                                satuan: '%',
+                                realisasi: 80,
+                                score: Math.round(newBobot * 0.8 * 100) / 100,
+                                isCustom: true
+                              };
+                              const nextInputs = [...hardKPIInputs, newInd];
+                              setHardKPIInputs(nextInputs);
+                              if (selectedEmployeeId) {
+                                setEmployeeIndividualSheets(curr => {
+                                  const updated = {
+                                    ...curr,
+                                    [selectedEmployeeId]: {
+                                      hardKPIs: nextInputs,
+                                      softSkills: softSkillInputs,
+                                      hardWeight,
+                                      softWeight
+                                    }
+                                  };
+                                  safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', updated);
+                                  return updated;
+                                });
+                                setEmployeeCustomIndicators(curr => {
+                                  const empList = curr[selectedEmployeeId] || [];
+                                  const updated = [...empList, newInd];
+                                  safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', { ...curr, [selectedEmployeeId]: updated });
+                                  return { ...curr, [selectedEmployeeId]: updated };
+                                });
+                              }
+                            }}
+                            className="px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold rounded-lg border border-violet-200 transition-colors flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Plus size={14} className="text-violet-600" />
+                            Tambah Indikator Tambahan (Custom Tersimpan untuk Karyawan Ini)
+                          </button>
+                          <span className="text-[10px] font-bold text-slate-400">Total akumulasi bobot otomatis dibatasi maksimal 100%.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Section B: Soft Skills */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <Award className="w-4 h-4 text-emerald-500" />
+                          B. PENILAIAN SOFT SKILL (BOBOT {softWeight}%)
+                        </h3>
+                        <span className="text-[10px] font-bold text-slate-400">Total Akumulasi Maksimal: 100%</span>
+                      </div>
+
+                      <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
+                              <th className="p-3 w-8 text-center">No</th>
+                              <th className="p-3 min-w-[200px]">Aspek Kompetensi Utama</th>
+                              <th className="p-3 w-20 text-center">Bobot</th>
+                              <th className="p-3 w-24 text-center">Nilai (1-100)</th>
+                              <th className="p-3 w-24 text-right">Skor Terbobot</th>
+                              {!isRecordApproved && <th className="p-3 w-10 text-center">Aksi</th>}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-xs">
+                            {softSkillInputs.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/50">
                                 <td className="p-3 text-center font-mono text-[10px] text-slate-400">{idx + 1}</td>
                                 <td className="p-3">
                                   <input
                                     type="text"
                                     value={item.name}
-                                    onChange={(e) => updateHardKPIField(idx, 'name', e.target.value)}
-                                    placeholder="Nama Indikator KPI..."
-                                    className="p-1.5 bg-white border border-slate-200 hover:border-violet-300 focus:border-violet-500 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-violet-500 transition-colors"
+                                    disabled={isRecordApproved}
+                                    onChange={(e) => updateSoftSkillField(idx, 'name', e.target.value)}
+                                    placeholder="Nama Aspek Soft Skill..."
+                                    className="p-1.5 bg-white border border-slate-200 hover:border-emerald-300 focus:border-emerald-500 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-emerald-500 transition-colors disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
                                   />
-                                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                    {idx === 0 && isSalesRole(selectedEmployee) ? (
-                                      <div className="flex flex-wrap items-center gap-1.5 w-full">
-                                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-300 inline-flex items-center gap-1 shadow-xs">
-                                          ✓ Terhubung Otomatis ke Pencapaian (Omset Kotor) Bonus Project
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const bonusRow = getSalesBonusRowForEmployee(selectedEmployee);
-                                            if (bonusRow) {
-                                              const nextTarget = bonusRow.targetBulanan || 200000000;
-                                              const nextReal = bonusRow.pencapaian || 0;
-                                              updateHardKPIField(0, 'name', 'Target Penjualan');
-                                              updateHardKPIField(0, 'target', nextTarget);
-                                              updateHardKPIField(0, 'realisasi', nextReal);
-                                              updateHardKPIField(0, 'satuan', 'Rp');
-                                              updateHardKPIField(0, 'metode', 'Maximize');
-                                            }
-                                          }}
-                                          className="text-[10px] font-bold text-violet-700 hover:text-violet-900 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1 transition-colors shrink-0 shadow-xs"
-                                          title="Sinkronkan ulang data dari Tabel Bonus Project Bulan Ini"
-                                        >
-                                          <RefreshCw className="w-2.5 h-2.5" />
-                                          Sinkronkan Ulang
-                                        </button>
-                                      </div>
-                                    ) : isCustomInd ? (
-                                      <span className="text-[9px] font-bold text-violet-700 bg-violet-100/70 px-1.5 py-0.5 rounded border border-violet-200 inline-flex items-center gap-1">
-                                        ★ Custom Individu
-                                      </span>
-                                    ) : (
-                                      <span className="text-[9px] text-slate-400 font-mono">Template: {item.indicatorId} (Custom Individu)</span>
-                                    )}
-                                  </div>
                                 </td>
                                 <td className="p-3 text-center">
                                   <div className="flex items-center gap-1 justify-center">
@@ -3440,429 +3742,217 @@ export default function KPIModule({
                                       min="0"
                                       max="100"
                                       value={item.bobot === '' ? '' : item.bobot}
-                                      onChange={(e) => updateHardKPIField(idx, 'bobot', e.target.value)}
-                                      className="w-14 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-violet-500 outline-none"
+                                      disabled={isRecordApproved}
+                                      onChange={(e) => updateSoftSkillField(idx, 'bobot', e.target.value)}
+                                      className="w-14 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-emerald-500 outline-none disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
                                     />
                                     <span className="text-slate-400 font-bold">%</span>
                                   </div>
                                 </td>
                                 <td className="p-3 text-center">
-                                  <select
-                                    value={item.metode}
-                                    onChange={(e) => updateHardKPIField(idx, 'metode', e.target.value)}
-                                    className="p-1 bg-white border border-slate-200 rounded text-[10px] font-bold text-slate-700 focus:ring-1 focus:ring-violet-500 outline-none"
-                                  >
-                                    <option value="Maximize">Maximize</option>
-                                    <option value="Minimize">Minimize</option>
-                                  </select>
-                                </td>
-                                <td className="p-3 text-center">
-                                  <FormattedNumberInput
-                                    value={item.target}
-                                    onChange={(val) => updateHardKPIField(idx, 'target', val)}
-                                    className="w-28 sm:w-32 p-1.5 text-center bg-white border border-slate-200 rounded text-xs font-bold font-mono focus:ring-1 focus:ring-violet-500 outline-none"
-                                    allowDecimal
-                                  />
-                                </td>
-                                <td className="p-3 text-center">
-                                  <select
-                                    value={item.satuan || '%'}
-                                    onChange={(e) => updateHardKPIField(idx, 'satuan', e.target.value)}
-                                    className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-center w-16 outline-none focus:ring-1 focus:ring-violet-500 cursor-pointer text-slate-700"
-                                  >
-                                    {KPI_SATUAN_OPTIONS.map(opt => (
-                                      <option key={opt} value={opt}>{opt}</option>
-                                    ))}
-                                  </select>
-                                </td>
-                                <td className="p-3 text-center">
-                                  <FormattedNumberInput
-                                    value={item.realisasi}
-                                    onChange={(val) => updateHardKPIField(idx, 'realisasi', val)}
-                                    className="w-28 sm:w-32 p-1.5 text-center bg-white border border-slate-200 rounded text-xs font-black text-violet-700 font-mono focus:ring-1 focus:ring-violet-500 outline-none"
-                                    allowDecimal
-                                  />
-                                </td>
-                                <td className="p-3 text-center">
-                                  <select
-                                    value={item.satuan || '%'}
-                                    onChange={(e) => updateHardKPIField(idx, 'satuan', e.target.value)}
-                                    className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-center w-16 outline-none focus:ring-1 focus:ring-violet-500 cursor-pointer text-slate-600"
-                                  >
-                                    {KPI_SATUAN_OPTIONS.map(opt => (
-                                      <option key={opt} value={opt}>{opt}</option>
-                                    ))}
-                                  </select>
-                                </td>
-                                <td className="p-3 text-right font-black font-mono text-slate-700">{formatDotNumber(item.score)}</td>
-                                <td className="p-3 text-center">
-                                  <button
-                                    onClick={() => {
-                                      const targetItem = hardKPIInputs[idx];
-                                      const nextInputs = hardKPIInputs.filter((_, i) => i !== idx);
-                                      setHardKPIInputs(nextInputs);
-                                      setWeightWarningPenilaian(null);
-                                      if (selectedEmployeeId) {
-                                        setEmployeeIndividualSheets(curr => {
-                                          const updated = {
-                                            ...curr,
-                                            [selectedEmployeeId]: {
-                                              hardKPIs: nextInputs,
-                                              softSkills: softSkillInputs,
-                                              hardWeight,
-                                              softWeight
-                                            }
-                                          };
-                                          safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', updated);
-                                          return updated;
-                                        });
-                                      }
-                                      if (selectedEmployeeId && targetItem && (targetItem.indicatorId?.startsWith('ind-custom-') || targetItem.isCustom)) {
-                                        setEmployeeCustomIndicators(curr => {
-                                          const filtered = (curr[selectedEmployeeId] || []).filter(ci => ci.indicatorId !== targetItem.indicatorId);
-                                          const updated = { ...curr, [selectedEmployeeId]: filtered };
-                                          safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', updated);
-                                          return updated;
-                                        });
-                                      }
-                                    }}
-                                    className="text-red-500 hover:text-red-700 p-1 bg-red-50 rounded"
-                                    title="Hapus Indikator"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          {(() => {
-                            const total = hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
-                            const isValid = total === 100;
-                            const isOver = total > 100;
-                            return (
-                              <tr className={`font-bold ${isOver ? 'bg-red-50/70 text-red-900 border-t-2 border-red-200' : isValid ? 'bg-slate-50 text-slate-700 border-t-2 border-slate-200' : 'bg-amber-50/70 text-amber-900 border-t-2 border-amber-200'}`}>
-                                <td colSpan={2} className="p-3 text-right text-[11px] uppercase tracking-wider text-slate-600 font-bold">
-                                  TOTAL AKUMULASI BOBOT KPI (HARD)
-                                </td>
-                                <td className="p-3 text-center whitespace-nowrap">
-                                  <span className={`font-mono font-black text-xs px-2.5 py-1 rounded border inline-block ${
-                                    isOver ? 'bg-red-100 text-red-700 border-red-300' :
-                                    isValid ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                                    'bg-amber-100 text-amber-800 border-amber-300'
-                                  }`}>
-                                    {total}%
-                                  </span>
-                                </td>
-                                <td colSpan={5} className="p-3">
-                                  {isOver ? (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-100/60 px-3 py-1 rounded-lg border border-red-200">
-                                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600" />
-                                      <span>⚠️ Peringatan: Total bobot melebihi 100%! Harap kurangi bobot indikator sebelum menyimpan.</span>
-                                    </span>
-                                  ) : isValid ? (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-100/60 px-3 py-1 rounded-lg border border-emerald-200">
-                                      <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                                      <span>✓ 100% Valid (Total bobot pas 100%)</span>
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-100/60 px-3 py-1 rounded-lg border border-amber-200">
-                                      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                                      <span>Tersisa {100 - total}% lagi untuk mencapai 100%</span>
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="p-3 text-right font-black font-mono text-slate-900 whitespace-nowrap">{formatDotNumber(getHardKPITotal(hardKPIInputs).toFixed(2))}</td>
-                                <td></td>
-                              </tr>
-                            );
-                          })()}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const currentTotal = hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
-                          const remaining = Math.max(0, 100 - currentTotal);
-                          if (remaining <= 0) {
-                            alert("Peringatan: Total akumulasi bobot sudah mencapai 100%! Harap kurangi bobot indikator lain terlebih dahulu sebelum menambahkan indikator baru.");
-                            setWeightWarningPenilaian("⚠️ Peringatan: Total akumulasi bobot sudah mencapai 100%! Kurangi bobot indikator lain terlebih dahulu.");
-                            return;
-                          }
-                          const newBobot = Math.min(10, remaining);
-                          setWeightWarningPenilaian(null);
-                          const newInd = {
-                            indicatorId: `ind-custom-${Date.now()}`,
-                            name: 'Indikator Khusus Karyawan Ini',
-                            bobot: newBobot,
-                            metode: 'Maximize' as 'Maximize' | 'Minimize',
-                            target: 100,
-                            satuan: '%',
-                            realisasi: 80,
-                            score: Math.round(newBobot * 0.8 * 100) / 100,
-                            isCustom: true
-                          };
-                          const nextInputs = [...hardKPIInputs, newInd];
-                          setHardKPIInputs(nextInputs);
-                          if (selectedEmployeeId) {
-                            setEmployeeIndividualSheets(curr => {
-                              const updated = {
-                                ...curr,
-                                [selectedEmployeeId]: {
-                                  hardKPIs: nextInputs,
-                                  softSkills: softSkillInputs,
-                                  hardWeight,
-                                  softWeight
-                                }
-                              };
-                              safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', updated);
-                              return updated;
-                            });
-                            setEmployeeCustomIndicators(curr => {
-                              const empList = curr[selectedEmployeeId] || [];
-                              const updated = [...empList, newInd];
-                              safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', { ...curr, [selectedEmployeeId]: updated });
-                              return { ...curr, [selectedEmployeeId]: updated };
-                            });
-                          }
-                        }}
-                        className="px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold rounded-lg border border-violet-200 transition-colors flex items-center gap-1.5 shadow-xs"
-                      >
-                        <Plus size={14} className="text-violet-600" />
-                        Tambah Indikator Tambahan (Custom Tersimpan untuk Karyawan Ini)
-                      </button>
-                      <span className="text-[10px] font-bold text-slate-400">Total akumulasi bobot otomatis dibatasi maksimal 100%.</span>
-                    </div>
-                  </div>
-
-                  {/* Section B: Soft Skills */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                        <Award className="w-4 h-4 text-emerald-500" />
-                        B. PENILAIAN SOFT SKILL (BOBOT {softWeight}%)
-                      </h3>
-                      <span className="text-[10px] font-bold text-slate-400">Total Akumulasi Maksimal: 100%</span>
-                    </div>
-
-                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
-                            <th className="p-3 w-8 text-center">No</th>
-                            <th className="p-3 min-w-[200px]">Aspek Kompetensi Utama</th>
-                            <th className="p-3 w-20 text-center">Bobot</th>
-                            <th className="p-3 w-24 text-center">Nilai (1-100)</th>
-                            <th className="p-3 w-24 text-right">Skor Terbobot</th>
-                            <th className="p-3 w-10 text-center">Aksi</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs">
-                          {softSkillInputs.map((item, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50">
-                              <td className="p-3 text-center font-mono text-[10px] text-slate-400">{idx + 1}</td>
-                              <td className="p-3">
-                                <input
-                                  type="text"
-                                  value={item.name}
-                                  onChange={(e) => updateSoftSkillField(idx, 'name', e.target.value)}
-                                  placeholder="Nama Aspek Soft Skill..."
-                                  className="p-1.5 bg-white border border-slate-200 hover:border-emerald-300 focus:border-emerald-500 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-emerald-500 transition-colors"
-                                />
-                              </td>
-                              <td className="p-3 text-center">
-                                <div className="flex items-center gap-1 justify-center">
                                   <input
                                     type="number"
                                     min="0"
                                     max="100"
-                                    value={item.bobot === '' ? '' : item.bobot}
-                                    onChange={(e) => updateSoftSkillField(idx, 'bobot', e.target.value)}
-                                    className="w-14 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-emerald-500 outline-none"
+                                    value={item.nilai}
+                                    disabled={isRecordApproved}
+                                    onChange={(e) => updateSoftSkillField(idx, 'nilai', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                                    className="w-16 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-emerald-700 focus:ring-1 focus:ring-emerald-500 outline-none disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
                                   />
-                                  <span className="text-slate-400 font-bold">%</span>
-                                </div>
-                              </td>
-                              <td className="p-3 text-center">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  value={item.nilai}
-                                  onChange={(e) => updateSoftSkillField(idx, 'nilai', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
-                                  className="w-16 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-emerald-700 focus:ring-1 focus:ring-emerald-500 outline-none"
-                                />
-                              </td>
-                              <td className="p-3 text-right font-black font-mono text-slate-700">{formatDotNumber(item.score)}</td>
-                              <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => deleteSoftSkillRow(idx)}
-                                  className="text-red-500 hover:text-red-700 p-1 bg-red-50 hover:bg-red-100 rounded transition-colors"
-                                  title="Hapus Aspek Soft Skill"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                          {(() => {
-                            const totalSoftBobot = softSkillInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
-                            const isValid = totalSoftBobot === 100;
-                            const isOver = totalSoftBobot > 100;
-                            return (
-                              <tr className={`font-bold ${isOver ? 'bg-red-50/70 text-red-900 border-t-2 border-red-200' : isValid ? 'bg-slate-50 text-slate-700 border-t-2 border-slate-200' : 'bg-amber-50/70 text-amber-900 border-t-2 border-amber-200'}`}>
-                                <td colSpan={2} className="p-3 text-right text-[11px] uppercase tracking-wider text-slate-600 font-bold">
-                                  TOTAL AKUMULASI BOBOT SOFT SKILL (BAGIAN B)
                                 </td>
-                                <td className="p-3 text-center whitespace-nowrap">
-                                  <span className={`font-mono font-black text-xs px-2.5 py-1 rounded border inline-block ${
-                                    isOver ? 'bg-red-100 text-red-700 border-red-300' :
-                                    isValid ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                                    'bg-amber-100 text-amber-800 border-amber-300'
-                                  }`}>
-                                    {totalSoftBobot}%
-                                  </span>
-                                </td>
-                                <td colSpan={1} className="p-3">
-                                  {isOver ? (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-100/60 px-2.5 py-0.5 rounded-lg border border-red-200">
-                                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600" />
-                                      <span>⚠️ Melebihi 100%!</span>
-                                    </span>
-                                  ) : isValid ? (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-100/60 px-2.5 py-0.5 rounded-lg border border-emerald-200">
-                                      <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                                      <span>✓ 100% Valid</span>
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-100/60 px-2.5 py-0.5 rounded-lg border border-amber-200">
-                                      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                                      <span>Tersisa {100 - totalSoftBobot}%</span>
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="p-3 text-right font-black font-mono text-slate-900 whitespace-nowrap">{formatDotNumber(getSoftSkillTotal(softSkillInputs).toFixed(2))}</td>
-                                <td></td>
+                                <td className="p-3 text-right font-black font-mono text-slate-700">{formatDotNumber(item.score)}</td>
+                                {!isRecordApproved && (
+                                  <td className="p-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteSoftSkillRow(idx)}
+                                      className="text-red-500 hover:text-red-700 p-1 bg-red-50 hover:bg-red-100 rounded transition-colors"
+                                      title="Hapus Aspek Soft Skill"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </td>
+                                )}
                               </tr>
-                            );
-                          })()}
-                        </tbody>
-                      </table>
-                    </div>
+                            ))}
+                            {(() => {
+                              const totalSoftBobot = softSkillInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
+                              const isValid = totalSoftBobot === 100;
+                              const isOver = totalSoftBobot > 100;
+                              return (
+                                <tr className={`font-bold ${isOver ? 'bg-red-50/70 text-red-900 border-t-2 border-red-200' : isValid ? 'bg-slate-50 text-slate-700 border-t-2 border-slate-200' : 'bg-amber-50/70 text-amber-900 border-t-2 border-amber-200'}`}>
+                                  <td colSpan={2} className="p-3 text-right text-[11px] uppercase tracking-wider text-slate-600 font-bold">
+                                    TOTAL AKUMULASI BOBOT SOFT SKILL (BAGIAN B)
+                                  </td>
+                                  <td className="p-3 text-center whitespace-nowrap">
+                                    <span className={`font-mono font-black text-xs px-2.5 py-1 rounded border inline-block ${
+                                      isOver ? 'bg-red-100 text-red-700 border-red-300' :
+                                      isValid ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                                      'bg-amber-100 text-amber-800 border-amber-300'
+                                    }`}>
+                                      {totalSoftBobot}%
+                                    </span>
+                                  </td>
+                                  <td colSpan={1} className="p-3">
+                                    {isOver ? (
+                                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-100/60 px-2.5 py-0.5 rounded-lg border border-red-200">
+                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600" />
+                                        <span>⚠️ Melebihi 100%!</span>
+                                      </span>
+                                    ) : isValid ? (
+                                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-100/60 px-2.5 py-0.5 rounded-lg border border-emerald-200">
+                                        <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                                        <span>✓ 100% Valid</span>
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-100/60 px-2.5 py-0.5 rounded-lg border border-amber-200">
+                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                        <span>Tersisa {100 - totalSoftBobot}%</span>
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-right font-black font-mono text-slate-900 whitespace-nowrap">{formatDotNumber(getSoftSkillTotal(softSkillInputs).toFixed(2))}</td>
+                                  {!isRecordApproved && <td></td>}
+                                </tr>
+                              );
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
 
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-2">
-                      <button
-                        type="button"
-                        onClick={addSoftSkillRow}
-                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-colors flex items-center gap-1.5 shadow-xs"
-                      >
-                        <Plus size={14} className="text-emerald-600" />
-                        Tambah Aspek Soft Skill (Custom Individu)
-                      </button>
-                      <span className="text-[10px] font-bold text-slate-400">Total akumulasi bobot Bagian B maksimal 100%.</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Note Field */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Catatan Evaluasi Atasan</label>
-                  <textarea
-                    value={recordNotes}
-                    onChange={(e) => setRecordNotes(e.target.value)}
-                    placeholder="Berikan masukan konstruktif untuk pencapaian kinerja bulan ini..."
-                    rows={3}
-                    className="w-full text-xs p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none transition-all"
-                  />
-                </div>
-
-                {/* Summary calculation display */}
-                <div className="p-4 bg-violet-50 rounded-xl border border-violet-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <span className="text-[10px] font-bold text-violet-400 block uppercase leading-none mb-1">Skor Akhir & Grade</span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-2xl font-black text-violet-900">
-                        {(() => {
-                          const hTotal = getHardKPITotal(hardKPIInputs);
-                          const sTotal = getSoftSkillTotal(softSkillInputs);
-                          return getOverallTotal(hTotal, sTotal, hardWeight, softWeight).toFixed(2);
-                        })()}
-                      </span>
-                      <span className="text-[10px] text-violet-500 font-semibold">
-                        ({hardWeight}% KPI + {softWeight}% Soft Skill)
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    {(() => {
-                      const hTotal = getHardKPITotal(hardKPIInputs);
-                      const sTotal = getSoftSkillTotal(softSkillInputs);
-                      const score = getOverallTotal(hTotal, sTotal, hardWeight, softWeight);
-                      const grade = getKPIGrade(score);
-                      return (
-                        <>
-                          <div className={`px-3 py-1.5 rounded-lg border text-xs font-black uppercase flex items-center gap-1.5 ${grade.color}`}>
-                            <span>Grade {grade.code}</span>
-                            <span className="text-[9px] opacity-70 font-bold">({grade.label})</span>
-                          </div>
-                          
+                      {!isRecordApproved && (
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-2">
                           <button
                             type="button"
-                            onClick={() => {
-                              // Open print layout modal
-                              const currentRecordObj: KPIRecord = {
-                                id: editingRecordId || `kpi-${selectedEmployeeId}-${filterMonth}-${filterYear}`,
-                                employeeId: selectedEmployeeId,
-                                month: filterMonth,
-                                year: filterYear,
-                                scores: {},
-                                status: 'draft',
-                                notes: recordNotes,
-                                hardKPIs: hardKPIInputs,
-                                softSkills: softSkillInputs,
-                                hardWeight,
-                                softWeight,
-                                finalScore: score
-                              };
-                              setPrintModalRecord(currentRecordObj);
-                            }}
-                            className="p-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-lg flex items-center gap-1.5 text-xs font-bold transition-all shadow-sm"
-                            title="Preview Lembar KPI"
+                            onClick={addSoftSkillRow}
+                            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-colors flex items-center gap-1.5 shadow-2xs"
                           >
-                            <Printer className="w-4 h-4 text-violet-600" />
-                            <span>Preview Cetak</span>
+                            <Plus size={14} className="text-emerald-600" />
+                            Tambah Aspek Soft Skill (Custom Individu)
                           </button>
-                        </>
-                      );
-                    })()}
+                          <span className="text-[10px] font-bold text-slate-400">Total akumulasi bobot Bagian B maksimal 100%.</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Action Buttons */}
-                <div className="flex justify-end gap-3 pt-2">
-                  <button
-                    onClick={() => handleSaveKPIRecord('draft')}
-                    className="px-5 py-2.5 bg-slate-100 text-slate-700 text-xs font-black uppercase rounded-xl hover:bg-slate-200 transition-colors"
-                  >
-                    Simpan Sebagai Draft
-                  </button>
+                  {/* Note Field */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Catatan Evaluasi Atasan</label>
+                    <textarea
+                      value={recordNotes}
+                      disabled={isRecordApproved}
+                      onChange={(e) => setRecordNotes(e.target.value)}
+                      placeholder="Berikan masukan konstruktif untuk pencapaian kinerja bulan ini..."
+                      rows={3}
+                      className="w-full text-xs p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none transition-all disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+                    />
+                  </div>
 
-                  {isAuthorizedToApprove && (
-                    <button
-                      onClick={() => handleSaveKPIRecord('approved')}
-                      className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-black uppercase rounded-xl transition-colors flex items-center gap-1.5"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      Setujui Nilai (Approve)
-                    </button>
+                  {/* Summary calculation display */}
+                  <div className="p-4 bg-violet-50 rounded-xl border border-violet-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <span className="text-[10px] font-bold text-violet-400 block uppercase leading-none mb-1">Skor Akhir & Grade</span>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl font-black text-violet-900">
+                          {(() => {
+                            const hTotal = getHardKPITotal(hardKPIInputs);
+                            const sTotal = getSoftSkillTotal(softSkillInputs);
+                            return getOverallTotal(hTotal, sTotal, hardWeight, softWeight).toFixed(2);
+                          })()}
+                        </span>
+                        <span className="text-[10px] text-violet-500 font-semibold">
+                          ({hardWeight}% KPI + {softWeight}% Soft Skill)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(() => {
+                        const hTotal = getHardKPITotal(hardKPIInputs);
+                        const sTotal = getSoftSkillTotal(softSkillInputs);
+                        const score = getOverallTotal(hTotal, sTotal, hardWeight, softWeight);
+                        const grade = getKPIGrade(score);
+                        return (
+                          <>
+                            <div className={`px-3 py-1.5 rounded-lg border text-xs font-black uppercase flex items-center gap-1.5 ${grade.color}`}>
+                              <span>Grade {grade.code}</span>
+                              <span className="text-[9px] opacity-70 font-bold">({grade.label})</span>
+                            </div>
+                            
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Open print layout modal
+                                const currentRecordObj: KPIRecord = {
+                                  id: editingRecordId || `kpi-${selectedEmployeeId}-${filterMonth}-${filterYear}`,
+                                  employeeId: selectedEmployeeId,
+                                  month: filterMonth,
+                                  year: filterYear,
+                                  scores: {},
+                                  status: isRecordApproved ? 'approved' : 'draft',
+                                  notes: recordNotes,
+                                  hardKPIs: hardKPIInputs,
+                                  softSkills: softSkillInputs,
+                                  hardWeight,
+                                  softWeight,
+                                  finalScore: score
+                                };
+                                setPrintModalRecord(currentRecordObj);
+                              }}
+                              className="p-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-lg flex items-center gap-1.5 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                              title="Preview Lembar KPI"
+                            >
+                              <Printer className="w-4 h-4 text-violet-600" />
+                              <span>Preview Cetak</span>
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  {isRecordApproved ? (
+                    <div className="flex flex-wrap items-center justify-between w-full bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl shadow-2xs gap-3">
+                      <span className="text-xs font-bold text-emerald-900 flex items-center gap-2">
+                        <CheckCircle className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
+                        Data Penilaian KPI Karyawan Ini Telah Disetujui (Status Hijau) & Dikunci.
+                      </span>
+                      {isAuthorizedToApprove && (
+                        <button
+                          type="button"
+                          onClick={handleUnlockRecord}
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <Unlock size={14} />
+                          Buka Kunci untuk Edit
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex justify-end gap-3 pt-2">
+                      <button
+                        onClick={() => handleSaveKPIRecord('draft')}
+                        className="px-5 py-2.5 bg-slate-100 text-slate-700 text-xs font-black uppercase rounded-xl hover:bg-slate-200 transition-colors"
+                      >
+                        Simpan Sebagai Draft
+                      </button>
+
+                      {isAuthorizedToApprove && (
+                        <button
+                          onClick={() => handleSaveKPIRecord('approved')}
+                          className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-black uppercase rounded-xl transition-colors flex items-center gap-1.5"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          Setujui Nilai (Approve)
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}
