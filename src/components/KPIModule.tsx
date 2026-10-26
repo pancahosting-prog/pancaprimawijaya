@@ -1144,6 +1144,16 @@ export default function KPIModule({
   const [softWeight, setSoftWeight] = useState<number>(20);
   const [printModalRecord, setPrintModalRecord] = useState<KPIRecord | null>(null);
   
+  // Custom indicators per individual employee (persisted permanently per employeeId)
+  const [employeeCustomIndicators, setEmployeeCustomIndicators] = useState<Record<string, any[]>>(() => {
+    const saved = localStorage.getItem('mypanca_kpi_employee_custom_indicators');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  useEffect(() => {
+    safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', employeeCustomIndicators);
+  }, [employeeCustomIndicators]);
+  
   // Salary Visibility Toggle
   const [showSalaryMap, setShowSalaryMap] = useState<Record<string, boolean>>({});
 
@@ -1408,10 +1418,13 @@ export default function KPIModule({
   }, [kpiMonthlyInputs]);
 
   // Roles verification
-  const isSuperadminOrAdmin = currentUser?.role === 'superadmin' || currentUser?.role === 'admin';
-  const isFinance = currentUser?.role === 'finance';
-  const isAuthorizedToSeeSalary = isSuperadminOrAdmin || isFinance;
-  const isAuthorizedToApprove = isSuperadminOrAdmin || currentUser?.role === 'director' || currentUser?.role === 'manager';
+  const normalizedRole = (currentUser?.role || '').toLowerCase();
+  const isSuperadminOrAdmin = normalizedRole === 'superadmin' || normalizedRole === 'admin';
+  const isHR = normalizedRole === 'hr' || normalizedRole === 'hrd';
+  const isAuthorizedToManageKPI = isSuperadminOrAdmin || isHR;
+  const isFinance = normalizedRole === 'finance';
+  const isAuthorizedToSeeSalary = isSuperadminOrAdmin || isFinance || isHR;
+  const isAuthorizedToApprove = isSuperadminOrAdmin || isHR || normalizedRole === 'director' || normalizedRole === 'manager';
 
   // Currency Formatter
   const formatRupiah = (num: number) => {
@@ -1456,6 +1469,23 @@ export default function KPIModule({
       
       item.score = Math.round(computedScore * 100) / 100;
       updated[idx] = item;
+
+      // Sync custom indicator edits immediately to employeeCustomIndicators
+      if (selectedEmployeeId && (item.indicatorId?.startsWith('ind-custom-') || item.isCustom)) {
+        setEmployeeCustomIndicators(curr => {
+          const empList = [...(curr[selectedEmployeeId] || [])];
+          const cIdx = empList.findIndex(ci => ci.indicatorId === item.indicatorId);
+          if (cIdx > -1) {
+            empList[cIdx] = item;
+          } else {
+            empList.push(item);
+          }
+          const updatedCustom = { ...curr, [selectedEmployeeId]: empList };
+          safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', updatedCustom);
+          return updatedCustom;
+        });
+      }
+
       return updated;
     });
   };
@@ -1488,17 +1518,63 @@ export default function KPIModule({
     return Math.round((hardPart + softPart) * 100) / 100;
   };
 
-  // Get template based on Employee Jabatan (references our dynamic Jabatans)
+  // Get template based on Employee Jabatan (references our dynamic Jabatans & Templates)
   const activeTemplateForEmployee = (emp: KPIEmployee | undefined) => {
     if (!emp) return DEFAULT_TEMPLATES.find(t => t.jabatan === 'default')!;
     const jab = jabatans.find(j => j.id === emp.jabatanId);
-    const jabName = jab ? jab.name.toLowerCase() : '';
-    
-    const matched = kpiTemplates.find(t => 
-      t.jabatan.toLowerCase() === jabName
-    );
+    const jabName = jab ? jab.name.toLowerCase().trim() : '';
+    const empJabName = (emp.jabatan || '').toLowerCase().trim();
+    const empRole = (emp.role || '').toLowerCase().trim();
+
+    // 1. Direct match by Jabatan Name or Role in kpiTemplates
+    let matched = kpiTemplates.find(t => {
+      const tJab = t.jabatan.toLowerCase().trim();
+      return (jabName && tJab === jabName) || 
+             (empJabName && tJab === empJabName) || 
+             (empRole && tJab === empRole);
+    });
     if (matched) return matched;
-    
+
+    // 2. Direct match by Template ID or emp.jabatanId
+    if (emp.jabatanId) {
+      matched = kpiTemplates.find(t => 
+        t.id === emp.jabatanId || 
+        t.id === `tpl-${emp.jabatanId}` ||
+        t.jabatan.toLowerCase().trim() === emp.jabatanId.toLowerCase().trim()
+      );
+      if (matched) return matched;
+    }
+
+    // 3. Keyword / partial matching
+    const targetKeywords = [jabName, empJabName, empRole, emp.jabatanId || ''].filter(Boolean);
+    for (const kw of targetKeywords) {
+      if (kw.includes('sales')) {
+        matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('sales'));
+        if (matched) return matched;
+      }
+      if (kw.includes('eng') || kw.includes('teknisi')) {
+        matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('eng') || t.jabatan.toLowerCase().includes('teknisi'));
+        if (matched) return matched;
+      }
+      if (kw.includes('fin') || kw.includes('keu') || kw.includes('akunt') || kw.includes('pajak')) {
+        matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('fin') || t.jabatan.toLowerCase().includes('keu'));
+        if (matched) return matched;
+      }
+      if (kw.includes('purchas') || kw.includes('beli') || kw.includes('procure')) {
+        matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('purchas'));
+        if (matched) return matched;
+      }
+      if (kw.includes('gudang') || kw.includes('stock') || kw.includes('inven')) {
+        matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('stock') || t.jabatan.toLowerCase().includes('gudang') || t.jabatan.toLowerCase().includes('inven'));
+        if (matched) return matched;
+      }
+      if (kw.includes('hr') || kw.includes('personalia')) {
+        matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('hr') || t.jabatan.toLowerCase().includes('personalia'));
+        if (matched) return matched;
+      }
+    }
+
+    // 4. Fallback to default
     return kpiTemplates.find(t => t.jabatan === 'default') || DEFAULT_TEMPLATES.find(t => t.jabatan === 'default')!;
   };
 
@@ -1606,11 +1682,23 @@ export default function KPIModule({
       return [...prev, newRecord];
     });
 
+    // Save custom indicators permanently for this individual employee
+    if (selectedEmployeeId) {
+      const currentCustom = hardKPIInputs.filter(item => 
+        item.indicatorId?.startsWith('ind-custom-') || item.isCustom
+      );
+      setEmployeeCustomIndicators(prev => {
+        const next = { ...prev, [selectedEmployeeId]: currentCustom };
+        safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', next);
+        return next;
+      });
+    }
+
     setEditingRecordId(newRecord.id);
     alert(`Penilaian Lembar KPI berhasil disimpan sebagai ${status === 'approved' ? 'Disetujui' : 'Draft'}!`);
   };
 
-  // Reset or Load existing record
+  // Reset or Load existing record (Auto-applies Role Template + Individual Custom Indicators)
   useEffect(() => {
     if (!selectedEmployeeId) {
       setRecordScores({});
@@ -1625,6 +1713,8 @@ export default function KPIModule({
 
     const key = `kpi-${selectedEmployeeId}-${filterMonth}-${filterYear}`;
     const existing = kpiRecords.find(r => r.id === key);
+    const template = activeTemplateForEmployee(selectedEmployee);
+    const customInds = employeeCustomIndicators[selectedEmployeeId] || [];
 
     if (existing) {
       setRecordScores(existing.scores);
@@ -1638,7 +1728,6 @@ export default function KPIModule({
         setSoftWeight(existing.softWeight ?? 20);
       } else {
         // Fallback pre-population for existing legacy records
-        const template = activeTemplateForEmployee(selectedEmployee);
         const hardKPIs = template.indicators.map(ind => {
           const scoreVal = existing.scores[ind.id] !== undefined ? existing.scores[ind.id] : 80;
           return {
@@ -1651,6 +1740,13 @@ export default function KPIModule({
             realisasi: scoreVal,
             score: Math.round((ind.bobot * (scoreVal / 100)) * 100) / 100
           };
+        });
+
+        // Merge any individual custom indicators
+        customInds.forEach(cind => {
+          if (!hardKPIs.some(k => k.indicatorId === cind.indicatorId)) {
+            hardKPIs.push({ ...cind, isCustom: true });
+          }
         });
 
         const defaultSS = (template.softSkills && template.softSkills.length > 0)
@@ -1670,8 +1766,7 @@ export default function KPIModule({
         setSoftWeight(template.softWeight ?? 20);
       }
     } else {
-      // Pre-populate with automatic scores or 80 default
-      const template = activeTemplateForEmployee(selectedEmployee);
+      // Pre-populate with automatic scores or 80 default from Template Jabatan + Individual Custom Indicators
       const initial: Record<string, number> = {};
       
       const hardKPIs = template.indicators.map(ind => {
@@ -1688,6 +1783,18 @@ export default function KPIModule({
           realisasi: realVal,
           score: Math.round((ind.bobot * (realVal / 100)) * 100) / 100
         };
+      });
+
+      // Automatically append persistent custom indicators for this specific employee
+      customInds.forEach(cind => {
+        const realVal = cind.realisasi !== undefined ? cind.realisasi : 80;
+        initial[cind.indicatorId] = realVal;
+        hardKPIs.push({
+          ...cind,
+          realisasi: realVal,
+          score: Math.round(((cind.bobot || 10) * (realVal / Math.max(cind.target || 100, 1))) * 100) / 100,
+          isCustom: true
+        });
       });
 
       const defaultSS = (template.softSkills && template.softSkills.length > 0)
@@ -1709,7 +1816,7 @@ export default function KPIModule({
       setHardWeight(template.hardWeight ?? 80);
       setSoftWeight(template.softWeight ?? 20);
     }
-  }, [selectedEmployeeId, filterMonth, filterYear, kpiRecords]);
+  }, [selectedEmployeeId, filterMonth, filterYear, kpiRecords, kpiTemplates, employeeCustomIndicators]);
 
   // Calculate Bonus Recap for all employees with full KPI.xlsx parity
   const employeesRecap = useMemo(() => {
@@ -2148,7 +2255,7 @@ export default function KPIModule({
           <Shield className="w-4 h-4" />
           T&C Bonus
         </button>
-        {isSuperadminOrAdmin && (
+        {isAuthorizedToManageKPI && (
           <button 
             onClick={() => setActiveSubTab('templates')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${activeSubTab === 'templates' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
@@ -2491,86 +2598,107 @@ export default function KPIModule({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs">
-                          {hardKPIInputs.map((item, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50">
-                              <td className="p-3 text-center font-mono text-[10px] text-slate-400">{idx + 1}</td>
-                              <td className="p-3">
-                                {item.indicatorId.startsWith('ind-custom-') ? (
-                                  <input
-                                    type="text"
-                                    value={item.name}
-                                    onChange={(e) => updateHardKPIField(idx, 'name', e.target.value)}
-                                    className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-slate-700 w-full outline-none"
-                                  />
-                                ) : (
-                                  <span className="font-bold text-slate-700 block">{item.name}</span>
-                                )}
-                                <span className="text-[9px] text-slate-400 block font-mono">ID: {item.indicatorId}</span>
-                              </td>
-                              <td className="p-3 text-center">
-                                <div className="flex items-center gap-1 justify-center">
+                          {hardKPIInputs.map((item, idx) => {
+                            const isCustomInd = item.indicatorId?.startsWith('ind-custom-') || item.isCustom;
+                            return (
+                              <tr key={idx} className={`hover:bg-slate-50/50 ${isCustomInd ? 'bg-violet-50/20' : ''}`}>
+                                <td className="p-3 text-center font-mono text-[10px] text-slate-400">{idx + 1}</td>
+                                <td className="p-3">
+                                  {isCustomInd ? (
+                                    <input
+                                      type="text"
+                                      value={item.name}
+                                      onChange={(e) => updateHardKPIField(idx, 'name', e.target.value)}
+                                      placeholder="Nama Indikator Custom..."
+                                      className="p-1 bg-white border border-violet-200 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-violet-500"
+                                    />
+                                  ) : (
+                                    <span className="font-bold text-slate-700 block">{item.name}</span>
+                                  )}
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    {isCustomInd ? (
+                                      <span className="text-[9px] font-bold text-violet-700 bg-violet-100/70 px-1.5 py-0.5 rounded border border-violet-200 inline-flex items-center gap-1">
+                                        ★ Custom Individu
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] text-slate-400 font-mono">Template: {item.indicatorId}</span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <div className="flex items-center gap-1 justify-center">
+                                    <input
+                                      type="number"
+                                      value={item.bobot}
+                                      onChange={(e) => updateHardKPIField(idx, 'bobot', parseFloat(e.target.value) || 0)}
+                                      className="w-12 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold"
+                                    />
+                                    <span>%</span>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <select
+                                    value={item.metode}
+                                    onChange={(e) => updateHardKPIField(idx, 'metode', e.target.value)}
+                                    className="p-1 bg-white border border-slate-200 rounded text-[10px] font-bold text-slate-700 focus:ring-1 focus:ring-violet-500 outline-none"
+                                  >
+                                    <option value="Maximize">Maximize</option>
+                                    <option value="Minimize">Minimize</option>
+                                  </select>
+                                </td>
+                                <td className="p-3 text-center">
                                   <input
                                     type="number"
-                                    value={item.bobot}
-                                    onChange={(e) => updateHardKPIField(idx, 'bobot', parseFloat(e.target.value) || 0)}
-                                    className="w-12 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold"
+                                    value={item.target}
+                                    onChange={(e) => updateHardKPIField(idx, 'target', parseFloat(e.target.value) || 0)}
+                                    className="w-14 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold"
                                   />
-                                  <span>%</span>
-                                </div>
-                              </td>
-                              <td className="p-3 text-center">
-                                <select
-                                  value={item.metode}
-                                  onChange={(e) => updateHardKPIField(idx, 'metode', e.target.value)}
-                                  className="p-1 bg-white border border-slate-200 rounded text-[10px] font-bold text-slate-700 focus:ring-1 focus:ring-violet-500 outline-none"
-                                >
-                                  <option value="Maximize">Maximize</option>
-                                  <option value="Minimize">Minimize</option>
-                                </select>
-                              </td>
-                              <td className="p-3 text-center">
-                                <input
-                                  type="number"
-                                  value={item.target}
-                                  onChange={(e) => updateHardKPIField(idx, 'target', parseFloat(e.target.value) || 0)}
-                                  className="w-14 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold"
-                                />
-                              </td>
-                              <td className="p-3 text-center text-slate-400 font-semibold">
-                                {item.indicatorId.startsWith('ind-custom-') ? (
+                                </td>
+                                <td className="p-3 text-center text-slate-400 font-semibold">
+                                  {isCustomInd ? (
+                                    <input
+                                      type="text"
+                                      value={item.satuan}
+                                      onChange={(e) => updateHardKPIField(idx, 'satuan', e.target.value)}
+                                      className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-center w-10 outline-none"
+                                    />
+                                  ) : (
+                                    item.satuan
+                                  )}
+                                </td>
+                                <td className="p-3 text-center">
                                   <input
-                                    type="text"
-                                    value={item.satuan}
-                                    onChange={(e) => updateHardKPIField(idx, 'satuan', e.target.value)}
-                                    className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-center w-10 outline-none"
+                                    type="number"
+                                    value={item.realisasi}
+                                    onChange={(e) => updateHardKPIField(idx, 'realisasi', parseFloat(e.target.value) || 0)}
+                                    className="w-16 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-violet-700 focus:ring-1 focus:ring-violet-500"
                                   />
-                                ) : (
-                                  item.satuan
-                                )}
-                              </td>
-                              <td className="p-3 text-center">
-                                <input
-                                  type="number"
-                                  value={item.realisasi}
-                                  onChange={(e) => updateHardKPIField(idx, 'realisasi', parseFloat(e.target.value) || 0)}
-                                  className="w-16 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-violet-700 focus:ring-1 focus:ring-violet-500"
-                                />
-                              </td>
-                              <td className="p-3 text-center text-slate-400 font-semibold">{item.satuan}</td>
-                              <td className="p-3 text-right font-black text-slate-700">{item.score}</td>
-                              <td className="p-3 text-center">
-                                <button
-                                  onClick={() => {
-                                    setHardKPIInputs(prev => prev.filter((_, i) => i !== idx));
-                                  }}
-                                  className="text-red-500 hover:text-red-700 p-1 bg-red-50 rounded"
-                                  title="Hapus Indikator"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                                </td>
+                                <td className="p-3 text-center text-slate-400 font-semibold">{item.satuan}</td>
+                                <td className="p-3 text-right font-black text-slate-700">{item.score}</td>
+                                <td className="p-3 text-center">
+                                  <button
+                                    onClick={() => {
+                                      const targetItem = hardKPIInputs[idx];
+                                      setHardKPIInputs(prev => prev.filter((_, i) => i !== idx));
+                                      if (selectedEmployeeId && targetItem && (targetItem.indicatorId?.startsWith('ind-custom-') || targetItem.isCustom)) {
+                                        setEmployeeCustomIndicators(curr => {
+                                          const filtered = (curr[selectedEmployeeId] || []).filter(ci => ci.indicatorId !== targetItem.indicatorId);
+                                          const updated = { ...curr, [selectedEmployeeId]: filtered };
+                                          safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', updated);
+                                          return updated;
+                                        });
+                                      }
+                                    }}
+                                    className="text-red-500 hover:text-red-700 p-1 bg-red-50 rounded"
+                                    title="Hapus Indikator"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                           <tr className="bg-slate-50 font-bold text-slate-700">
                             <td colSpan={2} className="p-3 text-right text-[10px] uppercase tracking-wider text-slate-400">Total Skor KPI (Hard)</td>
                             <td className="p-3 text-center">
@@ -2584,26 +2712,36 @@ export default function KPIModule({
                       </table>
                     </div>
 
-                    <div className="flex justify-between items-center mt-2">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-2">
                       <button
                         onClick={() => {
                           const newInd = {
                             indicatorId: `ind-custom-${Date.now()}`,
-                            name: 'Indikator Tambahan Baru',
+                            name: 'Indikator Khusus Karyawan Ini',
                             bobot: 10,
                             metode: 'Maximize' as 'Maximize' | 'Minimize',
                             target: 100,
                             satuan: '%',
-                            realisasi: 0,
-                            score: 0
+                            realisasi: 80,
+                            score: 8,
+                            isCustom: true
                           };
                           setHardKPIInputs(p => [...p, newInd]);
+                          if (selectedEmployeeId) {
+                            setEmployeeCustomIndicators(curr => {
+                              const empList = curr[selectedEmployeeId] || [];
+                              const updated = [...empList, newInd];
+                              safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', { ...curr, [selectedEmployeeId]: updated });
+                              return { ...curr, [selectedEmployeeId]: updated };
+                            });
+                          }
                         }}
-                        className="px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-600 text-xs font-bold rounded-lg border border-violet-200 transition-colors flex items-center gap-1"
+                        className="px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold rounded-lg border border-violet-200 transition-colors flex items-center gap-1.5 shadow-xs"
                       >
-                        <Plus size={14} /> Tambah Indikator Tambahan (Bobot Tambahan)
+                        <Plus size={14} className="text-violet-600" />
+                        Tambah Indikator Tambahan (Custom Tersimpan untuk Karyawan Ini)
                       </button>
-                      <span className="text-[10px] font-bold text-slate-400">Pastikan total bobot KPI di atas berjumlah 100% sebelum disimpan.</span>
+                      <span className="text-[10px] font-bold text-slate-400">Indikator custom di atas otomatis tersimpan khusus untuk individu ini.</span>
                     </div>
                   </div>
 
@@ -3320,7 +3458,7 @@ export default function KPIModule({
                 </p>
               </div>
 
-              {isSuperadminOrAdmin && (
+              {isAuthorizedToManageKPI && (
                 <button
                   onClick={() => setIsAddingSalesRow(true)}
                   className="px-3.5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 shadow-sm self-start sm:self-auto"
@@ -3349,7 +3487,7 @@ export default function KPIModule({
                     <th rowSpan={2} className="p-3 text-right border-r border-slate-200 min-w-[120px]">Komisi</th>
                     <th rowSpan={2} className="p-3 text-right border-r border-slate-200 min-w-[130px] bg-violet-50/70 text-violet-900">Grand Total</th>
                     <th rowSpan={2} className="p-3 border-r border-slate-200 min-w-[220px]">Note</th>
-                    {isSuperadminOrAdmin && (
+                    {isAuthorizedToManageKPI && (
                       <th rowSpan={2} className="p-3 text-center w-14">Aksi</th>
                     )}
                   </tr>
@@ -3458,7 +3596,7 @@ export default function KPIModule({
                             className="w-full bg-transparent hover:bg-white focus:bg-white focus:ring-1 focus:ring-violet-500 rounded p-1 text-[11px] text-slate-500 outline-none"
                           />
                         </td>
-                        {isSuperadminOrAdmin && (
+                        {isAuthorizedToManageKPI && (
                           <td className="p-3 text-center">
                             <button
                               onClick={() => {
@@ -3495,7 +3633,7 @@ export default function KPIModule({
                     <td className="p-3 text-right font-mono border-r border-slate-200">{formatRupiah(salesTotals.komisi)}</td>
                     <td className="p-3 text-right font-mono text-violet-800 border-r border-slate-200 bg-violet-100/50">{formatRupiah(salesTotals.grandTotal)}</td>
                     <td className="p-3 text-[11px] text-slate-400 border-r border-slate-200">Sinkron dgn Financial Parameters</td>
-                    {isSuperadminOrAdmin && <td className="p-3"></td>}
+                    {isAuthorizedToManageKPI && <td className="p-3"></td>}
                   </tr>
                 </tbody>
               </table>
@@ -3520,7 +3658,7 @@ export default function KPIModule({
                 </p>
               </div>
 
-              {isSuperadminOrAdmin && (
+              {isAuthorizedToManageKPI && (
                 <button
                   onClick={() => setIsAddingEngineerRow(true)}
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 shadow-sm self-start sm:self-auto"
@@ -3540,7 +3678,7 @@ export default function KPIModule({
                     <th className="p-3 border-r border-slate-200 min-w-[180px]">Jabatan</th>
                     <th className="p-3 text-center border-r border-slate-200 min-w-[160px]">Persentase Komisi (%)</th>
                     <th className="p-3 text-right border-r border-slate-200 min-w-[180px] bg-emerald-50/60 text-emerald-900">Total Komisi (IDR)</th>
-                    {isSuperadminOrAdmin && (
+                    {isAuthorizedToManageKPI && (
                       <th className="p-3 text-center w-16">Aksi</th>
                     )}
                   </tr>
@@ -3588,7 +3726,7 @@ export default function KPIModule({
                         <td className="p-3 text-right font-mono font-black text-emerald-700 border-r border-slate-100 bg-emerald-50/20">
                           {formatRupiah(e.totalKomisi)}
                         </td>
-                        {isSuperadminOrAdmin && (
+                        {isAuthorizedToManageKPI && (
                           <td className="p-3 text-center">
                             <button
                               onClick={() => {
@@ -3615,7 +3753,7 @@ export default function KPIModule({
                     <td className="p-3 text-right font-mono text-emerald-800 border-r border-slate-200 bg-emerald-100/50">
                       {formatRupiah(engineerTotals.totalKomisi)}
                     </td>
-                    {isSuperadminOrAdmin && <td className="p-3"></td>}
+                    {isAuthorizedToManageKPI && <td className="p-3"></td>}
                   </tr>
                 </tbody>
               </table>
@@ -3642,7 +3780,7 @@ export default function KPIModule({
               </button>
 
               <div className="flex items-center gap-2">
-                {isSuperadminOrAdmin && (
+                {isAuthorizedToManageKPI && (
                   <button
                     onClick={() => {
                       setIsAdHocExpanded(true);
@@ -3850,7 +3988,7 @@ export default function KPIModule({
                                       <CheckCircle size={14} />
                                     </button>
                                   )}
-                                  {isSuperadminOrAdmin && (
+                                  {isAuthorizedToManageKPI && (
                                     <button
                                       onClick={() => {
                                         if (window.confirm("Hapus bonus project ini?")) {
@@ -4899,7 +5037,7 @@ export default function KPIModule({
         </div>
       )}
 
-      {activeSubTab === 'templates' && isSuperadminOrAdmin && (
+      {activeSubTab === 'templates' && isAuthorizedToManageKPI && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* List existing templates */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
