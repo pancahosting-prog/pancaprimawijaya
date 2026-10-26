@@ -603,27 +603,12 @@ export default function KPIModule({
 
   const [salesCommissions, setSalesCommissions] = useState<SalesCommission[]>(() => {
     const saved = localStorage.getItem('mypanca_kpi_commissions');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.some((p: any) => p.pencapaian.includes('100') && p.komisi === 3)) {
-          return [
-            { id: 'com-1', pencapaian: '120 %', komisi: 3 },
-            { id: 'com-2', pencapaian: '100 %', komisi: 2 },
-            { id: 'com-3', pencapaian: '80 %', komisi: 1 },
-            { id: 'com-4', pencapaian: '< 80 %', komisi: 0 }
-          ];
-        }
-        return parsed;
-      } catch (e) {
-        console.error(e);
-      }
-    }
+    if (saved) return JSON.parse(saved);
     return [
-      { id: 'com-1', pencapaian: '120 %', komisi: 3 },
-      { id: 'com-2', pencapaian: '100 %', komisi: 2 },
-      { id: 'com-3', pencapaian: '80 %', komisi: 1 },
-      { id: 'com-4', pencapaian: '< 80 %', komisi: 0 }
+      { id: 'com-1', pencapaian: '120 %', komisi: 4 },
+      { id: 'com-2', pencapaian: '100 %', komisi: 3 },
+      { id: 'com-3', pencapaian: '80 %', komisi: 2 },
+      { id: 'com-4', pencapaian: '< 80 %', komisi: 1 }
     ];
   });
 
@@ -983,22 +968,22 @@ export default function KPIModule({
     return months[num - 1] || 'Juli';
   };
 
-  // Commission % lookup from Sales Commissions table (Matching KPI.xlsx Main T&C C32:D35)
+  // Commission % lookup from Sales Commissions table
   const getSalesCommissionPercent = (capaianPct: number): number => {
     if (capaianPct >= 120) {
       const match = salesCommissions.find(s => s.pencapaian.includes('120'));
-      return match ? match.komisi : 3;
+      if (match) return match.komisi;
     }
     if (capaianPct >= 100) {
       const match = salesCommissions.find(s => s.pencapaian.includes('100'));
-      return match ? match.komisi : 2;
+      if (match) return match.komisi;
     }
     if (capaianPct >= 80) {
       const match = salesCommissions.find(s => s.pencapaian.includes('80') && !s.pencapaian.includes('<'));
-      return match ? match.komisi : 1;
+      if (match) return match.komisi;
     }
     const match = salesCommissions.find(s => s.pencapaian.includes('<'));
-    return match ? match.komisi : 0;
+    return match ? match.komisi : 1;
   };
 
   // Active month's project bonus sheet
