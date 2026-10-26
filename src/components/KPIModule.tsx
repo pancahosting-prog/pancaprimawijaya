@@ -6265,7 +6265,108 @@ export default function KPIModule({
 
                           setWeightWarningPengaturan(null);
                           localStorage.setItem('mypanca_kpi_templates', JSON.stringify(kpiTemplates));
-                          alert("Standardisasi KPI (Bagian A) & Soft Skill (Bagian B) Berhasil Disimpan!");
+
+                          // Sync updated template indicators, soft skills, and weights to all employee individual sheets in this role
+                          const matchingEmps = companyEmployees.filter(emp => {
+                            const jab = jabatans.find(j => j.id === emp.jabatanId);
+                            const jabName = jab ? jab.name.toLowerCase().trim() : (emp.jabatan || emp.role || '').toLowerCase().trim();
+                            const tplJab = selectedTpl.jabatan.toLowerCase().trim();
+                            return jabName === tplJab || emp.jabatanId === selectedTpl.id || selectedTpl.id === `tpl-${emp.jabatanId}`;
+                          });
+
+                          if (matchingEmps.length > 0) {
+                            setEmployeeIndividualSheets(prevSheets => {
+                              const nextSheets = { ...prevSheets };
+                              matchingEmps.forEach(emp => {
+                                const existingSheet = prevSheets[emp.id];
+                                const customInds = employeeCustomIndicators[emp.id] || [];
+                                const isSales = isSalesRole(emp);
+                                const salesBonusRow = isSales ? getSalesBonusRowForEmployee(emp) : null;
+
+                                const newHardKPIs = selectedTpl.indicators.map((ind, idx) => {
+                                  const existingHard = existingSheet?.hardKPIs?.find((h: any) => h.indicatorId === ind.id || h.name.toLowerCase().trim() === ind.name.toLowerCase().trim());
+                                  let targetVal = ind.target || existingHard?.target || 100;
+                                  let realVal = existingHard?.realisasi ?? 80;
+                                  let bobotVal = ind.bobot || 0;
+                                  let satuanVal = ind.satuan || existingHard?.satuan || '%';
+                                  let metodeVal = (ind.metode || existingHard?.metode || 'Maximize') as 'Maximize' | 'Minimize';
+                                  let nameVal = ind.name;
+
+                                  if (isSales && idx === 0) {
+                                    nameVal = 'Target Penjualan';
+                                    satuanVal = 'Rp';
+                                    metodeVal = 'Maximize';
+                                    targetVal = salesBonusRow?.targetBulanan || targetVal || 200000000;
+                                    realVal = salesBonusRow?.pencapaian || realVal || 0;
+                                  }
+
+                                  let computedScore = 0;
+                                  if (metodeVal === 'Minimize') {
+                                    computedScore = targetVal > 0 ? (targetVal / Math.max(realVal, 0.001)) * bobotVal : 0;
+                                  } else {
+                                    computedScore = targetVal > 0 ? (realVal / targetVal) * bobotVal : 0;
+                                  }
+
+                                  return {
+                                    indicatorId: ind.id,
+                                    name: nameVal,
+                                    bobot: bobotVal,
+                                    metode: metodeVal,
+                                    target: targetVal,
+                                    satuan: satuanVal,
+                                    realisasi: realVal,
+                                    score: Math.round(computedScore * 100) / 100
+                                  };
+                                });
+
+                                // Merge custom individual indicators
+                                customInds.forEach(cind => {
+                                  if (!newHardKPIs.some(k => k.indicatorId === cind.indicatorId)) {
+                                    newHardKPIs.push({ ...cind, isCustom: true });
+                                  }
+                                });
+
+                                const newSoftSkills = currentSoftSkills.map(ss => {
+                                  const existingSS = existingSheet?.softSkills?.find((s: any) => s.name.toLowerCase().trim() === ss.name.toLowerCase().trim());
+                                  const nilaiVal = existingSS?.nilai ?? 80;
+                                  const bobotVal = ss.bobot || 0;
+                                  const scoreVal = Math.round(((bobotVal / 100) * nilaiVal) * 100) / 100;
+                                  return {
+                                    name: ss.name,
+                                    bobot: bobotVal,
+                                    nilai: nilaiVal,
+                                    score: scoreVal
+                                  };
+                                });
+
+                                nextSheets[emp.id] = {
+                                  hardKPIs: newHardKPIs,
+                                  softSkills: newSoftSkills,
+                                  hardWeight: currentHardWeight,
+                                  softWeight: currentSoftWeight
+                                };
+                              });
+
+                              safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', nextSheets);
+                              return nextSheets;
+                            });
+
+                            // If currently selected employee in Penilaian KPI is in this role, update current active inputs immediately
+                            if (selectedEmployeeId) {
+                              const activeEmp = companyEmployees.find(e => e.id === selectedEmployeeId);
+                              if (activeEmp) {
+                                const activeJab = jabatans.find(j => j.id === activeEmp.jabatanId);
+                                const activeJabName = activeJab ? activeJab.name.toLowerCase().trim() : (activeEmp.jabatan || activeEmp.role || '').toLowerCase().trim();
+                                const tplJabName = selectedTpl.jabatan.toLowerCase().trim();
+                                if (activeJabName === tplJabName || activeEmp.jabatanId === selectedTpl.id || selectedTpl.id === `tpl-${activeEmp.jabatanId}`) {
+                                  setHardWeight(currentHardWeight);
+                                  setSoftWeight(currentSoftWeight);
+                                }
+                              }
+                            }
+                          }
+
+                          alert(`Standardisasi KPI (Bagian A) & Soft Skill (Bagian B) Berhasil Disimpan & Disinkronkan ke ${matchingEmps.length} karyawan dalam jabatan ini!`);
                         }}
                         className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5"
                       >
