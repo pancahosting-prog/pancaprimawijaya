@@ -64,6 +64,9 @@ interface KPITemplate {
     bobot: number; // percentage (sum should be 100)
     type: 'kuantitatif' | 'kualitatif';
     targetType?: 'sales_volume' | 'trx_count' | 'manual';
+    satuan?: string;
+    target?: number;
+    metode?: 'Maximize' | 'Minimize';
   }[];
   softSkills?: KPISoftSkillIndicator[];
   hardWeight?: number; // default 80
@@ -166,13 +169,39 @@ const DEFAULT_SOFT_SKILL_INDICATORS: KPISoftSkillIndicator[] = [
 // Default KPI templates for standard roles
 const DEFAULT_TEMPLATES: KPITemplate[] = [
   {
+    id: 'tpl-head-of-sales',
+    jabatan: 'head of sales',
+    indicators: [
+      { id: 'hos-target', name: 'Target Penjualan', bobot: 50, type: 'kuantitatif', targetType: 'sales_volume', satuan: 'Rp', target: 200000000, metode: 'Maximize' },
+      { id: 'hos-leads', name: 'Supervisi Tim & Pipeline Penjualan (Kualitatif)', bobot: 20, type: 'kualitatif', satuan: '%' },
+      { id: 'hos-strategy', name: 'Strategi Penjualan & Closing Deals (Kualitatif)', bobot: 15, type: 'kualitatif', satuan: '%' },
+      { id: 'hos-sop', name: 'Kepatuhan SOP & Laporan Manajemen (Kualitatif)', bobot: 15, type: 'kualitatif', satuan: '%' }
+    ],
+    softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
+    hardWeight: 80,
+    softWeight: 20
+  },
+  {
+    id: 'tpl-sales-staff',
+    jabatan: 'sales staff',
+    indicators: [
+      { id: 'sales-target', name: 'Target Penjualan', bobot: 50, type: 'kuantitatif', targetType: 'sales_volume', satuan: 'Rp', target: 200000000, metode: 'Maximize' },
+      { id: 'sales-leads', name: 'Follow-up Leads & Negosiasi (Kualitatif)', bobot: 20, type: 'kualitatif', satuan: '%' },
+      { id: 'sales-discipline', name: 'Kedisiplinan & Pelaporan Harian (Kualitatif)', bobot: 15, type: 'kualitatif', satuan: '%' },
+      { id: 'sales-sop', name: 'Kepatuhan SOP Transaksi & Invoice (Kualitatif)', bobot: 15, type: 'kualitatif', satuan: '%' }
+    ],
+    softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
+    hardWeight: 80,
+    softWeight: 20
+  },
+  {
     id: 'tpl-sales',
     jabatan: 'sales',
     indicators: [
-      { id: 'sales-omset', name: 'Pencapaian Target Omset Penjualan (Kuantitatif)', bobot: 50, type: 'kuantitatif', targetType: 'sales_volume' },
-      { id: 'sales-leads', name: 'Follow-up Leads & Negosiasi (Kualitatif)', bobot: 20, type: 'kualitatif' },
-      { id: 'sales-discipline', name: 'Kedisiplinan & Pelaporan Harian (Kualitatif)', bobot: 15, type: 'kualitatif' },
-      { id: 'sales-sop', name: 'Kepatuhan SOP Transaksi & Invoice (Kualitatif)', bobot: 15, type: 'kualitatif' }
+      { id: 'sales-omset', name: 'Target Penjualan', bobot: 50, type: 'kuantitatif', targetType: 'sales_volume', satuan: 'Rp', target: 200000000, metode: 'Maximize' },
+      { id: 'sales-leads-gen', name: 'Follow-up Leads & Negosiasi (Kualitatif)', bobot: 20, type: 'kualitatif', satuan: '%' },
+      { id: 'sales-discipline-gen', name: 'Kedisiplinan & Pelaporan Harian (Kualitatif)', bobot: 15, type: 'kualitatif', satuan: '%' },
+      { id: 'sales-sop-gen', name: 'Kepatuhan SOP Transaksi & Invoice (Kualitatif)', bobot: 15, type: 'kualitatif', satuan: '%' }
     ],
     softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
     hardWeight: 80,
@@ -321,6 +350,136 @@ export interface EngineerBonusProjectRow {
 export interface MonthProjectBonusSheet {
   sales: SalesBonusProjectRow[];
   engineers: EngineerBonusProjectRow[];
+}
+
+export const KPI_SATUAN_OPTIONS = [
+  '%',
+  'Nilai',
+  'Rp',
+  'Unit',
+  'Pcs',
+  'Trx',
+  'Hari',
+  'Dokumen',
+  'Proyek',
+  'Jam',
+  'Orang',
+  'Bulan'
+];
+
+// Helper to format any number with dot thousands separator (e.g. 1.000.000 or 1.000.000,50)
+export const formatDotNumber = (val: number | string | undefined | null): string => {
+  if (val === undefined || val === null || val === '') return '';
+  const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\./g, '').replace(',', '.'));
+  if (isNaN(num)) return '';
+  const parts = num.toString().split('.');
+  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return parts.length > 1 ? `${intPart},${parts[1]}` : intPart;
+};
+
+// Helper to parse dot formatted string back to raw float (e.g. "1.000.000" -> 1000000)
+export const parseDotNumber = (val: string | undefined | null): number => {
+  if (!val) return 0;
+  const clean = String(val).replace(/\./g, '').replace(',', '.').trim();
+  const num = parseFloat(clean);
+  return isNaN(num) ? 0 : num;
+};
+
+export interface FormattedNumberInputProps {
+  value: number | undefined | null;
+  onChange: (val: number) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  allowDecimal?: boolean;
+  min?: number;
+  max?: number;
+  id?: string;
+  name?: string;
+  style?: React.CSSProperties;
+}
+
+export function FormattedNumberInput({
+  value,
+  onChange,
+  className = '',
+  placeholder = '0',
+  disabled = false,
+  allowDecimal = false,
+  min,
+  max,
+  id,
+  name,
+  style
+}: FormattedNumberInputProps) {
+  const [localStr, setLocalStr] = useState<string>(() => {
+    if (value === undefined || value === null) return '';
+    return formatDotNumber(value);
+  });
+
+  useEffect(() => {
+    const currentParsed = parseDotNumber(localStr);
+    const targetVal = value ?? 0;
+    if (currentParsed !== targetVal) {
+      setLocalStr(value === undefined || value === null ? '' : formatDotNumber(value));
+    }
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    if (!raw.trim()) {
+      setLocalStr('');
+      onChange(0);
+      return;
+    }
+
+    if (allowDecimal) {
+      // Support comma or dot as decimal separator
+      const clean = raw.replace(/[^\d,.]/g, '');
+      const parts = clean.replace(/\./g, ',').split(',');
+      if (parts.length > 2) return;
+      const intRaw = parts[0] ? parts[0].replace(/[^\d]/g, '') : '';
+      const formattedInt = intRaw ? parseInt(intRaw, 10).toLocaleString('id-ID') : '';
+      const newDisplay = parts.length > 1 ? `${formattedInt},${parts[1]}` : formattedInt;
+      setLocalStr(newDisplay);
+      const parsed = parseFloat(`${intRaw || '0'}.${parts[1] || '0'}`);
+      onChange(isNaN(parsed) ? 0 : parsed);
+    } else {
+      const digitsOnly = raw.replace(/[^\d]/g, '');
+      if (!digitsOnly) {
+        setLocalStr('');
+        onChange(0);
+        return;
+      }
+      let num = parseInt(digitsOnly, 10);
+      if (max !== undefined && num > max) num = max;
+      if (min !== undefined && num < min) num = min;
+      setLocalStr(num.toLocaleString('id-ID'));
+      onChange(num);
+    }
+  };
+
+  const handleBlur = () => {
+    if (!localStr && value !== undefined && value !== null) {
+      setLocalStr(formatDotNumber(value));
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode={allowDecimal ? "decimal" : "numeric"}
+      value={localStr}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      placeholder={placeholder}
+      disabled={disabled}
+      className={className}
+      id={id}
+      name={name}
+      style={style}
+    />
+  );
 }
 
 export default function KPIModule({
@@ -546,6 +705,54 @@ export default function KPIModule({
     return lower.includes('engineer') || lower.includes('engineering') || lower.includes('teknik') || lower.includes('teknisi');
   };
 
+  // Check if a jabatan corresponds to a sales role (Sales, Sales Staff, or Head of Sales)
+  const isSalesJabatan = (jabName: string): boolean => {
+    if (!jabName) return false;
+    const lower = jabName.toLowerCase();
+    return lower.includes('sales') || lower.includes('penjualan');
+  };
+
+  const isSalesRole = (emp: KPIEmployee | Employee | undefined): boolean => {
+    if (!emp) return false;
+    const jab = jabatans.find(j => j.id === (emp as any).jabatanId);
+    const jabName = (jab?.name || emp.jabatan || emp.role || '').toLowerCase();
+    return isSalesJabatan(jabName);
+  };
+
+  // Helper to fetch matching sales bonus row for an employee for the active month
+  const getSalesBonusRowForEmployee = (emp: KPIEmployee | Employee | undefined): SalesBonusProjectRow | null => {
+    if (!emp) return null;
+    const key = `${filterYear}-${filterMonth}`;
+    const sheet = bonusProjectSheets[key] || activeProjectBonusSheet;
+    const salesRows = sheet.sales || [];
+    
+    // 1. Match by employeeId if present
+    let match = salesRows.find(r => r.employeeId && r.employeeId === emp.id);
+    if (match) return match;
+
+    // 2. Match by clean employee name
+    const empClean = emp.nama.toLowerCase().trim();
+    match = salesRows.find(r => r.nama.toLowerCase().trim() === empClean);
+    if (match) return match;
+
+    // 3. Match partial name
+    match = salesRows.find(r => {
+      const rName = r.nama.toLowerCase().trim();
+      return rName.includes(empClean) || empClean.includes(rName);
+    });
+    if (match) return match;
+
+    // 4. Match role / jabatan (e.g. Head of Sales)
+    const jab = jabatans.find(j => j.id === (emp as any).jabatanId);
+    const jabName = (jab?.name || emp.jabatan || emp.role || '').toLowerCase().trim();
+    if (jabName.includes('head') && jabName.includes('sales')) {
+      match = salesRows.find(r => r.jabatan.toLowerCase().includes('head'));
+      if (match) return match;
+    }
+
+    return null;
+  };
+
   // Helper to sync an employee to Engineer Bonus Project sheet
   const syncEngineerToBonusProject = (empId: string, empNama: string, jabName: string) => {
     if (!isEngineerJabatan(jabName)) return;
@@ -581,19 +788,22 @@ export default function KPIModule({
     });
   };
 
-  // Auto-sync any employee who has an Engineer role into the Engineer Bonus Project sheet
+  // Auto-sync any employee who has an Engineer role or Sales role into the Bonus Project sheet
   useEffect(() => {
     setBonusProjectSheets(prevSheets => {
       const key = `${filterYear}-${filterMonth}`;
       const sheet = prevSheets[key] || { sales: [], engineers: [] };
       const currentEngineers = [...(sheet.engineers || [])];
+      const currentSales = [...(sheet.sales || [])];
       let changed = false;
 
       kpiEmployees.forEach(emp => {
         const jab = jabatans.find(j => j.id === emp.jabatanId);
         const jabName = jab?.name || '';
+        const empClean = emp.nama.toLowerCase().trim();
+
+        // Sync Engineers
         if (isEngineerJabatan(jabName)) {
-          const empClean = emp.nama.toLowerCase().trim();
           const existingIdx = currentEngineers.findIndex(
             e => (e.employeeId && e.employeeId === emp.id) || e.nama.toLowerCase().trim() === empClean
           );
@@ -618,6 +828,38 @@ export default function KPIModule({
             }
           }
         }
+
+        // Sync Sales & Head of Sales
+        if (isSalesJabatan(jabName)) {
+          const existingIdx = currentSales.findIndex(
+            s => (s.employeeId && s.employeeId === emp.id) || s.nama.toLowerCase().trim() === empClean
+          );
+          if (existingIdx === -1) {
+            currentSales.push({
+              id: `sb-${emp.id}`,
+              employeeId: emp.id,
+              nama: emp.nama.trim(),
+              jabatan: jabName,
+              targetBulanan: 200000000,
+              pencapaian: 0,
+              pajak: 0,
+              biayaKirim: 0,
+              biayaLain: 0,
+              additional: 0
+            });
+            changed = true;
+          } else {
+            if (!currentSales[existingIdx].employeeId || currentSales[existingIdx].nama !== emp.nama.trim() || currentSales[existingIdx].jabatan !== jabName) {
+              currentSales[existingIdx] = {
+                ...currentSales[existingIdx],
+                employeeId: emp.id,
+                nama: emp.nama.trim(),
+                jabatan: jabName
+              };
+              changed = true;
+            }
+          }
+        }
       });
 
       if (changed) {
@@ -625,6 +867,7 @@ export default function KPIModule({
           ...prevSheets,
           [key]: {
             ...sheet,
+            sales: currentSales,
             engineers: currentEngineers
           }
         };
@@ -644,14 +887,20 @@ export default function KPIModule({
         const exists = updated.some(t => t.jabatan.toLowerCase().trim() === cleanLower);
         if (!exists) {
           changed = true;
+          const isSalesJab = cleanLower.includes('sales') || cleanLower.includes('penjualan');
           updated.push({
             id: `tpl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
             jabatan: cleanLower,
             hardWeight: 80,
             softWeight: 20,
-            indicators: [
-              { id: `ind-${Date.now()}-1`, name: 'Pencapaian Target Kerja & Output', bobot: 50, type: 'kualitatif' },
-              { id: `ind-${Date.now()}-2`, name: 'Disiplin, Kepatuhan & SOP', bobot: 50, type: 'kualitatif' }
+            indicators: isSalesJab ? [
+              { id: `ind-${Date.now()}-1`, name: 'Target Penjualan', bobot: 50, type: 'kuantitatif', targetType: 'sales_volume', satuan: 'Rp', target: 200000000, metode: 'Maximize' },
+              { id: `ind-${Date.now()}-2`, name: 'Follow-up Leads & Negosiasi', bobot: 20, type: 'kualitatif', satuan: '%' },
+              { id: `ind-${Date.now()}-3`, name: 'Kedisiplinan & Pelaporan Harian', bobot: 15, type: 'kualitatif', satuan: '%' },
+              { id: `ind-${Date.now()}-4`, name: 'Kepatuhan SOP Transaksi & Invoice', bobot: 15, type: 'kualitatif', satuan: '%' }
+            ] : [
+              { id: `ind-${Date.now()}-1`, name: 'Pencapaian Target Kerja & Output', bobot: 50, type: 'kualitatif', satuan: '%' },
+              { id: `ind-${Date.now()}-2`, name: 'Disiplin, Kepatuhan & SOP', bobot: 50, type: 'kualitatif', satuan: '%' }
             ],
             softSkills: DEFAULT_SOFT_SKILL_INDICATORS
           });
@@ -1077,12 +1326,32 @@ export default function KPIModule({
     if (saved) {
       try {
         const parsed: KPITemplate[] = JSON.parse(saved);
-        return parsed.map(tpl => ({
-          ...tpl,
-          hardWeight: tpl.hardWeight ?? 80,
-          softWeight: tpl.softWeight ?? 20,
-          softSkills: tpl.softSkills && tpl.softSkills.length > 0 ? tpl.softSkills : DEFAULT_SOFT_SKILL_INDICATORS
-        }));
+        return parsed.map(tpl => {
+          const isSales = isSalesJabatan(tpl.jabatan);
+          let inds = tpl.indicators || [];
+          if (isSales && inds.length > 0) {
+            inds = [
+              {
+                ...inds[0],
+                name: 'Target Penjualan',
+                satuan: 'Rp',
+                metode: 'Maximize',
+                bobot: inds[0].bobot || 50,
+                type: 'kuantitatif',
+                targetType: 'sales_volume',
+                target: inds[0].target && inds[0].target > 1000 ? inds[0].target : 200000000
+              },
+              ...inds.slice(1)
+            ];
+          }
+          return {
+            ...tpl,
+            indicators: inds,
+            hardWeight: tpl.hardWeight ?? 80,
+            softWeight: tpl.softWeight ?? 20,
+            softSkills: tpl.softSkills && tpl.softSkills.length > 0 ? tpl.softSkills : DEFAULT_SOFT_SKILL_INDICATORS
+          };
+        });
       } catch (e) {
         console.error("Failed to parse kpi templates", e);
       }
@@ -1154,6 +1423,30 @@ export default function KPIModule({
     safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', employeeCustomIndicators);
   }, [employeeCustomIndicators]);
   
+  // Custom individual sheets (both Hard KPI and Soft Skill inputs per employeeId)
+  const [employeeIndividualSheets, setEmployeeIndividualSheets] = useState<Record<string, {
+    hardKPIs: any[];
+    softSkills: any[];
+    hardWeight?: number;
+    softWeight?: number;
+  }>>(() => {
+    const saved = localStorage.getItem('mypanca_kpi_employee_individual_sheets');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  useEffect(() => {
+    safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', employeeIndividualSheets);
+  }, [employeeIndividualSheets]);
+
+  // Modal state for template deletion confirmation with affected employees list
+  const [templateDeleteConfirm, setTemplateDeleteConfirm] = useState<{
+    template: KPITemplate;
+    affectedEmployees: KPIEmployee[];
+  } | null>(null);
+
+  // Quick assign jabatan in Penilaian KPI when employee has no active jabatan/template
+  const [assignJabatanId, setAssignJabatanId] = useState<string>('');
+
   // Warning states for weight accumulation limits
   const [weightWarningPenilaian, setWeightWarningPenilaian] = useState<string | null>(null);
   const [weightWarningPengaturan, setWeightWarningPengaturan] = useState<string | null>(null);
@@ -1218,7 +1511,7 @@ export default function KPIModule({
         if (t.id !== tplId) return t;
         return {
           ...t,
-          indicators: [...t.indicators, { id: `ind-tpl-${Date.now()}`, name: 'Indikator Baru', bobot: newBobot, type: 'kualitatif' }]
+          indicators: [...t.indicators, { id: `ind-tpl-${Date.now()}`, name: 'Indikator Baru', bobot: newBobot, type: 'kualitatif', satuan: '%' }]
         };
       }));
     }
@@ -1321,6 +1614,51 @@ export default function KPIModule({
     })));
 
     alert("Standar indikator soft skill dan proporsi bobot berhasil diterapkan ke semua template jabatan!");
+  };
+
+  // Handle confirmed template deletion (including system templates)
+  const handleConfirmDeleteTemplate = () => {
+    if (!templateDeleteConfirm) return;
+    const { template: tpl, affectedEmployees } = templateDeleteConfirm;
+
+    // 1. Remove from kpiTemplates
+    setKpiTemplates(prev => {
+      const filtered = prev.filter(t => t.id !== tpl.id);
+      safeSetLocalStorage('mypanca_kpi_templates', filtered);
+      return filtered;
+    });
+
+    // 2. Remove matching jabatan from jabatans so auto-sync doesn't re-create it
+    setJabatans(prev => {
+      const filtered = prev.filter(j => j.name.toLowerCase().trim() !== tpl.jabatan.toLowerCase().trim() && j.id !== tpl.id);
+      safeSetLocalStorage('mypanca_kpi_jabatans', JSON.stringify(filtered));
+      return filtered;
+    });
+
+    // 3. Clear jabatanId on affected employees so they prompt "Harap pilih jabatan untuk mendapatkan nilai KPI"
+    if (affectedEmployees.length > 0) {
+      setKpiEmployees(prev => {
+        const updated = prev.map(emp => {
+          const jab = jabatans.find(j => j.id === emp.jabatanId);
+          const jabName = (jab?.name || emp.jabatan || emp.role || '').toLowerCase().trim();
+          const tplName = (tpl.jabatan || '').toLowerCase().trim();
+          if (jabName === tplName || emp.jabatanId === tpl.id || tpl.id === `tpl-${emp.jabatanId}`) {
+            return { ...emp, jabatanId: '', jabatan: '' };
+          }
+          return emp;
+        });
+        safeSetLocalStorage('mypanca_kpi_employees', JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    // 4. Update selectedTemplateId if it was the deleted template
+    if (selectedTemplateId === tpl.id) {
+      const remaining = kpiTemplates.filter(t => t.id !== tpl.id);
+      setSelectedTemplateId(remaining[0]?.id || '');
+    }
+
+    setTemplateDeleteConfirm(null);
   };
 
   // Reusable Employee Handlers (Penilaian & Karyawan)
@@ -1540,6 +1878,23 @@ export default function KPIModule({
       item.score = Math.round(computedScore * 100) / 100;
       updated[idx] = item;
 
+      // Sync edits immediately to employeeIndividualSheets for permanent individual customization
+      if (selectedEmployeeId) {
+        setEmployeeIndividualSheets(curr => {
+          const next = {
+            ...curr,
+            [selectedEmployeeId]: {
+              hardKPIs: updated,
+              softSkills: softSkillInputs,
+              hardWeight,
+              softWeight
+            }
+          };
+          safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', next);
+          return next;
+        });
+      }
+
       // Sync custom indicator edits immediately to employeeCustomIndicators
       if (selectedEmployeeId && (item.indicatorId?.startsWith('ind-custom-') || item.isCustom)) {
         setEmployeeCustomIndicators(curr => {
@@ -1563,15 +1918,105 @@ export default function KPIModule({
   const updateSoftSkillField = (idx: number, field: string, value: any) => {
     setSoftSkillInputs(prev => {
       const updated = [...prev];
-      const item = { ...updated[idx], [field]: value };
-      
+      let finalVal = value;
+      if (field === 'bobot') {
+        let bobotVal = Math.max(0, parseFloat(value) || 0);
+        const otherBobot = prev.reduce((sum, it, i) => i !== idx ? sum + (parseFloat(it.bobot) || 0) : sum, 0);
+        const maxAllowed = Math.max(0, 100 - otherBobot);
+        if (bobotVal > maxAllowed) {
+          setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot Soft Skill (Bagian B) tidak boleh melebihi 100%! Nilai dibatasi maksimal ${maxAllowed}%.`);
+          bobotVal = maxAllowed;
+        } else {
+          setWeightWarningPenilaian(null);
+        }
+        finalVal = bobotVal;
+      }
+
+      const item = { ...updated[idx], [field]: finalVal };
       const bobot = parseFloat(item.bobot) || 0;
       const nilai = parseFloat(item.nilai) || 0;
-      
       item.score = Math.round(((bobot / 100) * nilai) * 100) / 100;
       updated[idx] = item;
+
+      if (selectedEmployeeId) {
+        setEmployeeIndividualSheets(curr => {
+          const next = {
+            ...curr,
+            [selectedEmployeeId]: {
+              hardKPIs: hardKPIInputs,
+              softSkills: updated,
+              hardWeight,
+              softWeight
+            }
+          };
+          safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', next);
+          return next;
+        });
+      }
+
       return updated;
     });
+  };
+
+  const addSoftSkillRow = () => {
+    const currentTotal = softSkillInputs.reduce((sum, it) => sum + (parseFloat(it.bobot) || 0), 0);
+    const remaining = Math.max(0, 100 - currentTotal);
+    if (remaining <= 0) {
+      alert("Peringatan: Total akumulasi bobot Soft Skill (Bagian B) sudah mencapai 100%! Harap kurangi bobot aspek lain terlebih dahulu.");
+      setWeightWarningPenilaian("⚠️ Peringatan: Total akumulasi bobot Soft Skill sudah mencapai 100%! Kurangi bobot aspek lain terlebih dahulu.");
+      return;
+    }
+    const newBobot = Math.min(25, remaining);
+    setWeightWarningPenilaian(null);
+    const newSS = {
+      id: `ss-custom-${Date.now()}`,
+      name: 'Aspek Soft Skill Tambahan',
+      bobot: newBobot,
+      nilai: 80,
+      score: Math.round(((newBobot / 100) * 80) * 100) / 100
+    };
+    setSoftSkillInputs(prev => {
+      const next = [...prev, newSS];
+      if (selectedEmployeeId) {
+        setEmployeeIndividualSheets(curr => {
+          const updated = {
+            ...curr,
+            [selectedEmployeeId]: {
+              hardKPIs: hardKPIInputs,
+              softSkills: next,
+              hardWeight,
+              softWeight
+            }
+          };
+          safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', updated);
+          return updated;
+        });
+      }
+      return next;
+    });
+  };
+
+  const deleteSoftSkillRow = (idx: number) => {
+    setSoftSkillInputs(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (selectedEmployeeId) {
+        setEmployeeIndividualSheets(curr => {
+          const updated = {
+            ...curr,
+            [selectedEmployeeId]: {
+              hardKPIs: hardKPIInputs,
+              softSkills: next,
+              hardWeight,
+              softWeight
+            }
+          };
+          safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', updated);
+          return updated;
+        });
+      }
+      return next;
+    });
+    setWeightWarningPenilaian(null);
   };
 
   const getHardKPITotal = (inputs: any[]) => {
@@ -1589,10 +2034,12 @@ export default function KPIModule({
   };
 
   // Get template based on Employee Jabatan (references our dynamic Jabatans & Templates)
-  const activeTemplateForEmployee = (emp: KPIEmployee | undefined) => {
-    if (!emp) return DEFAULT_TEMPLATES.find(t => t.jabatan === 'default')!;
+  const activeTemplateForEmployee = (emp: KPIEmployee | undefined): KPITemplate | null => {
+    if (!emp) return null;
+    if (!emp.jabatanId) return null;
     const jab = jabatans.find(j => j.id === emp.jabatanId);
-    const jabName = jab ? jab.name.toLowerCase().trim() : '';
+    if (!jab) return null;
+    const jabName = (jab.name || '').toLowerCase().trim();
     const empJabName = (emp.jabatan || '').toLowerCase().trim();
     const empRole = (emp.role || '').toLowerCase().trim();
 
@@ -1606,20 +2053,26 @@ export default function KPIModule({
     if (matched) return matched;
 
     // 2. Direct match by Template ID or emp.jabatanId
-    if (emp.jabatanId) {
-      matched = kpiTemplates.find(t => 
-        t.id === emp.jabatanId || 
-        t.id === `tpl-${emp.jabatanId}` ||
-        t.jabatan.toLowerCase().trim() === emp.jabatanId.toLowerCase().trim()
-      );
-      if (matched) return matched;
-    }
+    matched = kpiTemplates.find(t => 
+      t.id === emp.jabatanId || 
+      t.id === `tpl-${emp.jabatanId}` ||
+      t.jabatan.toLowerCase().trim() === emp.jabatanId.toLowerCase().trim()
+    );
+    if (matched) return matched;
 
     // 3. Keyword / partial matching
     const targetKeywords = [jabName, empJabName, empRole, emp.jabatanId || ''].filter(Boolean);
     for (const kw of targetKeywords) {
-      if (kw.includes('sales')) {
-        matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('sales'));
+      if (kw.includes('sales') || kw.includes('penjualan')) {
+        if (kw.includes('head')) {
+          matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('head') && t.jabatan.toLowerCase().includes('sales'));
+          if (matched) return matched;
+        }
+        if (kw.includes('staff')) {
+          matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('staff') && t.jabatan.toLowerCase().includes('sales'));
+          if (matched) return matched;
+        }
+        matched = kpiTemplates.find(t => t.jabatan.toLowerCase().includes('sales') || t.jabatan.toLowerCase().includes('penjualan'));
         if (matched) return matched;
       }
       if (kw.includes('eng') || kw.includes('teknisi')) {
@@ -1644,12 +2097,13 @@ export default function KPIModule({
       }
     }
 
-    // 4. Fallback to default
-    return kpiTemplates.find(t => t.jabatan === 'default') || DEFAULT_TEMPLATES.find(t => t.jabatan === 'default')!;
+    // Return null if no template matched for this employee's jabatan
+    return null;
   };
 
   // Helper to calculate total KPI score
-  const calculateFinalKPIScore = (scores: Record<string, number>, template: KPITemplate) => {
+  const calculateFinalKPIScore = (scores: Record<string, number>, template: KPITemplate | null) => {
+    if (!template || !template.indicators) return 0;
     let totalScore = 0;
     template.indicators.forEach(ind => {
       const score = scores[ind.id] || 0;
@@ -1795,8 +2249,11 @@ export default function KPIModule({
 
     const key = `kpi-${selectedEmployeeId}-${filterMonth}-${filterYear}`;
     const existing = kpiRecords.find(r => r.id === key);
+    const customSheet = employeeIndividualSheets[selectedEmployeeId];
     const template = activeTemplateForEmployee(selectedEmployee);
     const customInds = employeeCustomIndicators[selectedEmployeeId] || [];
+    const isSales = isSalesRole(selectedEmployee);
+    const salesBonusRow = isSales ? getSalesBonusRowForEmployee(selectedEmployee) : null;
 
     if (existing) {
       setRecordScores(existing.scores);
@@ -1804,13 +2261,47 @@ export default function KPIModule({
       setEditingRecordId(existing.id);
 
       if (existing.hardKPIs && existing.softSkills) {
-        setHardKPIInputs(existing.hardKPIs);
+        let loadedHard = [...existing.hardKPIs];
+        // For sales roles: if not approved, sync indicator 0 with latest Pencapaian Omset Kotor & Target Bulanan
+        if (isSales && salesBonusRow && existing.status !== 'approved' && loadedHard.length > 0) {
+          const targetVal = salesBonusRow.targetBulanan || 200000000;
+          const realVal = salesBonusRow.pencapaian || 0;
+          const bobotVal = loadedHard[0].bobot || 50;
+          const computedScore = targetVal > 0 ? (realVal / targetVal) * bobotVal : 0;
+          loadedHard[0] = {
+            ...loadedHard[0],
+            name: 'Target Penjualan',
+            satuan: 'Rp',
+            metode: 'Maximize',
+            bobot: bobotVal,
+            target: targetVal,
+            realisasi: realVal,
+            score: Math.round(computedScore * 100) / 100
+          };
+        }
+        setHardKPIInputs(loadedHard);
         setSoftSkillInputs(existing.softSkills);
         setHardWeight(existing.hardWeight ?? 80);
         setSoftWeight(existing.softWeight ?? 20);
-      } else {
+      } else if (template) {
         // Fallback pre-population for existing legacy records
-        const hardKPIs = template.indicators.map(ind => {
+        const hardKPIs = template.indicators.map((ind, idx) => {
+          if (isSales && idx === 0) {
+            const targetVal = salesBonusRow?.targetBulanan || ind.target || 200000000;
+            const realVal = salesBonusRow?.pencapaian || 0;
+            const bobotVal = ind.bobot || 50;
+            const computedScore = targetVal > 0 ? (realVal / targetVal) * bobotVal : 0;
+            return {
+              indicatorId: ind.id,
+              name: 'Target Penjualan',
+              bobot: bobotVal,
+              metode: 'Maximize' as 'Maximize' | 'Minimize',
+              target: targetVal,
+              satuan: 'Rp',
+              realisasi: realVal,
+              score: Math.round(computedScore * 100) / 100
+            };
+          }
           const scoreVal = existing.scores[ind.id] !== undefined ? existing.scores[ind.id] : 80;
           return {
             indicatorId: ind.id,
@@ -1847,11 +2338,58 @@ export default function KPIModule({
         setHardWeight(template.hardWeight ?? 80);
         setSoftWeight(template.softWeight ?? 20);
       }
-    } else {
+    } else if (customSheet && customSheet.hardKPIs && customSheet.hardKPIs.length > 0) {
+      // Load individual custom indicators & soft skills preserved for this employee
+      let loadedHard = [...customSheet.hardKPIs];
+      if (isSales && salesBonusRow && loadedHard.length > 0) {
+        const targetVal = salesBonusRow.targetBulanan || 200000000;
+        const realVal = salesBonusRow.pencapaian || 0;
+        const bobotVal = loadedHard[0].bobot || 50;
+        const computedScore = targetVal > 0 ? (realVal / targetVal) * bobotVal : 0;
+        loadedHard[0] = {
+          ...loadedHard[0],
+          name: 'Target Penjualan',
+          satuan: 'Rp',
+          metode: 'Maximize',
+          bobot: bobotVal,
+          target: targetVal,
+          realisasi: realVal,
+          score: Math.round(computedScore * 100) / 100
+        };
+      }
+      const initial: Record<string, number> = {};
+      loadedHard.forEach(item => {
+        initial[item.indicatorId] = item.realisasi;
+      });
+      setRecordScores(initial);
+      setRecordNotes('');
+      setEditingRecordId(null);
+      setHardKPIInputs(loadedHard);
+      setSoftSkillInputs(customSheet.softSkills && customSheet.softSkills.length > 0 ? customSheet.softSkills : (template?.softSkills || DEFAULT_SOFT_SKILL_INDICATORS));
+      setHardWeight(customSheet.hardWeight ?? template?.hardWeight ?? 80);
+      setSoftWeight(customSheet.softWeight ?? template?.softWeight ?? 20);
+    } else if (template) {
       // Pre-populate with automatic scores or 80 default from Template Jabatan + Individual Custom Indicators
       const initial: Record<string, number> = {};
       
-      const hardKPIs = template.indicators.map(ind => {
+      const hardKPIs = template.indicators.map((ind, idx) => {
+        if (isSales && idx === 0) {
+          const targetVal = salesBonusRow?.targetBulanan || ind.target || 200000000;
+          const realVal = salesBonusRow?.pencapaian || 0;
+          const bobotVal = ind.bobot || 50;
+          const computedScore = targetVal > 0 ? (realVal / targetVal) * bobotVal : 0;
+          initial[ind.id] = realVal;
+          return {
+            indicatorId: ind.id,
+            name: 'Target Penjualan',
+            bobot: bobotVal,
+            metode: 'Maximize' as 'Maximize' | 'Minimize',
+            target: targetVal,
+            satuan: 'Rp',
+            realisasi: realVal,
+            score: Math.round(computedScore * 100) / 100
+          };
+        }
         const auto = getAutoQuantitativeScore(selectedEmployee!, ind);
         const realVal = auto !== null ? auto : 80;
         initial[ind.id] = realVal;
@@ -1897,8 +2435,17 @@ export default function KPIModule({
       setSoftSkillInputs(softSkills);
       setHardWeight(template.hardWeight ?? 80);
       setSoftWeight(template.softWeight ?? 20);
+    } else {
+      // Employee has no active template or jabatan
+      setRecordScores({});
+      setRecordNotes('');
+      setEditingRecordId(null);
+      setHardKPIInputs([]);
+      setSoftSkillInputs([]);
+      setHardWeight(80);
+      setSoftWeight(20);
     }
-  }, [selectedEmployeeId, filterMonth, filterYear, kpiRecords, kpiTemplates, employeeCustomIndicators]);
+  }, [selectedEmployeeId, filterMonth, filterYear, kpiRecords, kpiTemplates, employeeCustomIndicators, employeeIndividualSheets, bonusProjectSheets, activeProjectBonusSheet, selectedEmployee]);
 
   // Calculate Bonus Recap for all employees with full KPI.xlsx parity
   const employeesRecap = useMemo(() => {
@@ -2422,12 +2969,11 @@ export default function KPIModule({
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-3 text-xs font-bold text-slate-400">Rp</span>
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     value={newEmployee.gaji}
-                    onChange={(e) => setNewEmployee(p => ({ ...p, gaji: parseInt(e.target.value) || 0 }))}
-                    placeholder="Contoh: 5000000"
-                    className="w-full text-xs p-3 pl-11 bg-slate-50 border border-slate-200 rounded-xl outline-none font-black text-slate-800 focus:bg-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                    onChange={(val) => setNewEmployee(p => ({ ...p, gaji: val }))}
+                    placeholder="Contoh: 5.000.000"
+                    className="w-full text-xs p-3 pl-11 bg-slate-50 border border-slate-200 rounded-xl outline-none font-black text-slate-800 focus:bg-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500 font-mono"
                   />
                 </div>
                 <div className="mt-1 flex items-center justify-between text-[10px]">
@@ -2530,7 +3076,11 @@ export default function KPIModule({
 
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
                           <span className="text-[10px] text-slate-500 uppercase font-medium truncate max-w-[110px]">
-                            {jab ? jab.name : (emp.jabatan || emp.role || 'Staff')}
+                            {jab ? jab.name : (
+                              <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                ⚠️ Belum ada jabatan
+                              </span>
+                            )}
                           </span>
                           <span className="text-[10px] text-slate-300">•</span>
                           <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50/90 px-1.5 py-0.5 rounded border border-emerald-100">
@@ -2578,6 +3128,52 @@ export default function KPIModule({
                 <Award className="w-12 h-12 text-slate-300" />
                 <h3 className="text-sm font-bold text-slate-700">Silakan pilih karyawan di sebelah kiri</h3>
                 <p className="text-xs text-slate-400 max-w-xs">Pilih karyawan untuk menginput nilai indikator KPI kualitatif dan kuantitatif bulan ini.</p>
+              </div>
+            ) : !activeTemplateForEmployee(selectedEmployee) ? (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-8 text-center space-y-4 shadow-xs animate-in fade-in duration-200">
+                <div className="w-14 h-14 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                  <AlertTriangle className="w-7 h-7" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-base font-black text-amber-950">
+                    Harap pilih jabatan untuk mendapatkan nilai KPI
+                  </h3>
+                  <p className="text-xs text-amber-800 max-w-md mx-auto leading-relaxed">
+                    Karyawan <strong>{selectedEmployee.nama}</strong> saat ini belum memiliki jabatan aktif atau template KPI jabatannya telah dihapus dari sistem. Silakan tentukan jabatan di bawah ini agar template KPI jabatan dan lembar penilaian dapat diaktifkan.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-2 max-w-md mx-auto pt-3">
+                  <select
+                    value={assignJabatanId}
+                    onChange={(e) => setAssignJabatanId(e.target.value)}
+                    className="w-full sm:w-auto flex-1 p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-violet-500 shadow-xs"
+                  >
+                    <option value="">-- Pilih Jabatan / Template KPI --</option>
+                    {jabatans
+                      .filter(j => kpiTemplates.some(t => t.jabatan.toLowerCase().trim() === j.name.toLowerCase().trim() || t.id === j.id))
+                      .map(j => (
+                        <option key={j.id} value={j.id}>{j.name} (Bonus: {j.percentage}%)</option>
+                      ))
+                    }
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!assignJabatanId}
+                    onClick={() => {
+                      if (!assignJabatanId) return;
+                      setKpiEmployees(prev => {
+                        const updated = prev.map(e => e.id === selectedEmployee.id ? { ...e, jabatanId: assignJabatanId } : e);
+                        safeSetLocalStorage('mypanca_kpi_employees', JSON.stringify(updated));
+                        return updated;
+                      });
+                      setAssignJabatanId('');
+                    }}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm"
+                  >
+                    Terapkan Jabatan
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-6">
@@ -2702,24 +3298,46 @@ export default function KPIModule({
                               <tr key={idx} className={`hover:bg-slate-50/50 ${isCustomInd ? 'bg-violet-50/20' : ''}`}>
                                 <td className="p-3 text-center font-mono text-[10px] text-slate-400">{idx + 1}</td>
                                 <td className="p-3">
-                                  {isCustomInd ? (
-                                    <input
-                                      type="text"
-                                      value={item.name}
-                                      onChange={(e) => updateHardKPIField(idx, 'name', e.target.value)}
-                                      placeholder="Nama Indikator Custom..."
-                                      className="p-1 bg-white border border-violet-200 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-violet-500"
-                                    />
-                                  ) : (
-                                    <span className="font-bold text-slate-700 block">{item.name}</span>
-                                  )}
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    {isCustomInd ? (
+                                  <input
+                                    type="text"
+                                    value={item.name}
+                                    onChange={(e) => updateHardKPIField(idx, 'name', e.target.value)}
+                                    placeholder="Nama Indikator KPI..."
+                                    className="p-1.5 bg-white border border-slate-200 hover:border-violet-300 focus:border-violet-500 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-violet-500 transition-colors"
+                                  />
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                    {idx === 0 && isSalesRole(selectedEmployee) ? (
+                                      <div className="flex flex-wrap items-center gap-1.5 w-full">
+                                        <span className="text-[9px] font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1 shadow-xs">
+                                          ✓ Terhubung Otomatis ke Pencapaian (Omset Kotor) Bonus Project
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const bonusRow = getSalesBonusRowForEmployee(selectedEmployee);
+                                            if (bonusRow) {
+                                              const nextTarget = bonusRow.targetBulanan || 200000000;
+                                              const nextReal = bonusRow.pencapaian || 0;
+                                              updateHardKPIField(0, 'name', 'Target Penjualan');
+                                              updateHardKPIField(0, 'target', nextTarget);
+                                              updateHardKPIField(0, 'realisasi', nextReal);
+                                              updateHardKPIField(0, 'satuan', 'Rp');
+                                              updateHardKPIField(0, 'metode', 'Maximize');
+                                            }
+                                          }}
+                                          className="text-[9px] font-bold text-violet-700 hover:text-violet-900 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-2 py-0.5 rounded inline-flex items-center gap-1 transition-colors"
+                                          title="Sinkronkan ulang data dari Tabel Bonus Project Bulan Ini"
+                                        >
+                                          <RefreshCw className="w-2.5 h-2.5" />
+                                          Sinkronkan Ulang
+                                        </button>
+                                      </div>
+                                    ) : isCustomInd ? (
                                       <span className="text-[9px] font-bold text-violet-700 bg-violet-100/70 px-1.5 py-0.5 rounded border border-violet-200 inline-flex items-center gap-1">
                                         ★ Custom Individu
                                       </span>
                                     ) : (
-                                      <span className="text-[9px] text-slate-400 font-mono">Template: {item.indicatorId}</span>
+                                      <span className="text-[9px] text-slate-400 font-mono">Template: {item.indicatorId} (Custom Individu)</span>
                                     )}
                                   </div>
                                 </td>
@@ -2747,41 +3365,66 @@ export default function KPIModule({
                                   </select>
                                 </td>
                                 <td className="p-3 text-center">
-                                  <input
-                                    type="number"
+                                  <FormattedNumberInput
                                     value={item.target}
-                                    onChange={(e) => updateHardKPIField(idx, 'target', parseFloat(e.target.value) || 0)}
-                                    className="w-14 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold"
+                                    onChange={(val) => updateHardKPIField(idx, 'target', val)}
+                                    className="w-20 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold font-mono focus:ring-1 focus:ring-violet-500 outline-none"
+                                    allowDecimal
                                   />
-                                </td>
-                                <td className="p-3 text-center text-slate-400 font-semibold">
-                                  {isCustomInd ? (
-                                    <input
-                                      type="text"
-                                      value={item.satuan}
-                                      onChange={(e) => updateHardKPIField(idx, 'satuan', e.target.value)}
-                                      className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-center w-10 outline-none"
-                                    />
-                                  ) : (
-                                    item.satuan
-                                  )}
                                 </td>
                                 <td className="p-3 text-center">
-                                  <input
-                                    type="number"
+                                  <select
+                                    value={item.satuan || '%'}
+                                    onChange={(e) => updateHardKPIField(idx, 'satuan', e.target.value)}
+                                    className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-center w-16 outline-none focus:ring-1 focus:ring-violet-500 cursor-pointer text-slate-700"
+                                  >
+                                    {KPI_SATUAN_OPTIONS.map(opt => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <FormattedNumberInput
                                     value={item.realisasi}
-                                    onChange={(e) => updateHardKPIField(idx, 'realisasi', parseFloat(e.target.value) || 0)}
-                                    className="w-16 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-violet-700 focus:ring-1 focus:ring-violet-500"
+                                    onChange={(val) => updateHardKPIField(idx, 'realisasi', val)}
+                                    className="w-20 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-violet-700 font-mono focus:ring-1 focus:ring-violet-500 outline-none"
+                                    allowDecimal
                                   />
                                 </td>
-                                <td className="p-3 text-center text-slate-400 font-semibold">{item.satuan}</td>
-                                <td className="p-3 text-right font-black text-slate-700">{item.score}</td>
+                                <td className="p-3 text-center">
+                                  <select
+                                    value={item.satuan || '%'}
+                                    onChange={(e) => updateHardKPIField(idx, 'satuan', e.target.value)}
+                                    className="p-1 bg-white border border-slate-200 rounded text-xs font-bold text-center w-16 outline-none focus:ring-1 focus:ring-violet-500 cursor-pointer text-slate-600"
+                                  >
+                                    {KPI_SATUAN_OPTIONS.map(opt => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="p-3 text-right font-black font-mono text-slate-700">{formatDotNumber(item.score)}</td>
                                 <td className="p-3 text-center">
                                   <button
                                     onClick={() => {
                                       const targetItem = hardKPIInputs[idx];
-                                      setHardKPIInputs(prev => prev.filter((_, i) => i !== idx));
+                                      const nextInputs = hardKPIInputs.filter((_, i) => i !== idx);
+                                      setHardKPIInputs(nextInputs);
                                       setWeightWarningPenilaian(null);
+                                      if (selectedEmployeeId) {
+                                        setEmployeeIndividualSheets(curr => {
+                                          const updated = {
+                                            ...curr,
+                                            [selectedEmployeeId]: {
+                                              hardKPIs: nextInputs,
+                                              softSkills: softSkillInputs,
+                                              hardWeight,
+                                              softWeight
+                                            }
+                                          };
+                                          safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', updated);
+                                          return updated;
+                                        });
+                                      }
                                       if (selectedEmployeeId && targetItem && (targetItem.indicatorId?.startsWith('ind-custom-') || targetItem.isCustom)) {
                                         setEmployeeCustomIndicators(curr => {
                                           const filtered = (curr[selectedEmployeeId] || []).filter(ci => ci.indicatorId !== targetItem.indicatorId);
@@ -2825,7 +3468,7 @@ export default function KPIModule({
                                     </span>
                                   )}
                                 </td>
-                                <td className="p-3 text-right font-black text-slate-900">{getHardKPITotal(hardKPIInputs).toFixed(2)}</td>
+                                <td className="p-3 text-right font-black font-mono text-slate-900">{formatDotNumber(getHardKPITotal(hardKPIInputs).toFixed(2))}</td>
                                 <td></td>
                               </tr>
                             );
@@ -2858,8 +3501,22 @@ export default function KPIModule({
                             score: Math.round(newBobot * 0.8 * 100) / 100,
                             isCustom: true
                           };
-                          setHardKPIInputs(p => [...p, newInd]);
+                          const nextInputs = [...hardKPIInputs, newInd];
+                          setHardKPIInputs(nextInputs);
                           if (selectedEmployeeId) {
+                            setEmployeeIndividualSheets(curr => {
+                              const updated = {
+                                ...curr,
+                                [selectedEmployeeId]: {
+                                  hardKPIs: nextInputs,
+                                  softSkills: softSkillInputs,
+                                  hardWeight,
+                                  softWeight
+                                }
+                              };
+                              safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', updated);
+                              return updated;
+                            });
                             setEmployeeCustomIndicators(curr => {
                               const empList = curr[selectedEmployeeId] || [];
                               const updated = [...empList, newInd];
@@ -2884,7 +3541,7 @@ export default function KPIModule({
                         <Award className="w-4 h-4 text-emerald-500" />
                         B. PENILAIAN SOFT SKILL (BOBOT {softWeight}%)
                       </h3>
-                      <span className="text-[10px] font-bold text-slate-400">Total Bobot: 100%</span>
+                      <span className="text-[10px] font-bold text-slate-400">Total Akumulasi Maksimal: 100%</span>
                     </div>
 
                     <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -2892,18 +3549,39 @@ export default function KPIModule({
                         <thead>
                           <tr className="bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
                             <th className="p-3 w-8 text-center">No</th>
-                            <th className="p-3">Aspek Kompetensi Utama</th>
+                            <th className="p-3 min-w-[200px]">Aspek Kompetensi Utama</th>
                             <th className="p-3 w-20 text-center">Bobot</th>
                             <th className="p-3 w-24 text-center">Nilai (1-100)</th>
                             <th className="p-3 w-24 text-right">Skor Terbobot</th>
+                            <th className="p-3 w-10 text-center">Aksi</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs">
                           {softSkillInputs.map((item, idx) => (
                             <tr key={idx} className="hover:bg-slate-50/50">
                               <td className="p-3 text-center font-mono text-[10px] text-slate-400">{idx + 1}</td>
-                              <td className="p-3 font-bold text-slate-700">{item.name}</td>
-                              <td className="p-3 text-center font-bold text-slate-600">{item.bobot}%</td>
+                              <td className="p-3">
+                                <input
+                                  type="text"
+                                  value={item.name}
+                                  onChange={(e) => updateSoftSkillField(idx, 'name', e.target.value)}
+                                  placeholder="Nama Aspek Soft Skill..."
+                                  className="p-1.5 bg-white border border-slate-200 hover:border-emerald-300 focus:border-emerald-500 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-emerald-500 transition-colors"
+                                />
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="flex items-center gap-1 justify-center">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={item.bobot}
+                                    onChange={(e) => updateSoftSkillField(idx, 'bobot', parseFloat(e.target.value) || 0)}
+                                    className="w-12 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-emerald-500 outline-none"
+                                  />
+                                  <span>%</span>
+                                </div>
+                              </td>
                               <td className="p-3 text-center">
                                 <input
                                   type="number"
@@ -2911,20 +3589,66 @@ export default function KPIModule({
                                   max="100"
                                   value={item.nilai}
                                   onChange={(e) => updateSoftSkillField(idx, 'nilai', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
-                                  className="w-16 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-emerald-700 focus:ring-1 focus:ring-emerald-500"
+                                  className="w-16 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-emerald-700 focus:ring-1 focus:ring-emerald-500 outline-none"
                                 />
                               </td>
-                              <td className="p-3 text-right font-black text-slate-700">{item.score}</td>
+                              <td className="p-3 text-right font-black font-mono text-slate-700">{formatDotNumber(item.score)}</td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => deleteSoftSkillRow(idx)}
+                                  className="text-red-500 hover:text-red-700 p-1 bg-red-50 hover:bg-red-100 rounded transition-colors"
+                                  title="Hapus Aspek Soft Skill"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </td>
                             </tr>
                           ))}
-                          <tr className="bg-slate-50 font-bold text-slate-700">
-                            <td colSpan={2} className="p-3 text-right text-[10px] uppercase tracking-wider text-slate-400">Total Skor Soft Skill</td>
-                            <td className="p-3 text-center">100%</td>
-                            <td></td>
-                            <td className="p-3 text-right font-black text-slate-900">{getSoftSkillTotal(softSkillInputs).toFixed(2)}</td>
-                          </tr>
+                          {(() => {
+                            const totalSoftBobot = softSkillInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
+                            const isValid = totalSoftBobot === 100;
+                            const isOver = totalSoftBobot > 100;
+                            return (
+                              <tr className={`font-bold ${isOver ? 'bg-red-50 text-red-900' : isValid ? 'bg-slate-50 text-slate-700' : 'bg-amber-50/60 text-amber-900'}`}>
+                                <td colSpan={2} className="p-3 text-right text-[10px] uppercase tracking-wider text-slate-500">
+                                  Total Akumulasi Bobot Soft Skill (Bagian B)
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={`inline-flex items-center gap-1 font-mono font-black px-2 py-0.5 rounded text-xs ${
+                                    isOver ? 'bg-red-100 text-red-700 border border-red-300 animate-pulse' :
+                                    isValid ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                    'bg-amber-100 text-amber-800 border border-amber-300'
+                                  }`}>
+                                    {totalSoftBobot}% {isOver ? '(⚠️ Melebihi 100%!)' : isValid ? '(100% Valid)' : `(Tersisa ${100 - totalSoftBobot}%)`}
+                                  </span>
+                                </td>
+                                <td colSpan={1}>
+                                  {isOver && (
+                                    <span className="text-[10px] text-red-600 font-bold">
+                                      ⚠️ Melebihi 100%!
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right font-black font-mono text-slate-900">{formatDotNumber(getSoftSkillTotal(softSkillInputs).toFixed(2))}</td>
+                                <td></td>
+                              </tr>
+                            );
+                          })()}
                         </tbody>
                       </table>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={addSoftSkillRow}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-colors flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Plus size={14} className="text-emerald-600" />
+                        Tambah Aspek Soft Skill (Custom Individu)
+                      </button>
+                      <span className="text-[10px] font-bold text-slate-400">Total akumulasi bobot Bagian B maksimal 100%.</span>
                     </div>
                   </div>
                 </div>
@@ -3312,18 +4036,16 @@ export default function KPIModule({
                             {item.bonusProjectKomisi > 0 ? formatRupiah(item.bonusProjectKomisi) : 'Rp -'}
                           </td>
                           <td className="p-2.5 text-right font-mono font-bold text-slate-900 bg-[#e2e8f0] border border-slate-300">
-                            <input
-                              type="number"
-                              value={item.additionalBonus || ''}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0;
+                            <FormattedNumberInput
+                              value={item.additionalBonus || 0}
+                              onChange={(val) => {
                                 setAdditionalBonuses(prev => ({
                                   ...prev,
                                   [item.employee.id]: val
                                 }));
                               }}
                               placeholder="0"
-                              className="w-20 p-1 text-right bg-transparent border-b border-transparent hover:border-slate-400 focus:border-violet-500 outline-none font-mono font-bold text-xs"
+                              className="w-24 p-1 text-right bg-transparent border-b border-transparent hover:border-slate-400 focus:border-violet-500 outline-none font-mono font-bold text-xs"
                             />
                           </td>
                           <td className="p-2.5 text-right font-mono font-black text-slate-900 bg-[#dcfce7] border border-slate-300">
@@ -3655,42 +4377,37 @@ export default function KPIModule({
                           />
                         </td>
                         <td className="p-3 border-r border-slate-100">
-                          <input
-                            type="number"
+                          <FormattedNumberInput
                             value={r.targetBulanan}
-                            onChange={(e) => updateSalesBonusRow(r.id, { targetBulanan: parseFloat(e.target.value) || 0 })}
+                            onChange={(val) => updateSalesBonusRow(r.id, { targetBulanan: val })}
                             className="w-full text-right bg-transparent hover:bg-white focus:bg-white focus:ring-1 focus:ring-violet-500 rounded p-1 font-mono font-bold text-slate-700 outline-none"
                           />
                         </td>
                         <td className="p-3 border-r border-slate-100 bg-slate-50/50">
-                          <input
-                            type="number"
+                          <FormattedNumberInput
                             value={r.pencapaian}
-                            onChange={(e) => updateSalesBonusRow(r.id, { pencapaian: parseFloat(e.target.value) || 0 })}
+                            onChange={(val) => updateSalesBonusRow(r.id, { pencapaian: val })}
                             className="w-full text-right bg-transparent hover:bg-white focus:bg-white focus:ring-1 focus:ring-violet-500 rounded p-1 font-mono font-black text-slate-900 outline-none"
                           />
                         </td>
                         <td className="p-3 border-r border-slate-100 bg-amber-50/20">
-                          <input
-                            type="number"
+                          <FormattedNumberInput
                             value={r.pajak}
-                            onChange={(e) => updateSalesBonusRow(r.id, { pajak: parseFloat(e.target.value) || 0 })}
+                            onChange={(val) => updateSalesBonusRow(r.id, { pajak: val })}
                             className="w-full text-right bg-transparent hover:bg-white focus:bg-white focus:ring-1 focus:ring-violet-500 rounded p-1 font-mono font-bold text-rose-600 outline-none"
                           />
                         </td>
                         <td className="p-3 border-r border-slate-100 bg-amber-50/20">
-                          <input
-                            type="number"
+                          <FormattedNumberInput
                             value={r.biayaKirim}
-                            onChange={(e) => updateSalesBonusRow(r.id, { biayaKirim: parseFloat(e.target.value) || 0 })}
+                            onChange={(val) => updateSalesBonusRow(r.id, { biayaKirim: val })}
                             className="w-full text-right bg-transparent hover:bg-white focus:bg-white focus:ring-1 focus:ring-violet-500 rounded p-1 font-mono font-bold text-amber-600 outline-none"
                           />
                         </td>
                         <td className="p-3 border-r border-slate-100 bg-amber-50/20">
-                          <input
-                            type="number"
+                          <FormattedNumberInput
                             value={r.biayaLain}
-                            onChange={(e) => updateSalesBonusRow(r.id, { biayaLain: parseFloat(e.target.value) || 0 })}
+                            onChange={(val) => updateSalesBonusRow(r.id, { biayaLain: val })}
                             className="w-full text-right bg-transparent hover:bg-white focus:bg-white focus:ring-1 focus:ring-violet-500 rounded p-1 font-mono font-bold text-indigo-600 outline-none"
                           />
                         </td>
@@ -3706,10 +4423,9 @@ export default function KPIModule({
                           </div>
                         </td>
                         <td className="p-3 border-r border-slate-100">
-                          <input
-                            type="number"
+                          <FormattedNumberInput
                             value={r.additional}
-                            onChange={(e) => updateSalesBonusRow(r.id, { additional: parseFloat(e.target.value) || 0 })}
+                            onChange={(val) => updateSalesBonusRow(r.id, { additional: val })}
                             className="w-full text-right bg-transparent hover:bg-white focus:bg-white focus:ring-1 focus:ring-violet-500 rounded p-1 font-mono font-bold text-slate-700 outline-none"
                           />
                         </td>
@@ -3985,12 +4701,11 @@ export default function KPIModule({
 
                       <div>
                         <label className="text-[10px] uppercase font-bold text-slate-400">Nilai Total Bonus Proyek (IDR)</label>
-                        <input
-                          type="number"
-                          value={newBonus.bonusAmount || ''}
-                          onChange={(e) => setNewBonus(p => ({ ...p, bonusAmount: parseInt(e.target.value) || 0 }))}
+                        <FormattedNumberInput
+                          value={newBonus.bonusAmount || 0}
+                          onChange={(val) => setNewBonus(p => ({ ...p, bonusAmount: val }))}
                           placeholder="Nilai total nominal bonus"
-                          className="w-full text-xs p-3 mt-1 bg-white border border-slate-200 rounded-xl outline-none"
+                          className="w-full text-xs p-3 mt-1 bg-white border border-slate-200 rounded-xl outline-none font-mono font-bold text-slate-800"
                         />
                       </div>
 
@@ -4212,11 +4927,10 @@ export default function KPIModule({
 
                     <div>
                       <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Target Bulanan (IDR)</label>
-                      <input
-                        type="number"
+                      <FormattedNumberInput
                         value={newSalesRowData.targetBulanan || 200000000}
-                        onChange={(e) => setNewSalesRowData(p => ({ ...p, targetBulanan: parseFloat(e.target.value) || 0 }))}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono"
+                        onChange={(val) => setNewSalesRowData(p => ({ ...p, targetBulanan: val }))}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono font-bold text-slate-800"
                       />
                     </div>
                   </div>
@@ -4224,21 +4938,19 @@ export default function KPIModule({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Pencapaian (Omset Kotor)</label>
-                      <input
-                        type="number"
+                      <FormattedNumberInput
                         value={newSalesRowData.pencapaian || 0}
-                        onChange={(e) => setNewSalesRowData(p => ({ ...p, pencapaian: parseFloat(e.target.value) || 0 }))}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono"
+                        onChange={(val) => setNewSalesRowData(p => ({ ...p, pencapaian: val }))}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono font-black text-slate-900"
                       />
                     </div>
 
                     <div>
                       <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Pajak (IDR)</label>
-                      <input
-                        type="number"
+                      <FormattedNumberInput
                         value={newSalesRowData.pajak || 0}
-                        onChange={(e) => setNewSalesRowData(p => ({ ...p, pajak: parseFloat(e.target.value) || 0 }))}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono"
+                        onChange={(val) => setNewSalesRowData(p => ({ ...p, pajak: val }))}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono font-bold text-rose-600"
                       />
                     </div>
                   </div>
@@ -4246,21 +4958,19 @@ export default function KPIModule({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Biaya Kirim (IDR)</label>
-                      <input
-                        type="number"
+                      <FormattedNumberInput
                         value={newSalesRowData.biayaKirim || 0}
-                        onChange={(e) => setNewSalesRowData(p => ({ ...p, biayaKirim: parseFloat(e.target.value) || 0 }))}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono"
+                        onChange={(val) => setNewSalesRowData(p => ({ ...p, biayaKirim: val }))}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono font-bold text-amber-600"
                       />
                     </div>
 
                     <div>
                       <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Biaya Lain (IDR)</label>
-                      <input
-                        type="number"
+                      <FormattedNumberInput
                         value={newSalesRowData.biayaLain || 0}
-                        onChange={(e) => setNewSalesRowData(p => ({ ...p, biayaLain: parseFloat(e.target.value) || 0 }))}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono"
+                        onChange={(val) => setNewSalesRowData(p => ({ ...p, biayaLain: val }))}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono font-bold text-indigo-600"
                       />
                     </div>
                   </div>
@@ -4512,53 +5222,37 @@ export default function KPIModule({
                 <div className="space-y-3.5">
                   <div>
                     <label className="text-[9px] uppercase font-bold text-slate-500 block mb-1">Total Omset Kotor (IDR)</label>
-                    <input
-                      type="number"
+                    <FormattedNumberInput
                       value={activeFinancials.omsetKotor}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0;
-                        handleLiveFinancialFieldChange('omsetKotor', val);
-                      }}
+                      onChange={(val) => handleLiveFinancialFieldChange('omsetKotor', val)}
                       className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-violet-500 outline-none font-mono font-bold text-slate-700"
                     />
                   </div>
 
                   <div>
                     <label className="text-[9px] uppercase font-bold text-slate-500 block mb-1">Biaya Pajak All (IDR)</label>
-                    <input
-                      type="number"
+                    <FormattedNumberInput
                       value={activeFinancials.pajak}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0;
-                        handleLiveFinancialFieldChange('pajak', val);
-                      }}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-violet-500 outline-none font-mono font-bold text-slate-700"
+                      onChange={(val) => handleLiveFinancialFieldChange('pajak', val)}
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-violet-500 outline-none font-mono font-bold text-rose-600"
                     />
                   </div>
 
                   <div>
                     <label className="text-[9px] uppercase font-bold text-slate-500 block mb-1">Biaya Pengiriman All (IDR)</label>
-                    <input
-                      type="number"
+                    <FormattedNumberInput
                       value={activeFinancials.pengiriman}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0;
-                        handleLiveFinancialFieldChange('pengiriman', val);
-                      }}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-violet-500 outline-none font-mono font-bold text-slate-700"
+                      onChange={(val) => handleLiveFinancialFieldChange('pengiriman', val)}
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-violet-500 outline-none font-mono font-bold text-amber-600"
                     />
                   </div>
 
                   <div>
                     <label className="text-[9px] uppercase font-bold text-slate-500 block mb-1">Biaya Lain-lain All (IDR)</label>
-                    <input
-                      type="number"
+                    <FormattedNumberInput
                       value={activeFinancials.lainLain}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0;
-                        handleLiveFinancialFieldChange('lainLain', val);
-                      }}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-violet-500 outline-none font-mono font-bold text-slate-700"
+                      onChange={(val) => handleLiveFinancialFieldChange('lainLain', val)}
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-violet-500 outline-none font-mono font-bold text-indigo-600"
                     />
                   </div>
 
@@ -4840,14 +5534,12 @@ export default function KPIModule({
                             />
                           </td>
                           <td className="p-3 text-center">
-                            <input
-                              type="number"
+                            <FormattedNumberInput
                               value={tier.target}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0;
+                              onChange={(val) => {
                                 setOmsetTiers(p => p.map(t => t.id === tier.id ? { ...t, target: val } : t));
                               }}
-                              className="w-40 text-center bg-slate-50 border border-slate-200 rounded p-1 font-black text-slate-700"
+                              className="w-40 text-center bg-slate-50 border border-slate-200 rounded p-1 font-black text-slate-700 font-mono"
                             />
                           </td>
                           <td className="p-3 text-center">
@@ -5061,12 +5753,11 @@ export default function KPIModule({
 
                 <div>
                   <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Gaji Pokok (IDR)</label>
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     value={newEmployee.gaji}
-                    onChange={(e) => setNewEmployee(p => ({ ...p, gaji: parseInt(e.target.value) || 0 }))}
-                    placeholder="Nilai nominal Gaji"
-                    className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none font-black text-slate-800"
+                    onChange={(val) => setNewEmployee(p => ({ ...p, gaji: val }))}
+                    placeholder="Contoh: 3.000.000"
+                    className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none font-black text-slate-800 font-mono"
                   />
                 </div>
 
@@ -5199,20 +5890,22 @@ export default function KPIModule({
                     </div>
 
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (['sales', 'engineer', 'finance', 'default'].includes(tpl.jabatan)) {
-                          alert("Template dasar sistem tidak dapat dihapus!");
-                          return;
-                        }
-                        if (window.confirm(`Hapus template KPI untuk jabatan ${tpl.jabatan}?`)) {
-                          setKpiTemplates(prev => prev.filter(t => t.id !== tpl.id));
-                          if (selectedTemplateId === tpl.id) {
-                            setSelectedTemplateId(kpiTemplates[0]?.id || 'tpl-sales');
-                          }
-                        }
+                        const affected = companyEmployees.filter(emp => {
+                          const jab = jabatans.find(j => j.id === emp.jabatanId);
+                          const jabName = (jab?.name || emp.jabatan || emp.role || '').toLowerCase().trim();
+                          const tplName = (tpl.jabatan || '').toLowerCase().trim();
+                          return jabName === tplName || emp.jabatanId === tpl.id || tpl.id === `tpl-${emp.jabatanId}`;
+                        });
+                        setTemplateDeleteConfirm({
+                          template: tpl,
+                          affectedEmployees: affected
+                        });
                       }}
                       className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Hapus Template"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -5406,47 +6099,72 @@ export default function KPIModule({
                       </div>
 
                       <div className="space-y-3">
-                        {selectedTpl.indicators.map((ind) => (
-                          <div key={ind.id} className="flex flex-col sm:flex-row gap-2 sm:items-center bg-white p-3 rounded-xl border border-slate-200">
-                            <input
-                              type="text"
-                              value={ind.name}
-                              onChange={(e) => updateTemplateIndicator(selectedTpl.id, ind.id, 'name', e.target.value)}
-                              placeholder="Nama Indikator KPI"
-                              className="flex-1 text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-medium text-slate-700"
-                            />
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-slate-500 font-bold">Bobot:</span>
+                        {selectedTpl.indicators.map((ind, indIdx) => {
+                          const isSalesTpl = isSalesJabatan(selectedTpl.jabatan);
+                          return (
+                          <div key={ind.id} className="space-y-1.5 bg-white p-3 rounded-xl border border-slate-200">
+                            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                               <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                value={ind.bobot}
-                                onChange={(e) => updateTemplateIndicator(selectedTpl.id, ind.id, 'bobot', parseInt(e.target.value) || 0)}
-                                placeholder="Bobot"
-                                className="w-16 text-center text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 focus:ring-1 focus:ring-violet-500"
+                                type="text"
+                                value={ind.name}
+                                onChange={(e) => updateTemplateIndicator(selectedTpl.id, ind.id, 'name', e.target.value)}
+                                placeholder="Nama Indikator KPI"
+                                className="flex-1 text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-medium text-slate-700"
                               />
-                              <span className="text-xs font-bold text-slate-400">%</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 font-bold">Bobot:</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={ind.bobot}
+                                  onChange={(e) => updateTemplateIndicator(selectedTpl.id, ind.id, 'bobot', parseInt(e.target.value) || 0)}
+                                  placeholder="Bobot"
+                                  className="w-16 text-center text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 focus:ring-1 focus:ring-violet-500"
+                                />
+                                <span className="text-xs font-bold text-slate-400">%</span>
 
-                              <select
-                                value={ind.type}
-                                onChange={(e) => updateTemplateIndicator(selectedTpl.id, ind.id, 'type', e.target.value)}
-                                className="text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-600"
-                              >
-                                <option value="kualitatif">Kualitatif</option>
-                                <option value="kuantitatif">Kuantitatif</option>
-                              </select>
+                                <select
+                                  value={ind.type}
+                                  onChange={(e) => updateTemplateIndicator(selectedTpl.id, ind.id, 'type', e.target.value)}
+                                  className="text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-600"
+                                >
+                                  <option value="kualitatif">Kualitatif</option>
+                                  <option value="kuantitatif">Kuantitatif</option>
+                                </select>
 
-                              <button
-                                type="button"
-                                onClick={() => deleteTemplateIndicator(selectedTpl.id, ind.id)}
-                                className="text-red-500 p-2.5 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-slate-500 font-bold">Satuan:</span>
+                                  <select
+                                    value={ind.satuan || '%'}
+                                    onChange={(e) => updateTemplateIndicator(selectedTpl.id, ind.id, 'satuan', e.target.value)}
+                                    className="text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 cursor-pointer"
+                                  >
+                                    {KPI_SATUAN_OPTIONS.map(opt => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => deleteTemplateIndicator(selectedTpl.id, ind.id)}
+                                  className="text-red-500 p-2.5 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
                             </div>
+                            {indIdx === 0 && isSalesTpl && (
+                              <div className="flex items-center gap-1.5 pt-0.5">
+                                <span className="text-[9px] font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1 shadow-xs">
+                                  ✓ Default No. 1 Target Penjualan (Terhubung otomatis dengan Pencapaian Omset Kotor Bonus Project saat penilaian individu)
+                                </span>
+                              </div>
+                            )}
                           </div>
-                        ))}
+                        );
+                      })}
                       </div>
 
                       {/* Total check weight Part A */}
@@ -5726,16 +6444,16 @@ export default function KPIModule({
                               <td className="p-2 border-r border-slate-300 font-semibold text-slate-800">{item.name}</td>
                               <td className="p-2 border-r border-slate-300 text-center">{item.bobot}%</td>
                               <td className="p-2 border-r border-slate-300 text-center font-bold text-slate-600">{item.metode}</td>
-                              <td className="p-2 border-r border-slate-300 text-center font-mono font-bold">{item.target} {item.satuan}</td>
-                              <td className="p-2 border-r border-slate-300 text-center font-mono font-bold text-violet-700">{item.realisasi} {item.satuan}</td>
-                              <td className="p-2 text-right font-bold text-slate-900">{item.score}</td>
+                              <td className="p-2 border-r border-slate-300 text-center font-mono font-bold">{formatDotNumber(item.target)} {item.satuan}</td>
+                              <td className="p-2 border-r border-slate-300 text-center font-mono font-bold text-violet-700">{formatDotNumber(item.realisasi)} {item.satuan}</td>
+                              <td className="p-2 text-right font-bold text-slate-900 font-mono">{formatDotNumber(item.score)}</td>
                             </tr>
                           ))}
                           <tr className="bg-slate-50 font-bold text-slate-800 border-t border-slate-300">
                             <td colSpan={2} className="p-2 border-r border-slate-300 text-right uppercase text-[10px] tracking-wide text-slate-400">Total Nilai KPI (A)</td>
                             <td className="p-2 border-r border-slate-300 text-center">100%</td>
                             <td colSpan={3} className="border-r border-slate-300"></td>
-                            <td className="p-2 text-right font-black text-slate-950">{getHardKPITotal(printModalRecord.hardKPIs ?? []).toFixed(2)}</td>
+                            <td className="p-2 text-right font-black text-slate-950 font-mono">{formatDotNumber(getHardKPITotal(printModalRecord.hardKPIs ?? []).toFixed(2))}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -5764,15 +6482,15 @@ export default function KPIModule({
                               <td className="p-2 border-r border-slate-300 text-center font-mono text-slate-400">{idx + 1}</td>
                               <td className="p-2 border-r border-slate-300 font-semibold text-slate-800">{item.name}</td>
                               <td className="p-2 border-r border-slate-300 text-center">{item.bobot}%</td>
-                              <td className="p-2 border-r border-slate-300 text-center font-mono font-bold text-emerald-700">{item.nilai}</td>
-                              <td className="p-2 text-right font-bold text-slate-900">{item.score}</td>
+                              <td className="p-2 border-r border-slate-300 text-center font-mono font-bold text-emerald-700">{formatDotNumber(item.nilai)}</td>
+                              <td className="p-2 text-right font-bold text-slate-900 font-mono">{formatDotNumber(item.score)}</td>
                             </tr>
                           ))}
                           <tr className="bg-slate-50 font-bold text-slate-800 border-t border-slate-300">
                             <td colSpan={2} className="p-2 border-r border-slate-300 text-right uppercase text-[10px] tracking-wide text-slate-400">Total Nilai Soft Skill (B)</td>
                             <td className="p-2 border-r border-slate-300 text-center">100%</td>
                             <td className="border-r border-slate-300"></td>
-                            <td className="p-2 text-right font-black text-slate-950">{getSoftSkillTotal(printModalRecord.softSkills ?? []).toFixed(2)}</td>
+                            <td className="p-2 text-right font-black text-slate-950 font-mono">{formatDotNumber(getSoftSkillTotal(printModalRecord.softSkills ?? []).toFixed(2))}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -5829,6 +6547,68 @@ export default function KPIModule({
                   </>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Peringatan Konfirmasi Hapus Template Jabatan */}
+      {templateDeleteConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-red-100 text-red-600 rounded-xl shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-black text-slate-900">
+                  Hapus Template KPI Jabatan
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Anda akan menghapus template KPI untuk jabatan: <strong className="uppercase text-slate-800">{templateDeleteConfirm.template.jabatan}</strong>
+                </p>
+              </div>
+            </div>
+
+            {templateDeleteConfirm.affectedEmployees.length > 0 ? (
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl space-y-2.5">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Terdapat {templateDeleteConfirm.affectedEmployees.length} karyawan dalam role tersebut:</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
+                  {templateDeleteConfirm.affectedEmployees.map(emp => (
+                    <span key={emp.id} className="text-xs px-2.5 py-1 bg-white text-amber-950 font-bold rounded-lg border border-amber-200 shadow-2xs flex items-center gap-1">
+                      <span>👤</span> {emp.nama}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-[11px] text-amber-800 font-semibold leading-relaxed pt-1">
+                  Yakin hapus? Saat dihapus, jabatan karyawan tersebut akan dikosongkan dan di menu <strong>Penilaian KPI</strong> akan muncul peringatan <em>"Harap pilih jabatan untuk mendapatkan nilai KPI"</em>.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                Tidak ada karyawan yang saat ini terhubung dengan template jabatan ini. Template akan dihapus secara permanen dari sistem.
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setTemplateDeleteConfirm(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteTemplate}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                <Trash2 size={13} />
+                Ya, Tetap Hapus
+              </button>
             </div>
           </div>
         </div>
