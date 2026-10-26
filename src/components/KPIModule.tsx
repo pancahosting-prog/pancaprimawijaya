@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Award, FileText, Plus, Trash2, Edit, Save, Check, CheckCircle, 
   TrendingUp, User, DollarSign, Calendar, ChevronDown, ChevronRight, 
-  AlertCircle, Filter, Shield, Activity, Briefcase, Percent, Clock, 
+  AlertCircle, AlertTriangle, Filter, Shield, Activity, Briefcase, Percent, Clock, 
   Lock, Unlock, Settings, HelpCircle, BriefcaseIcon, RefreshCw, Eye, EyeOff,
   Printer, FileSpreadsheet
 } from 'lucide-react';
@@ -1154,6 +1154,10 @@ export default function KPIModule({
     safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', employeeCustomIndicators);
   }, [employeeCustomIndicators]);
   
+  // Warning states for weight accumulation limits
+  const [weightWarningPenilaian, setWeightWarningPenilaian] = useState<string | null>(null);
+  const [weightWarningPengaturan, setWeightWarningPengaturan] = useState<string | null>(null);
+
   // Salary Visibility Toggle
   const [showSalaryMap, setShowSalaryMap] = useState<Record<string, boolean>>({});
 
@@ -1178,21 +1182,46 @@ export default function KPIModule({
   const updateTemplateIndicator = (tplId: string, indId: string, field: string, value: any) => {
     setKpiTemplates(prev => prev.map(t => {
       if (t.id !== tplId) return t;
+      let finalValue = value;
+      if (field === 'bobot') {
+        let bobotVal = Math.max(0, parseInt(value) || 0);
+        const otherBobot = t.indicators.reduce((acc, curr) => curr.id !== indId ? acc + (curr.bobot || 0) : acc, 0);
+        const maxAllowed = Math.max(0, 100 - otherBobot);
+        if (bobotVal > maxAllowed) {
+          setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian A tidak boleh melebihi 100%! Nilai dibatasi maksimal ${maxAllowed}%.`);
+          bobotVal = maxAllowed;
+        } else {
+          setWeightWarningPengaturan(null);
+        }
+        finalValue = bobotVal;
+      }
       return {
         ...t,
-        indicators: t.indicators.map(ind => ind.id === indId ? { ...ind, [field]: value } : ind)
+        indicators: t.indicators.map(ind => ind.id === indId ? { ...ind, [field]: finalValue } : ind)
       };
     }));
   };
 
   const addTemplateIndicator = (tplId: string) => {
-    setKpiTemplates(prev => prev.map(t => {
-      if (t.id !== tplId) return t;
-      return {
-        ...t,
-        indicators: [...t.indicators, { id: `ind-tpl-${Date.now()}`, name: 'Indikator Baru', bobot: 10, type: 'kualitatif' }]
-      };
-    }));
+    const targetTpl = kpiTemplates.find(t => t.id === tplId);
+    if (targetTpl) {
+      const currentTotal = targetTpl.indicators.reduce((acc, curr) => acc + (curr.bobot || 0), 0);
+      const remaining = Math.max(0, 100 - currentTotal);
+      if (remaining <= 0) {
+        alert("Peringatan: Total akumulasi bobot Bagian A sudah mencapai 100%! Harap kurangi bobot indikator lain sebelum menambah indikator baru.");
+        setWeightWarningPengaturan("⚠️ Peringatan: Total akumulasi bobot Bagian A sudah mencapai 100%! Kurangi bobot indikator lain terlebih dahulu.");
+        return;
+      }
+      const newBobot = Math.min(10, remaining);
+      setWeightWarningPengaturan(null);
+      setKpiTemplates(prev => prev.map(t => {
+        if (t.id !== tplId) return t;
+        return {
+          ...t,
+          indicators: [...t.indicators, { id: `ind-tpl-${Date.now()}`, name: 'Indikator Baru', bobot: newBobot, type: 'kualitatif' }]
+        };
+      }));
+    }
   };
 
   const deleteTemplateIndicator = (tplId: string, indId: string) => {
@@ -1203,6 +1232,7 @@ export default function KPIModule({
         indicators: t.indicators.filter(ind => ind.id !== indId)
       };
     }));
+    setWeightWarningPengaturan(null);
   };
 
   // Soft Skills Template Handlers
@@ -1210,22 +1240,47 @@ export default function KPIModule({
     setKpiTemplates(prev => prev.map(t => {
       if (t.id !== tplId) return t;
       const currentSS = t.softSkills && t.softSkills.length > 0 ? t.softSkills : DEFAULT_SOFT_SKILL_INDICATORS;
+      let finalValue = value;
+      if (field === 'bobot') {
+        let bobotVal = Math.max(0, parseInt(value) || 0);
+        const otherBobot = currentSS.reduce((acc, curr) => curr.id !== ssId ? acc + (curr.bobot || 0) : acc, 0);
+        const maxAllowed = Math.max(0, 100 - otherBobot);
+        if (bobotVal > maxAllowed) {
+          setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian B (Soft Skill) tidak boleh melebihi 100%! Nilai dibatasi maksimal ${maxAllowed}%.`);
+          bobotVal = maxAllowed;
+        } else {
+          setWeightWarningPengaturan(null);
+        }
+        finalValue = bobotVal;
+      }
       return {
         ...t,
-        softSkills: currentSS.map(ss => ss.id === ssId ? { ...ss, [field]: value } : ss)
+        softSkills: currentSS.map(ss => ss.id === ssId ? { ...ss, [field]: finalValue } : ss)
       };
     }));
   };
 
   const addTemplateSoftSkill = (tplId: string) => {
-    setKpiTemplates(prev => prev.map(t => {
-      if (t.id !== tplId) return t;
-      const currentSS = t.softSkills && t.softSkills.length > 0 ? t.softSkills : DEFAULT_SOFT_SKILL_INDICATORS;
-      return {
-        ...t,
-        softSkills: [...currentSS, { id: `ss-tpl-${Date.now()}`, name: 'Aspek Soft Skill Baru', bobot: 20 }]
-      };
-    }));
+    const targetTpl = kpiTemplates.find(t => t.id === tplId);
+    if (targetTpl) {
+      const currentSS = targetTpl.softSkills && targetTpl.softSkills.length > 0 ? targetTpl.softSkills : DEFAULT_SOFT_SKILL_INDICATORS;
+      const currentTotal = currentSS.reduce((acc, curr) => acc + (curr.bobot || 0), 0);
+      const remaining = Math.max(0, 100 - currentTotal);
+      if (remaining <= 0) {
+        alert("Peringatan: Total akumulasi bobot Bagian B (Soft Skill) sudah mencapai 100%! Harap kurangi bobot aspek lain sebelum menambah aspek baru.");
+        setWeightWarningPengaturan("⚠️ Peringatan: Total akumulasi bobot Bagian B sudah mencapai 100%! Kurangi bobot aspek lain terlebih dahulu.");
+        return;
+      }
+      const newBobot = Math.min(20, remaining);
+      setWeightWarningPengaturan(null);
+      setKpiTemplates(prev => prev.map(t => {
+        if (t.id !== tplId) return t;
+        return {
+          ...t,
+          softSkills: [...currentSS, { id: `ss-tpl-${Date.now()}`, name: 'Aspek Soft Skill Baru', bobot: newBobot }]
+        };
+      }));
+    }
   };
 
   const deleteTemplateSoftSkill = (tplId: string, ssId: string) => {
@@ -1237,6 +1292,7 @@ export default function KPIModule({
         softSkills: currentSS.filter(ss => ss.id !== ssId)
       };
     }));
+    setWeightWarningPengaturan(null);
   };
 
   const updateTemplateMacroWeights = (tplId: string, hW: number, sW: number) => {
@@ -1453,7 +1509,21 @@ export default function KPIModule({
   const updateHardKPIField = (idx: number, field: string, value: any) => {
     setHardKPIInputs(prev => {
       const updated = [...prev];
-      const item = { ...updated[idx], [field]: value };
+      let finalVal = value;
+      if (field === 'bobot') {
+        let bobotVal = Math.max(0, parseFloat(value) || 0);
+        const otherBobot = prev.reduce((sum, it, i) => i !== idx ? sum + (parseFloat(it.bobot) || 0) : sum, 0);
+        const maxAllowed = Math.max(0, 100 - otherBobot);
+        if (bobotVal > maxAllowed) {
+          setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI tidak boleh melebihi 100%! Nilai dibatasi maksimal ${maxAllowed}%.`);
+          bobotVal = maxAllowed;
+        } else {
+          setWeightWarningPenilaian(null);
+        }
+        finalVal = bobotVal;
+      }
+
+      const item = { ...updated[idx], [field]: finalVal };
       
       const bobot = parseFloat(item.bobot) || 0;
       const target = parseFloat(item.target) || 1;
@@ -1644,6 +1714,18 @@ export default function KPIModule({
   // Handle Save KPI Record
   const handleSaveKPIRecord = (status: 'draft' | 'approved') => {
     if (!selectedEmployeeId) return;
+
+    const totalHardBobot = hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
+    if (totalHardBobot > 100) {
+      alert(`Peringatan: Total akumulasi bobot KPI melebihi 100% (saat ini ${totalHardBobot}%)! Harap sesuaikan bobot agar tidak melebihi 100% sebelum menyimpan.`);
+      setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI melebihi 100% (${totalHardBobot}%)! Harap sesuaikan.`);
+      return;
+    }
+    if (totalHardBobot !== 100) {
+      alert(`Peringatan: Total akumulasi bobot KPI harus tepat 100% (saat ini ${totalHardBobot}%). Harap sesuaikan bobot sebelum menyimpan.`);
+      setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI harus tepat 100% (saat ini: ${totalHardBobot}%).`);
+      return;
+    }
 
     const hardTotal = getHardKPITotal(hardKPIInputs);
     const softTotal = getSoftSkillTotal(softSkillInputs);
@@ -2578,8 +2660,24 @@ export default function KPIModule({
                         <Activity className="w-4 h-4 text-violet-500" />
                         A. PENILAIAN KEY PERFORMANCE INDICATOR (BOBOT {hardWeight}%)
                       </h3>
-                      <span className="text-[10px] font-bold text-slate-400">Total Bobot: 100%</span>
+                      <span className="text-[10px] font-bold text-slate-400">Total Akumulasi Maksimal: 100%</span>
                     </div>
+
+                    {weightWarningPenilaian && (
+                      <div className="bg-amber-50 border border-amber-300 text-amber-900 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-3 shadow-xs animate-in fade-in duration-150">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>{weightWarningPenilaian}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setWeightWarningPenilaian(null)}
+                          className="text-amber-600 hover:text-amber-800 text-xs px-1.5 py-0.5 rounded hover:bg-amber-100 font-bold"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
 
                     <div className="overflow-x-auto border border-slate-200 rounded-xl">
                       <table className="w-full text-left border-collapse">
@@ -2629,9 +2727,11 @@ export default function KPIModule({
                                   <div className="flex items-center gap-1 justify-center">
                                     <input
                                       type="number"
+                                      min="0"
+                                      max="100"
                                       value={item.bobot}
                                       onChange={(e) => updateHardKPIField(idx, 'bobot', parseFloat(e.target.value) || 0)}
-                                      className="w-12 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold"
+                                      className="w-12 p-1 text-center bg-white border border-slate-200 rounded text-xs font-bold focus:ring-1 focus:ring-violet-500 outline-none"
                                     />
                                     <span>%</span>
                                   </div>
@@ -2681,6 +2781,7 @@ export default function KPIModule({
                                     onClick={() => {
                                       const targetItem = hardKPIInputs[idx];
                                       setHardKPIInputs(prev => prev.filter((_, i) => i !== idx));
+                                      setWeightWarningPenilaian(null);
                                       if (selectedEmployeeId && targetItem && (targetItem.indicatorId?.startsWith('ind-custom-') || targetItem.isCustom)) {
                                         setEmployeeCustomIndicators(curr => {
                                           const filtered = (curr[selectedEmployeeId] || []).filter(ci => ci.indicatorId !== targetItem.indicatorId);
@@ -2699,31 +2800,62 @@ export default function KPIModule({
                               </tr>
                             );
                           })}
-                          <tr className="bg-slate-50 font-bold text-slate-700">
-                            <td colSpan={2} className="p-3 text-right text-[10px] uppercase tracking-wider text-slate-400">Total Skor KPI (Hard)</td>
-                            <td className="p-3 text-center">
-                              {hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0)}%
-                            </td>
-                            <td colSpan={6}></td>
-                            <td className="p-3 text-right font-black text-slate-900">{getHardKPITotal(hardKPIInputs).toFixed(2)}</td>
-                            <td></td>
-                          </tr>
+                          {(() => {
+                            const total = hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
+                            const isValid = total === 100;
+                            const isOver = total > 100;
+                            return (
+                              <tr className={`font-bold ${isOver ? 'bg-red-50 text-red-900' : isValid ? 'bg-slate-50 text-slate-700' : 'bg-amber-50/60 text-amber-900'}`}>
+                                <td colSpan={2} className="p-3 text-right text-[10px] uppercase tracking-wider text-slate-500">
+                                  Total Akumulasi Bobot KPI (Hard)
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={`inline-flex items-center gap-1 font-mono font-black px-2 py-0.5 rounded text-xs ${
+                                    isOver ? 'bg-red-100 text-red-700 border border-red-300 animate-pulse' :
+                                    isValid ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                    'bg-amber-100 text-amber-800 border border-amber-300'
+                                  }`}>
+                                    {total}% {isOver ? '(⚠️ Melebihi 100%!)' : isValid ? '(100% Valid)' : `(Tersisa ${100 - total}%)`}
+                                  </span>
+                                </td>
+                                <td colSpan={6}>
+                                  {isOver && (
+                                    <span className="text-[10px] text-red-600 font-bold">
+                                      ⚠️ Peringatan: Total bobot melebihi 100%! Harap kurangi bobot indikator sebelum menyimpan.
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right font-black text-slate-900">{getHardKPITotal(hardKPIInputs).toFixed(2)}</td>
+                                <td></td>
+                              </tr>
+                            );
+                          })()}
                         </tbody>
                       </table>
                     </div>
 
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-2">
                       <button
+                        type="button"
                         onClick={() => {
+                          const currentTotal = hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
+                          const remaining = Math.max(0, 100 - currentTotal);
+                          if (remaining <= 0) {
+                            alert("Peringatan: Total akumulasi bobot sudah mencapai 100%! Harap kurangi bobot indikator lain terlebih dahulu sebelum menambahkan indikator baru.");
+                            setWeightWarningPenilaian("⚠️ Peringatan: Total akumulasi bobot sudah mencapai 100%! Kurangi bobot indikator lain terlebih dahulu.");
+                            return;
+                          }
+                          const newBobot = Math.min(10, remaining);
+                          setWeightWarningPenilaian(null);
                           const newInd = {
                             indicatorId: `ind-custom-${Date.now()}`,
                             name: 'Indikator Khusus Karyawan Ini',
-                            bobot: 10,
+                            bobot: newBobot,
                             metode: 'Maximize' as 'Maximize' | 'Minimize',
                             target: 100,
                             satuan: '%',
                             realisasi: 80,
-                            score: 8,
+                            score: Math.round(newBobot * 0.8 * 100) / 100,
                             isCustom: true
                           };
                           setHardKPIInputs(p => [...p, newInd]);
@@ -2741,7 +2873,7 @@ export default function KPIModule({
                         <Plus size={14} className="text-violet-600" />
                         Tambah Indikator Tambahan (Custom Tersimpan untuk Karyawan Ini)
                       </button>
-                      <span className="text-[10px] font-bold text-slate-400">Indikator custom di atas otomatis tersimpan khusus untuk individu ini.</span>
+                      <span className="text-[10px] font-bold text-slate-400">Total akumulasi bobot otomatis dibatasi maksimal 100%.</span>
                     </div>
                   </div>
 
@@ -5237,6 +5369,23 @@ export default function KPIModule({
                       </div>
                     </div>
 
+                    {/* Warning Banner in Pengaturan KPI */}
+                    {weightWarningPengaturan && (
+                      <div className="bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 rounded-xl text-xs font-bold flex items-center justify-between gap-3 shadow-xs animate-in fade-in duration-150">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>{weightWarningPengaturan}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setWeightWarningPengaturan(null)}
+                          className="text-amber-600 hover:text-amber-800 text-xs px-1.5 py-0.5 rounded hover:bg-amber-100 font-bold"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+
                     {/* A. PENILAIAN KPI (TEKNIS / KINERJA) */}
                     <div className="space-y-4 pt-2">
                       <div className="flex justify-between items-center border-b border-slate-100 pb-2">
@@ -5245,7 +5394,7 @@ export default function KPIModule({
                             <span className="px-2 py-0.5 bg-slate-900 text-white rounded text-[10px]">A</span>
                             PENILAIAN KPI (BOBOT {currentHardWeight}%)
                           </h4>
-                          <span className="text-[10px] text-slate-400">Indikator kinerja teknis jabatan (kualitatif & kuantitatif)</span>
+                          <span className="text-[10px] text-slate-400">Indikator kinerja teknis jabatan (maksimal akumulasi 100%)</span>
                         </div>
                         <button
                           type="button"
@@ -5267,12 +5416,15 @@ export default function KPIModule({
                               className="flex-1 text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-medium text-slate-700"
                             />
                             <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-500 font-bold">Bobot:</span>
                               <input
                                 type="number"
+                                min="0"
+                                max="100"
                                 value={ind.bobot}
                                 onChange={(e) => updateTemplateIndicator(selectedTpl.id, ind.id, 'bobot', parseInt(e.target.value) || 0)}
                                 placeholder="Bobot"
-                                className="w-16 text-center text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700"
+                                className="w-16 text-center text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 focus:ring-1 focus:ring-violet-500"
                               />
                               <span className="text-xs font-bold text-slate-400">%</span>
 
@@ -5299,18 +5451,21 @@ export default function KPIModule({
 
                       {/* Total check weight Part A */}
                       {(() => {
-                        const total = selectedTpl.indicators.reduce((acc, curr) => acc + curr.bobot, 0);
+                        const total = selectedTpl.indicators.reduce((acc, curr) => acc + (curr.bobot || 0), 0);
                         const isValid = total === 100;
+                        const isOver = total > 100;
                         return (
                           <div className={`p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs font-bold ${
-                            isValid ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800' : 'bg-red-50/80 border-red-200 text-red-800'
+                            isOver ? 'bg-red-50 border-red-300 text-red-900' :
+                            isValid ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800' : 
+                            'bg-amber-50/80 border-amber-200 text-amber-800'
                           }`}>
                             <div className="flex items-center gap-2">
-                              <span className={`w-2.5 h-2.5 rounded-full ${isValid ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></span>
+                              <span className={`w-2.5 h-2.5 rounded-full ${isOver ? 'bg-red-500 animate-pulse' : isValid ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
                               <span>Total Akumulasi Bobot Indikator Bagian A:</span>
                             </div>
                             <span className="font-mono text-xs font-black">
-                              {total}% {isValid ? '(Valid 100%)' : '(Harus Tepat 100%)'}
+                              {total}% {isOver ? '(⚠️ Melebihi 100%!)' : isValid ? '(100% Valid)' : `(Harus Tepat 100% - Tersisa ${100 - total}%)`}
                             </span>
                           </div>
                         );
@@ -5325,7 +5480,7 @@ export default function KPIModule({
                             <span className="px-2 py-0.5 bg-violet-600 text-white rounded text-[10px]">B</span>
                             PENILAIAN SOFT SKILL (BOBOT {currentSoftWeight}%)
                           </h4>
-                          <span className="text-[10px] text-slate-400">Standar aspek penilaian soft skill & sikap kerja untuk jabatan ini</span>
+                          <span className="text-[10px] text-slate-400">Standar aspek penilaian soft skill & sikap kerja (maksimal akumulasi 100%)</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
@@ -5361,10 +5516,12 @@ export default function KPIModule({
                               <span className="text-xs text-slate-500 font-bold">Bobot:</span>
                               <input
                                 type="number"
+                                min="0"
+                                max="100"
                                 value={ss.bobot}
                                 onChange={(e) => updateTemplateSoftSkill(selectedTpl.id, ss.id, 'bobot', parseInt(e.target.value) || 0)}
                                 placeholder="Bobot"
-                                className="w-16 text-center text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700"
+                                className="w-16 text-center text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 focus:ring-1 focus:ring-violet-500"
                               />
                               <span className="text-xs font-bold text-slate-400">%</span>
 
@@ -5383,18 +5540,21 @@ export default function KPIModule({
 
                       {/* Total check weight Part B */}
                       {(() => {
-                        const total = currentSoftSkills.reduce((acc, curr) => acc + curr.bobot, 0);
+                        const total = currentSoftSkills.reduce((acc, curr) => acc + (curr.bobot || 0), 0);
                         const isValid = total === 100;
+                        const isOver = total > 100;
                         return (
                           <div className={`p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs font-bold ${
-                            isValid ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800' : 'bg-red-50/80 border-red-200 text-red-800'
+                            isOver ? 'bg-red-50 border-red-300 text-red-900' :
+                            isValid ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800' : 
+                            'bg-amber-50/80 border-amber-200 text-amber-800'
                           }`}>
                             <div className="flex items-center gap-2">
-                              <span className={`w-2.5 h-2.5 rounded-full ${isValid ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></span>
+                              <span className={`w-2.5 h-2.5 rounded-full ${isOver ? 'bg-red-500 animate-pulse' : isValid ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
                               <span>Total Akumulasi Bobot Bagian B (Soft Skill):</span>
                             </div>
                             <span className="font-mono text-xs font-black">
-                              {total}% {isValid ? '(Valid 100%)' : '(Harus Tepat 100%)'}
+                              {total}% {isOver ? '(⚠️ Melebihi 100%!)' : isValid ? '(100% Valid)' : `(Harus Tepat 100% - Tersisa ${100 - total}%)`}
                             </span>
                           </div>
                         );
@@ -5409,15 +5569,27 @@ export default function KPIModule({
                       <button
                         type="button"
                         onClick={() => {
-                          const totalHard = selectedTpl.indicators.reduce((acc, curr) => acc + curr.bobot, 0);
-                          const totalSoft = currentSoftSkills.reduce((acc, curr) => acc + curr.bobot, 0);
+                          const totalHard = selectedTpl.indicators.reduce((acc, curr) => acc + (curr.bobot || 0), 0);
+                          const totalSoft = currentSoftSkills.reduce((acc, curr) => acc + (curr.bobot || 0), 0);
                           
+                          if (totalHard > 100) {
+                            alert(`Peringatan: Total akumulasi bobot Bagian A melebihi 100% (saat ini ${totalHard}%)! Maksimal harus 100%.`);
+                            setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian A melebihi 100% (${totalHard}%)! Harap sesuaikan.`);
+                            return;
+                          }
                           if (totalHard !== 100) {
-                            alert("Peringatan: Total bobot Bagian A (Penilaian KPI) harus tepat 100%! Harap sesuaikan.");
+                            alert(`Peringatan: Total akumulasi bobot Bagian A (Penilaian KPI) harus tepat 100% (saat ini ${totalHard}%)! Harap sesuaikan.`);
+                            setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian A harus tepat 100% (saat ini: ${totalHard}%).`);
+                            return;
+                          }
+                          if (totalSoft > 100) {
+                            alert(`Peringatan: Total akumulasi bobot Bagian B melebihi 100% (saat ini ${totalSoft}%)! Maksimal harus 100%.`);
+                            setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian B melebihi 100% (${totalSoft}%)! Harap sesuaikan.`);
                             return;
                           }
                           if (totalSoft !== 100) {
-                            alert("Peringatan: Total bobot Bagian B (Penilaian Soft Skill) harus tepat 100%! Harap sesuaikan.");
+                            alert(`Peringatan: Total akumulasi bobot Bagian B (Penilaian Soft Skill) harus tepat 100% (saat ini ${totalSoft}%)! Harap sesuaikan.`);
+                            setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian B harus tepat 100% (saat ini: ${totalSoft}%).`);
                             return;
                           }
                           if (currentHardWeight + currentSoftWeight !== 100) {
@@ -5425,6 +5597,7 @@ export default function KPIModule({
                             return;
                           }
 
+                          setWeightWarningPengaturan(null);
                           localStorage.setItem('mypanca_kpi_templates', JSON.stringify(kpiTemplates));
                           alert("Standardisasi KPI (Bagian A) & Soft Skill (Bagian B) Berhasil Disimpan!");
                         }}
