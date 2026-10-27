@@ -3248,29 +3248,63 @@ export default function KPIModule({
                     <div
                       key={emp.id}
                       onClick={() => setSelectedEmployeeId(emp.id)}
-                      className={`w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer group ${
+                      className={`w-full text-left p-2.5 sm:p-3 rounded-xl border flex flex-col justify-between transition-all cursor-pointer group ${
                         isSelected 
                           ? 'bg-violet-50/90 border-violet-300 ring-1 ring-violet-200 shadow-sm' 
                           : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200'
                       }`}
                     >
-                      <div className="min-w-0 flex-1 pr-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`text-xs block font-bold leading-tight truncate ${isSelected ? 'text-violet-950 font-black' : 'text-slate-800'}`}>
-                            {emp.nama}
-                          </span>
-                          {hasRecord ? (
-                            hasRecord.status === 'approved' ? (
-                              <span className="w-2 h-2 bg-emerald-500 rounded-full shrink-0" title="Penilaian Approved" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className={`text-xs block font-bold leading-tight truncate ${isSelected ? 'text-violet-950 font-black' : 'text-slate-800'}`}>
+                              {emp.nama}
+                            </span>
+                            {hasRecord ? (
+                              hasRecord.status === 'approved' ? (
+                                <span className="w-2 h-2 bg-emerald-500 rounded-full shrink-0" title="Penilaian Approved" />
+                              ) : (
+                                <span className="w-2 h-2 bg-amber-400 rounded-full shrink-0" title="Penilaian Draft" />
+                              )
                             ) : (
-                              <span className="w-2 h-2 bg-amber-400 rounded-full shrink-0" title="Penilaian Draft" />
-                            )
-                          ) : (
-                            <span className="w-2 h-2 bg-slate-300 rounded-full shrink-0" title="Belum dinilai" />
-                          )}
+                              <span className="w-2 h-2 bg-slate-300 rounded-full shrink-0" title="Belum dinilai" />
+                            )}
+                          </div>
+
+                          {/* Desktop Action Buttons & Chevron */}
+                          <div className={`hidden sm:flex items-center gap-1 shrink-0 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 transition-opacity duration-150'}`}>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditEmployeeModal(emp);
+                              }}
+                              className="p-1 text-slate-400 hover:text-violet-600 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                              title="Edit Data & Gaji Karyawan"
+                            >
+                              <Edit size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteEmployee(emp.id, emp.nama);
+                              }}
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                              title="Hapus Karyawan"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                            <ChevronRight className={`w-3.5 h-3.5 ${isSelected ? 'text-violet-600' : 'text-slate-300'}`} />
+                          </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
+                        {/* Expandable Details on Hover or Selected (Desktop) */}
+                        <div className={`transition-all duration-200 overflow-hidden flex flex-wrap items-center gap-x-2 gap-y-0.5 ${
+                          isSelected 
+                            ? 'max-h-20 opacity-100 mt-1.5' 
+                            : 'max-h-0 opacity-0 group-hover:max-h-20 group-hover:opacity-100 group-hover:mt-1.5'
+                        }`}>
                           <span className="text-[10px] text-slate-500 uppercase font-medium truncate max-w-[110px]">
                             {jab ? jab.name : (
                               <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
@@ -3285,30 +3319,38 @@ export default function KPIModule({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditEmployeeModal(emp);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                          title="Edit Data & Gaji Karyawan"
-                        >
-                          <Edit size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteEmployee(emp.id, emp.nama);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                          title="Hapus Karyawan"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                        <ChevronRight className={`w-3.5 h-3.5 ml-0.5 ${isSelected ? 'text-violet-600' : 'text-slate-300'}`} />
+                      {/* Mobile view action bar */}
+                      <div className="flex sm:hidden items-center justify-between pt-1.5 mt-1 border-t border-slate-200/60">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-500 uppercase font-medium">
+                            {jab?.name || 'Staff'}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-emerald-700">
+                            {formatRupiah(emp.gaji || 0)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditEmployeeModal(emp);
+                            }}
+                            className="p-1 text-slate-400 hover:text-violet-600"
+                          >
+                            <Edit size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteEmployee(emp.id, emp.nama);
+                            }}
+                            className="p-1 text-slate-400 hover:text-red-600"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
