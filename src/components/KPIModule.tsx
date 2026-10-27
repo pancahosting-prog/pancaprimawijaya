@@ -653,11 +653,22 @@ export default function KPIModule({
   // Derived financial computations for selected month
   const activeFinancials = useMemo((): MonthlyFinancial => {
     const key = `${filterYear}-${filterMonth}`;
-    return kpiMonthlyFinancials[key] || {
-      omsetKotor: 133716920,
-      pajak: 14701861,
+    if (kpiMonthlyFinancials[key]) {
+      return kpiMonthlyFinancials[key];
+    }
+    if (key === '2026-09') {
+      return {
+        omsetKotor: 133716920,
+        pajak: 14701861,
+        pengiriman: 0,
+        lainLain: 14500000
+      };
+    }
+    return {
+      omsetKotor: 0,
+      pajak: 0,
       pengiriman: 0,
-      lainLain: 14500000
+      lainLain: 0
     };
   }, [kpiMonthlyFinancials, filterMonth, filterYear]);
 
@@ -992,22 +1003,56 @@ export default function KPIModule({
     if (bonusProjectSheets[key]) {
       return bonusProjectSheets[key];
     }
+    if (key === '2026-09') {
+      return {
+        sales: [
+          {
+            id: 'sb-1',
+            nama: 'Yadi',
+            jabatan: 'Head of Sales',
+            targetBulanan: 200000000,
+            pencapaian: activeFinancials.omsetKotor,
+            pajak: activeFinancials.pajak,
+            biayaKirim: activeFinancials.pengiriman,
+            biayaLain: activeFinancials.lainLain,
+            additional: 0,
+            note: 'Tinjau kembali pemberian komisi.'
+          },
+          {
+            id: 'sb-2',
+            nama: 'Sanjaya',
+            jabatan: 'Sales Staff',
+            targetBulanan: 200000000,
+            pencapaian: 0,
+            pajak: 0,
+            biayaKirim: 0,
+            biayaLain: 0,
+            additional: 0,
+            note: 'Komisi yang ini dihitung dari keseluruhan nett hasil penjualan. Tidak dihitung per persentase jenis item yang dikerjakan seperti yang di rekap sales'
+          }
+        ],
+        engineers: [
+          { id: 'eb-1', nama: 'Arie Putra', jabatan: 'Head of Engineering', persentaseKomisi: 0.05 },
+          { id: 'eb-2', nama: 'Evan', jabatan: 'Engineering Staff', persentaseKomisi: 0.05 },
+          { id: 'eb-3', nama: 'Jeremia', jabatan: 'Engineering Staff', persentaseKomisi: 0.05 }
+        ]
+      };
+    }
     return {
       sales: [
         {
-          id: 'sb-1',
+          id: `sb-1-${key}`,
           nama: 'Yadi',
           jabatan: 'Head of Sales',
           targetBulanan: 200000000,
-          pencapaian: activeFinancials.omsetKotor,
-          pajak: activeFinancials.pajak,
-          biayaKirim: activeFinancials.pengiriman,
-          biayaLain: activeFinancials.lainLain,
-          additional: 0,
-          note: 'Tinjau kembali pemberian komisi.'
+          pencapaian: 0,
+          pajak: 0,
+          biayaKirim: 0,
+          biayaLain: 0,
+          additional: 0
         },
         {
-          id: 'sb-2',
+          id: `sb-2-${key}`,
           nama: 'Sanjaya',
           jabatan: 'Sales Staff',
           targetBulanan: 200000000,
@@ -1015,14 +1060,13 @@ export default function KPIModule({
           pajak: 0,
           biayaKirim: 0,
           biayaLain: 0,
-          additional: 0,
-          note: 'Komisi yang ini dihitung dari keseluruhan nett hasil penjualan. Tidak dihitung per persentase jenis item yang dikerjakan seperti yang di rekap sales'
+          additional: 0
         }
       ],
       engineers: [
-        { id: 'eb-1', nama: 'Arie Putra', jabatan: 'Head of Engineering', persentaseKomisi: 0.05 },
-        { id: 'eb-2', nama: 'Evan', jabatan: 'Engineering Staff', persentaseKomisi: 0.05 },
-        { id: 'eb-3', nama: 'Jeremia', jabatan: 'Engineering Staff', persentaseKomisi: 0.05 }
+        { id: `eb-1-${key}`, nama: 'Arie Putra', jabatan: 'Head of Engineering', persentaseKomisi: 0.05 },
+        { id: `eb-2-${key}`, nama: 'Evan', jabatan: 'Engineering Staff', persentaseKomisi: 0.05 },
+        { id: `eb-3-${key}`, nama: 'Jeremia', jabatan: 'Engineering Staff', persentaseKomisi: 0.05 }
       ]
     };
   }, [bonusProjectSheets, filterMonth, filterYear, activeFinancials]);
@@ -1503,7 +1547,7 @@ export default function KPIModule({
       if (field === 'bobot') {
         const bobotVal = value === '' ? '' : Math.min(100, Math.max(0, parseInt(value) || 0));
         const otherBobot = t.indicators.reduce((acc, curr) => curr.id !== indId ? acc + (curr.bobot || 0) : acc, 0);
-        const currentBobot = parseInt(bobotVal) || 0;
+        const currentBobot = Number(bobotVal) || 0;
         if (otherBobot + currentBobot > 100) {
           setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian A saat ini ${otherBobot + currentBobot}% (melebihi 100%)!`);
         } else {
@@ -1560,7 +1604,7 @@ export default function KPIModule({
       if (field === 'bobot') {
         const bobotVal = value === '' ? '' : Math.min(100, Math.max(0, parseInt(value) || 0));
         const otherBobot = currentSS.reduce((acc, curr) => curr.id !== ssId ? acc + (curr.bobot || 0) : acc, 0);
-        const currentBobot = parseInt(bobotVal) || 0;
+        const currentBobot = Number(bobotVal) || 0;
         if (otherBobot + currentBobot > 100) {
           setWeightWarningPengaturan(`⚠️ Peringatan: Total akumulasi bobot Bagian B (Soft Skill) saat ini ${otherBobot + currentBobot}% (melebihi 100%)!`);
         } else {
@@ -2060,12 +2104,11 @@ export default function KPIModule({
   };
 
   // Get template based on Employee Jabatan (references our dynamic Jabatans & Templates)
-  const activeTemplateForEmployee = (emp: KPIEmployee | undefined): KPITemplate | null => {
+  const activeTemplateForEmployee = (emp: KPIEmployee | Employee | undefined): KPITemplate | null => {
     if (!emp) return null;
-    if (!emp.jabatanId) return null;
-    const jab = jabatans.find(j => j.id === emp.jabatanId);
-    if (!jab) return null;
-    const jabName = (jab.name || '').toLowerCase().trim();
+    const jabId = (emp as any).jabatanId;
+    const jab = jabId ? jabatans.find(j => j.id === jabId) : null;
+    const jabName = (jab?.name || '').toLowerCase().trim();
     const empJabName = (emp.jabatan || '').toLowerCase().trim();
     const empRole = (emp.role || '').toLowerCase().trim();
 
@@ -2079,15 +2122,17 @@ export default function KPIModule({
     if (matched) return matched;
 
     // 2. Direct match by Template ID or emp.jabatanId
-    matched = kpiTemplates.find(t => 
-      t.id === emp.jabatanId || 
-      t.id === `tpl-${emp.jabatanId}` ||
-      t.jabatan.toLowerCase().trim() === emp.jabatanId.toLowerCase().trim()
-    );
-    if (matched) return matched;
+    if (jabId) {
+      matched = kpiTemplates.find(t => 
+        t.id === jabId || 
+        t.id === `tpl-${jabId}` ||
+        t.jabatan.toLowerCase().trim() === jabId.toLowerCase().trim()
+      );
+      if (matched) return matched;
+    }
 
     // 3. Keyword / partial matching
-    const targetKeywords = [jabName, empJabName, empRole, emp.jabatanId || ''].filter(Boolean);
+    const targetKeywords = [jabName, empJabName, empRole, jabId || ''].filter(Boolean);
     for (const kw of targetKeywords) {
       if (kw.includes('sales') || kw.includes('penjualan')) {
         if (kw.includes('head')) {
@@ -2423,38 +2468,8 @@ export default function KPIModule({
         setHardWeight(template.hardWeight ?? 80);
         setSoftWeight(template.softWeight ?? 20);
       }
-    } else if (customSheet && customSheet.hardKPIs && customSheet.hardKPIs.length > 0) {
-      // Load individual custom indicators & soft skills preserved for this employee
-      let loadedHard = [...customSheet.hardKPIs];
-      if (isSales && salesBonusRow && loadedHard.length > 0) {
-        const targetVal = salesBonusRow.targetBulanan || 200000000;
-        const realVal = salesBonusRow.pencapaian || 0;
-        const bobotVal = loadedHard[0].bobot || 50;
-        const computedScore = targetVal > 0 ? (realVal / targetVal) * bobotVal : 0;
-        loadedHard[0] = {
-          ...loadedHard[0],
-          name: 'Target Penjualan',
-          satuan: 'Rp',
-          metode: 'Maximize',
-          bobot: bobotVal,
-          target: targetVal,
-          realisasi: realVal,
-          score: Math.round(computedScore * 100) / 100
-        };
-      }
-      const initial: Record<string, number> = {};
-      loadedHard.forEach(item => {
-        initial[item.indicatorId] = item.realisasi;
-      });
-      setRecordScores(initial);
-      setRecordNotes('');
-      setEditingRecordId(null);
-      setHardKPIInputs(loadedHard);
-      setSoftSkillInputs(customSheet.softSkills && customSheet.softSkills.length > 0 ? customSheet.softSkills : (template?.softSkills || DEFAULT_SOFT_SKILL_INDICATORS));
-      setHardWeight(customSheet.hardWeight ?? template?.hardWeight ?? 80);
-      setSoftWeight(customSheet.softWeight ?? template?.softWeight ?? 20);
     } else if (template) {
-      // Pre-populate with automatic scores or 80 default from Template Jabatan + Individual Custom Indicators
+      // NEW UNRATED MONTH: Inherit active template/custom indicator structure with realisasi and nilai starting at ZERO
       const initial: Record<string, number> = {};
       
       const hardKPIs = template.indicators.map((ind, idx) => {
@@ -2475,29 +2490,27 @@ export default function KPIModule({
             score: Math.round(computedScore * 100) / 100
           };
         }
-        const auto = getAutoQuantitativeScore(selectedEmployee!, ind);
-        const realVal = auto !== null ? auto : 80;
+        const realVal = 0;
         initial[ind.id] = realVal;
         return {
           indicatorId: ind.id,
           name: ind.name,
           bobot: ind.bobot,
-          metode: 'Maximize' as 'Maximize' | 'Minimize',
-          target: 100,
-          satuan: '%',
+          metode: (ind.metode || 'Maximize') as 'Maximize' | 'Minimize',
+          target: ind.target || 100,
+          satuan: ind.satuan || '%',
           realisasi: realVal,
-          score: Math.round((ind.bobot * (realVal / 100)) * 100) / 100
+          score: 0
         };
       });
 
-      // Automatically append persistent custom indicators for this specific employee
+      // Append persistent custom indicators with realisasi reset to 0 for new month
       customInds.forEach(cind => {
-        const realVal = cind.realisasi !== undefined ? cind.realisasi : 80;
-        initial[cind.indicatorId] = realVal;
+        initial[cind.indicatorId] = 0;
         hardKPIs.push({
           ...cind,
-          realisasi: realVal,
-          score: Math.round(((cind.bobot || 10) * (realVal / Math.max(cind.target || 100, 1))) * 100) / 100,
+          realisasi: 0,
+          score: 0,
           isCustom: true
         });
       });
@@ -2509,8 +2522,8 @@ export default function KPIModule({
       const softSkills = defaultSS.map(ss => ({
         name: ss.name,
         bobot: ss.bobot,
-        nilai: 80,
-        score: Math.round(((ss.bobot / 100) * 80) * 100) / 100
+        nilai: 0,
+        score: 0
       }));
 
       setRecordScores(initial);
@@ -2544,61 +2557,61 @@ export default function KPIModule({
       let kpiScore: number | null = null;
       let kpiApproved = record?.status === 'approved';
 
-      // 1. If saved record exists in kpiRecords with hardKPIs & softSkills
+      // 1. If saved record exists in kpiRecords with hardKPIs & softSkills for this month
       if (record && record.hardKPIs && record.softSkills) {
         const hardTotal = getHardKPITotal(record.hardKPIs);
         const softTotal = getSoftSkillTotal(record.softSkills);
         kpiScore = getOverallTotal(hardTotal, softTotal, record.hardWeight ?? 80, record.softWeight ?? 20);
       } else if (record && record.finalScore !== undefined) {
         kpiScore = record.finalScore;
-      } else if (indSheet && indSheet.hardKPIs && indSheet.softSkills) {
-        // 2. If employeeIndividualSheets exists with customized hardKPIs & softSkills
-        const hardTotal = getHardKPITotal(indSheet.hardKPIs);
-        const softTotal = getSoftSkillTotal(indSheet.softSkills);
-        kpiScore = getOverallTotal(hardTotal, softTotal, indSheet.hardWeight ?? 80, indSheet.softWeight ?? 20);
-      } else if (template) {
-        // 3. Compute live from active role template
-        const isSales = isSalesRole(emp);
-        const salesBonusRow = isSales ? getSalesBonusRowForEmployee(emp) : null;
-        const customInds = employeeCustomIndicators[emp.id] || [];
+      } else if (`${filterYear}-${filterMonth}` === '2026-09') {
+        // Seed initial values for demo month 2026-09 only
+        if (indSheet && indSheet.hardKPIs && indSheet.softSkills) {
+          const hardTotal = getHardKPITotal(indSheet.hardKPIs);
+          const softTotal = getSoftSkillTotal(indSheet.softSkills);
+          kpiScore = getOverallTotal(hardTotal, softTotal, indSheet.hardWeight ?? 80, indSheet.softWeight ?? 20);
+        } else if (template) {
+          const isSales = isSalesRole(emp);
+          const salesBonusRow = isSales ? getSalesBonusRowForEmployee(emp) : null;
+          const customInds = employeeCustomIndicators[emp.id] || [];
 
-        const hardKPIs = template.indicators.map((ind, idx) => {
-          if (isSales && idx === 0) {
-            const targetVal = salesBonusRow?.targetBulanan || ind.target || 200000000;
-            const realVal = salesBonusRow?.pencapaian || 0;
-            const bobotVal = ind.bobot || 50;
-            const computedScore = targetVal > 0 ? (realVal / targetVal) * bobotVal : 0;
-            return { score: Math.round(computedScore * 100) / 100 };
-          }
-          return { score: Math.round((ind.bobot * 0.8) * 100) / 100 };
-        });
+          const hardKPIs = template.indicators.map((ind, idx) => {
+            if (isSales && idx === 0) {
+              const targetVal = salesBonusRow?.targetBulanan || ind.target || 200000000;
+              const realVal = salesBonusRow?.pencapaian || 0;
+              const bobotVal = ind.bobot || 50;
+              const computedScore = targetVal > 0 ? (realVal / targetVal) * bobotVal : 0;
+              return { score: Math.round(computedScore * 100) / 100 };
+            }
+            return { score: Math.round((ind.bobot * 0.8) * 100) / 100 };
+          });
 
-        customInds.forEach(cind => {
-          const realVal = cind.realisasi !== undefined ? cind.realisasi : 80;
-          const score = Math.round(((cind.bobot || 10) * (realVal / Math.max(cind.target || 100, 1))) * 100) / 100;
-          hardKPIs.push({ score });
-        });
+          customInds.forEach(cind => {
+            const realVal = cind.realisasi !== undefined ? cind.realisasi : 80;
+            const score = Math.round(((cind.bobot || 10) * (realVal / Math.max(cind.target || 100, 1))) * 100) / 100;
+            hardKPIs.push({ score });
+          });
 
-        const defaultSS = (template.softSkills && template.softSkills.length > 0) ? template.softSkills : DEFAULT_SOFT_SKILL_INDICATORS;
-        const softSkills = defaultSS.map(ss => ({ score: Math.round(((ss.bobot / 100) * 80) * 100) / 100 }));
+          const defaultSS = (template.softSkills && template.softSkills.length > 0) ? template.softSkills : DEFAULT_SOFT_SKILL_INDICATORS;
+          const softSkills = defaultSS.map(ss => ({ score: Math.round(((ss.bobot / 100) * 80) * 100) / 100 }));
 
-        const hardTotal = hardKPIs.reduce((acc, curr) => acc + curr.score, 0);
-        const softTotal = softSkills.reduce((acc, curr) => acc + curr.score, 0);
-        kpiScore = getOverallTotal(hardTotal, softTotal, template.hardWeight ?? 80, template.softWeight ?? 20);
-      }
+          const hardTotal = hardKPIs.reduce((acc, curr) => acc + curr.score, 0);
+          const softTotal = softSkills.reduce((acc, curr) => acc + curr.score, 0);
+          kpiScore = getOverallTotal(hardTotal, softTotal, template.hardWeight ?? 80, template.softWeight ?? 20);
+        }
 
-      // Fallback default score if no score could be evaluated
-      if (kpiScore === null) {
-        if (empNameClean.includes('yadi')) kpiScore = 79.66;
-        else if (empNameClean.includes('sanjaya')) kpiScore = 40.00;
-        else if (empNameClean.includes('arie')) kpiScore = 103.33;
-        else if (empNameClean.includes('evan')) kpiScore = 98.95;
-        else if (empNameClean.includes('jeremia')) kpiScore = 106.02;
-        else if (empNameClean.includes('rudi')) kpiScore = 107.25;
-        else if (empNameClean.includes('angel') || empNameClean.includes('admin')) kpiScore = 161.25;
-        else if (empNameClean.includes('mustaqim') || empNameClean.includes('inventory')) kpiScore = 97.25;
-        else if (empNameClean.includes('rizqi') || empNameClean.includes('office boy')) kpiScore = 97.25;
-        else kpiScore = 80.00;
+        if (kpiScore === null) {
+          if (empNameClean.includes('yadi')) kpiScore = 79.66;
+          else if (empNameClean.includes('sanjaya')) kpiScore = 40.00;
+          else if (empNameClean.includes('arie')) kpiScore = 103.33;
+          else if (empNameClean.includes('evan')) kpiScore = 98.95;
+          else if (empNameClean.includes('jeremia')) kpiScore = 106.02;
+          else if (empNameClean.includes('rudi')) kpiScore = 107.25;
+          else if (empNameClean.includes('angel') || empNameClean.includes('admin')) kpiScore = 161.25;
+          else if (empNameClean.includes('mustaqim') || empNameClean.includes('inventory')) kpiScore = 97.25;
+          else if (empNameClean.includes('rizqi') || empNameClean.includes('office boy')) kpiScore = 97.25;
+          else kpiScore = 80.00;
+        }
       }
 
       const gradeObj = getKPIGrade(kpiScore);
@@ -3207,8 +3220,78 @@ export default function KPIModule({
       {/* Main Content Areas */}
       {activeSubTab === 'penilaian' && (
         <div className="flex flex-col lg:flex-row gap-6 items-start">
-          {/* Employee Selector - Sideways Expandable Panel */}
-          <div className="w-full lg:w-[220px] hover:lg:w-[320px] transition-all duration-300 ease-in-out bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 shrink-0 group/sidebar">
+          {/* Mobile Employee Selector Dropdown (< lg screens) */}
+          <div className="w-full lg:hidden bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <label htmlFor="mobile-employee-select" className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <User className="w-4 h-4 text-violet-600" />
+                <span>Pilih Karyawan:</span>
+              </label>
+              <button
+                type="button"
+                onClick={openAddEmployeeModal}
+                className="px-2.5 py-1 bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold rounded-lg transition-all shadow-xs flex items-center gap-1"
+              >
+                <Plus size={12} />
+                <span>Tambah</span>
+              </button>
+            </div>
+            
+            <div className="relative">
+              <select
+                id="mobile-employee-select"
+                value={selectedEmployeeId}
+                onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-violet-500 appearance-none pr-10 cursor-pointer shadow-xs"
+              >
+                <option value="">-- Pilih Karyawan --</option>
+                {companyEmployees.map(emp => {
+                  const hasRecord = kpiRecords.find(r => r.employeeId === emp.id && r.month === filterMonth && r.year === filterYear);
+                  const jab = jabatans.find(j => j.id === emp.jabatanId);
+                  const jabName = jab ? jab.name : (emp.jabatan || emp.role || 'Staff');
+                  const statusTag = hasRecord ? (hasRecord.status === 'approved' ? '✓ Approved' : '✎ Draft') : '○ Belum Dinilai';
+                  return (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.nama} - {jabName} [{statusTag}]
+                    </option>
+                  );
+                })}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            {selectedEmployee && (
+              <div className="flex items-center justify-between bg-violet-50/80 border border-violet-100 p-2.5 rounded-xl text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-bold text-violet-950 truncate">{selectedEmployee.nama}</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase truncate">
+                    ({jabatans.find(j => j.id === selectedEmployee.jabatanId)?.name || 'Staff'})
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openEditEmployeeModal(selectedEmployee)}
+                    className="p-1 text-slate-500 hover:text-violet-600 bg-white border border-slate-200 rounded-lg shadow-2xs"
+                    title="Edit Karyawan"
+                  >
+                    <Edit size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteEmployee(selectedEmployee.id, selectedEmployee.nama)}
+                    className="p-1 text-slate-500 hover:text-red-600 bg-white border border-slate-200 rounded-lg shadow-2xs"
+                    title="Hapus Karyawan"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Employee Selector - Sideways Expandable Panel (lg+ screens) */}
+          <div className="hidden lg:block w-[220px] hover:w-[320px] transition-all duration-300 ease-in-out bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 shrink-0 group/sidebar">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="min-w-0 pr-1">
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
@@ -4235,6 +4318,8 @@ export default function KPIModule({
                     ) : (
                       filteredRecapRows.map((item, idx) => {
                         const hasReadPermission = isAuthorizedToSeeSalary || currentUser?.nama === item.employee.nama;
+                        const empJab = jabatans.find(j => j.id === item.employee.jabatanId);
+                        const displayJabatan = empJab ? empJab.name : (item.employee.jabatan || item.employee.role || 'Staff');
 
                         return (
                           <tr key={item.employee.id} className="hover:bg-slate-50/70 transition-colors">
@@ -4245,7 +4330,7 @@ export default function KPIModule({
                               <span className="font-bold text-slate-900 block">{item.employee.nama}</span>
                               <span className="text-[9px] text-slate-400 uppercase font-mono mt-0.5">NIK: {item.employee.nik || '-'}</span>
                             </td>
-                            <td className="p-4 font-bold text-slate-500 uppercase">{item.employee.jabatan || item.employee.role || 'Staff'}</td>
+                            <td className="p-4 font-bold text-slate-500 uppercase">{displayJabatan}</td>
                             <td className="p-4">
                               {item.kpiScore !== null ? (
                                 <div className="flex items-center gap-1.5 justify-center">
