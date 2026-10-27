@@ -4,7 +4,7 @@ import {
   TrendingUp, User, DollarSign, Calendar, ChevronDown, ChevronRight, 
   AlertCircle, AlertTriangle, Filter, Shield, Activity, Briefcase, Percent, Clock, 
   Lock, Unlock, Settings, HelpCircle, BriefcaseIcon, RefreshCw, Eye, EyeOff,
-  Printer, FileSpreadsheet
+  Printer, FileSpreadsheet, Cloud, Database, UploadCloud
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
@@ -12,6 +12,11 @@ import {
   PolarAngleAxis, PolarRadiusAxis, Radar
 } from 'recharts';
 import { safeSetLocalStorage } from '../lib/apiUtils';
+import { 
+  loadAllKPIDataFromSupabase, 
+  saveAllKPIDataToSupabase, 
+  KPIMasterCloudData 
+} from '../lib/kpiSupabaseSync';
 
 interface Employee {
   id: string;
@@ -1916,6 +1921,222 @@ export default function KPIModule({
     safeSetLocalStorage('mypanca_kpi_monthly_inputs', kpiMonthlyInputs);
   }, [kpiMonthlyInputs]);
 
+  // --- Supabase Cloud Sync States and Handlers ---
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [lastCloudSyncTime, setLastCloudSyncTime] = useState<string | null>(null);
+  const [cloudSyncMessage, setCloudSyncMessage] = useState<string>('');
+  const isCloudLoadDoneRef = useRef(false);
+  const syncDebounceTimerRef = useRef<any>(null);
+
+  // 1. Initial Load from Supabase Cloud on Component Mount
+  useEffect(() => {
+    let isSubscribed = true;
+    const fetchCloudData = async () => {
+      setCloudSyncStatus('syncing');
+      setCloudSyncMessage('Mengambil data dari Supabase Cloud...');
+      try {
+        const res = await loadAllKPIDataFromSupabase();
+        if (!isSubscribed) return;
+
+        if (res.success && res.data) {
+          const cloud = res.data;
+          let loadedCount = 0;
+
+          if (cloud.jabatans && Array.isArray(cloud.jabatans) && cloud.jabatans.length > 0) {
+            setJabatans(cloud.jabatans);
+            safeSetLocalStorage('mypanca_kpi_jabatans', JSON.stringify(cloud.jabatans));
+            loadedCount++;
+          }
+          if (cloud.kpiEmployees && Array.isArray(cloud.kpiEmployees) && cloud.kpiEmployees.length > 0) {
+            setKpiEmployees(cloud.kpiEmployees);
+            safeSetLocalStorage('mypanca_kpi_employees', JSON.stringify(cloud.kpiEmployees));
+            loadedCount++;
+          }
+          if (cloud.gradingKPIItems && Array.isArray(cloud.gradingKPIItems) && cloud.gradingKPIItems.length > 0) {
+            setGradingKPIItems(cloud.gradingKPIItems);
+            safeSetLocalStorage('mypanca_kpi_grading_items', JSON.stringify(cloud.gradingKPIItems));
+            loadedCount++;
+          }
+          if (cloud.omsetTiers && Array.isArray(cloud.omsetTiers) && cloud.omsetTiers.length > 0) {
+            setOmsetTiers(cloud.omsetTiers);
+            safeSetLocalStorage('mypanca_kpi_omset_tiers', JSON.stringify(cloud.omsetTiers));
+            loadedCount++;
+          }
+          if (cloud.salesCommissions && Array.isArray(cloud.salesCommissions) && cloud.salesCommissions.length > 0) {
+            setSalesCommissions(cloud.salesCommissions);
+            safeSetLocalStorage('mypanca_kpi_commissions', JSON.stringify(cloud.salesCommissions));
+            loadedCount++;
+          }
+          if (cloud.kpiMonthlyFinancials && typeof cloud.kpiMonthlyFinancials === 'object' && Object.keys(cloud.kpiMonthlyFinancials).length > 0) {
+            setKpiMonthlyFinancials(cloud.kpiMonthlyFinancials);
+            safeSetLocalStorage('mypanca_kpi_monthly_financials', JSON.stringify(cloud.kpiMonthlyFinancials));
+            loadedCount++;
+          }
+          if (cloud.bonusProjectSheets && typeof cloud.bonusProjectSheets === 'object' && Object.keys(cloud.bonusProjectSheets).length > 0) {
+            setBonusProjectSheets(cloud.bonusProjectSheets);
+            safeSetLocalStorage('mypanca_kpi_bonus_project_sheets', cloud.bonusProjectSheets);
+            loadedCount++;
+          }
+          if (cloud.employeeIndividualSheets && typeof cloud.employeeIndividualSheets === 'object' && Object.keys(cloud.employeeIndividualSheets).length > 0) {
+            setEmployeeIndividualSheets(cloud.employeeIndividualSheets);
+            safeSetLocalStorage('mypanca_kpi_employee_individual_sheets', cloud.employeeIndividualSheets);
+            loadedCount++;
+          }
+          if (cloud.employeeCustomIndicators && typeof cloud.employeeCustomIndicators === 'object' && Object.keys(cloud.employeeCustomIndicators).length > 0) {
+            setEmployeeCustomIndicators(cloud.employeeCustomIndicators);
+            safeSetLocalStorage('mypanca_kpi_employee_custom_indicators', cloud.employeeCustomIndicators);
+            loadedCount++;
+          }
+          if (cloud.kpiTemplates && Array.isArray(cloud.kpiTemplates) && cloud.kpiTemplates.length > 0) {
+            setKpiTemplates(cloud.kpiTemplates);
+            safeSetLocalStorage('mypanca_kpi_templates', cloud.kpiTemplates);
+            loadedCount++;
+          }
+          if (cloud.kpiRecords && Array.isArray(cloud.kpiRecords) && cloud.kpiRecords.length > 0) {
+            setKpiRecords(cloud.kpiRecords);
+            safeSetLocalStorage('mypanca_kpi_records', cloud.kpiRecords);
+            loadedCount++;
+          }
+          if (cloud.additionalBonuses && typeof cloud.additionalBonuses === 'object') {
+            setAdditionalBonuses(cloud.additionalBonuses);
+            safeSetLocalStorage('mypanca_kpi_additional_bonuses', cloud.additionalBonuses);
+          }
+
+          setCloudSyncStatus('synced');
+          setLastCloudSyncTime(cloud.lastSyncedAt ? new Date(cloud.lastSyncedAt).toLocaleTimeString('id-ID') : new Date().toLocaleTimeString('id-ID'));
+          setCloudSyncMessage(`Tersinkronisasi (${loadedCount} modul dimuat dari Supabase)`);
+        } else {
+          // Jika cloud masih kosong, push data lokal awal ke Supabase agar langsung tersimpan di cloud
+          setCloudSyncMessage('Menyimpan data awal ke Supabase...');
+          await saveAllKPIDataToSupabase({
+            jabatans,
+            kpiEmployees,
+            gradingKPIItems,
+            omsetTiers,
+            salesCommissions,
+            kpiMonthlyFinancials,
+            bonusProjectSheets,
+            employeeIndividualSheets,
+            employeeCustomIndicators,
+            kpiTemplates,
+            kpiRecords,
+            additionalBonuses
+          }, currentUser?.nama || currentUser?.username || 'user');
+          setCloudSyncStatus('synced');
+          setLastCloudSyncTime(new Date().toLocaleTimeString('id-ID'));
+          setCloudSyncMessage('Tersinkronisasi dengan Supabase Cloud');
+        }
+      } catch (err: any) {
+        console.warn('Gagal load KPI dari Supabase:', err);
+        setCloudSyncStatus('error');
+        setCloudSyncMessage('Gagal sinkron cloud (bekerja dalam mode offline)');
+      } finally {
+        if (isSubscribed) {
+          isCloudLoadDoneRef.current = true;
+        }
+      }
+    };
+
+    fetchCloudData();
+    return () => { isSubscribed = false; };
+  }, []);
+
+  // 2. Debounced Auto-Save to Supabase Cloud on Any State Change
+  useEffect(() => {
+    if (!isCloudLoadDoneRef.current) return;
+
+    if (syncDebounceTimerRef.current) {
+      clearTimeout(syncDebounceTimerRef.current);
+    }
+
+    setCloudSyncStatus('syncing');
+    setCloudSyncMessage('Menyimpan perubahan ke Supabase...');
+
+    syncDebounceTimerRef.current = setTimeout(async () => {
+      try {
+        const payload: KPIMasterCloudData = {
+          jabatans,
+          kpiEmployees,
+          gradingKPIItems,
+          omsetTiers,
+          salesCommissions,
+          kpiMonthlyFinancials,
+          bonusProjectSheets,
+          employeeIndividualSheets,
+          employeeCustomIndicators,
+          kpiTemplates,
+          kpiRecords,
+          additionalBonuses
+        };
+        const res = await saveAllKPIDataToSupabase(payload, currentUser?.nama || currentUser?.username || 'user');
+        if (res.success) {
+          setCloudSyncStatus('synced');
+          setLastCloudSyncTime(new Date().toLocaleTimeString('id-ID'));
+          setCloudSyncMessage('Semua perubahan tersimpan di Supabase Cloud');
+        } else {
+          setCloudSyncStatus('error');
+          setCloudSyncMessage(`Gagal simpan: ${res.error || 'Terjadi kesalahan'}`);
+        }
+      } catch (err: any) {
+        setCloudSyncStatus('error');
+        setCloudSyncMessage('Gagal menyimpan ke cloud');
+      }
+    }, 1500);
+
+    return () => {
+      if (syncDebounceTimerRef.current) {
+        clearTimeout(syncDebounceTimerRef.current);
+      }
+    };
+  }, [
+    jabatans,
+    kpiEmployees,
+    gradingKPIItems,
+    omsetTiers,
+    salesCommissions,
+    kpiMonthlyFinancials,
+    bonusProjectSheets,
+    employeeIndividualSheets,
+    employeeCustomIndicators,
+    kpiTemplates,
+    kpiRecords,
+    additionalBonuses
+  ]);
+
+  // 3. Manual Immediate Sync Handler
+  const handleManualSyncNow = async () => {
+    setCloudSyncStatus('syncing');
+    setCloudSyncMessage('Menyinkronkan langsung ke Supabase...');
+    try {
+      const payload: KPIMasterCloudData = {
+        jabatans,
+        kpiEmployees,
+        gradingKPIItems,
+        omsetTiers,
+        salesCommissions,
+        kpiMonthlyFinancials,
+        bonusProjectSheets,
+        employeeIndividualSheets,
+        employeeCustomIndicators,
+        kpiTemplates,
+        kpiRecords,
+        additionalBonuses
+      };
+      const res = await saveAllKPIDataToSupabase(payload, currentUser?.nama || currentUser?.username || 'user');
+      if (res.success) {
+        setCloudSyncStatus('synced');
+        setLastCloudSyncTime(new Date().toLocaleTimeString('id-ID'));
+        setCloudSyncMessage('Data berhasil disinkronkan ke Supabase Cloud!');
+      } else {
+        setCloudSyncStatus('error');
+        setCloudSyncMessage(res.error || 'Gagal sinkron');
+      }
+    } catch (err: any) {
+      setCloudSyncStatus('error');
+      setCloudSyncMessage(err.message || 'Error sinkronisasi');
+    }
+  };
+
   // Roles verification
   const normalizedRole = (currentUser?.role || '').toLowerCase();
   const isSuperadminOrAdmin = normalizedRole === 'superadmin' || normalizedRole === 'admin';
@@ -3031,36 +3252,67 @@ export default function KPIModule({
           </p>
         </div>
 
-        {/* Month & Year Select Filter */}
-        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200 w-full md:w-auto">
-          <Filter className="w-4 h-4 text-slate-400 ml-1" />
-          <select 
-            value={filterMonth} 
-            onChange={(e) => setFilterMonth(e.target.value)}
-            className="bg-transparent border-none text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer"
-          >
-            <option value="01">Januari</option>
-            <option value="02">Februari</option>
-            <option value="03">Maret</option>
-            <option value="04">April</option>
-            <option value="05">Mei</option>
-            <option value="06">Juni</option>
-            <option value="07">Juli</option>
-            <option value="08">Agustus</option>
-            <option value="09">September</option>
-            <option value="10">Oktober</option>
-            <option value="11">November</option>
-            <option value="12">Desember</option>
-          </select>
-          <select 
-            value={filterYear} 
-            onChange={(e) => setFilterYear(e.target.value)}
-            className="bg-transparent border-none text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer"
-          >
-            {Array.from(new Set(['2024', '2025', '2026', '2027', new Date().getFullYear().toString()])).sort().map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+        {/* Actions, Cloud Sync & Filters */}
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          {/* Cloud Sync Status & Manual Sync Button */}
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
+            {cloudSyncStatus === 'syncing' ? (
+              <RefreshCw className="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" />
+            ) : cloudSyncStatus === 'error' ? (
+              <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+            ) : (
+              <Cloud className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            )}
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-slate-700 leading-tight flex items-center gap-1">
+                {cloudSyncStatus === 'syncing' ? 'Menyinkronkan...' : cloudSyncStatus === 'error' ? 'Sync Gagal' : 'Supabase Cloud Terhubung'}
+                {cloudSyncStatus === 'synced' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>}
+              </span>
+              <span className="text-[9px] text-slate-400">
+                {lastCloudSyncTime ? `Sinkron: ${lastCloudSyncTime}` : 'Database Aktif'}
+              </span>
+            </div>
+            <button
+              onClick={handleManualSyncNow}
+              disabled={cloudSyncStatus === 'syncing'}
+              title="Sinkronkan data KPI ke Supabase Cloud sekarang"
+              className="ml-1 p-1 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${cloudSyncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {/* Month & Year Select Filter */}
+          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <Filter className="w-4 h-4 text-slate-400 ml-1" />
+            <select 
+              value={filterMonth} 
+              onChange={(e) => setFilterMonth(e.target.value)}
+              className="bg-transparent border-none text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer"
+            >
+              <option value="01">Januari</option>
+              <option value="02">Februari</option>
+              <option value="03">Maret</option>
+              <option value="04">April</option>
+              <option value="05">Mei</option>
+              <option value="06">Juni</option>
+              <option value="07">Juli</option>
+              <option value="08">Agustus</option>
+              <option value="09">September</option>
+              <option value="10">Oktober</option>
+              <option value="11">November</option>
+              <option value="12">Desember</option>
+            </select>
+            <select 
+              value={filterYear} 
+              onChange={(e) => setFilterYear(e.target.value)}
+              className="bg-transparent border-none text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer"
+            >
+              {Array.from(new Set(['2024', '2025', '2026', '2027', new Date().getFullYear().toString()])).sort().map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -4705,12 +4957,7 @@ export default function KPIModule({
                           {formatRupiah(r.omsetBersih)}
                         </td>
                         <td className="p-3 text-center border-r border-slate-100">
-                          <div className="flex flex-col items-center">
-                            <span className="font-bold text-slate-800 text-[11px]">{r.persentaseCapaian.toFixed(2)}%</span>
-                            <span className="text-[9px] font-black uppercase text-violet-600 px-1 rounded bg-violet-50 border border-violet-100">
-                              Tier {r.komisiRate}%
-                            </span>
-                          </div>
+                          <span className="font-bold text-slate-800 text-[11px]">{r.persentaseCapaian.toFixed(2)}%</span>
                         </td>
                         <td className="p-3 border-r border-slate-100">
                           <FormattedNumberInput
