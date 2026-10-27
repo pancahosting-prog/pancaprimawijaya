@@ -2561,15 +2561,14 @@ export default function KPIModule({
       const jabatanPercentage = jabatanPercentageVal / 100;
 
       // Determine Omset Multiplier based on Total Akumulasi Omset Kotor vs Minimal Target Tiers in T&C
-      // Formula: Total Akumulasi Omset Kotor * Pengali Bonus (Multiplier) * Alokasi Bonus Jabatan % * Grade KPI %
-      const totalOmsetKotorVal = activeFinancials.omsetKotor;
+      // Formula: Gaji Pokok * Alokasi Bonus Jabatan % * Grade KPI % * Pengali Bonus (Multiplier)
       const omsetMultiplier = activeOmsetMultiplier;
       const isOmsetEligible = omsetMultiplier > 0;
       const persentaseBonusDisplay = isOmsetEligible ? jabatanPercentageVal : 0;
 
-      // Exact Formula: Total Akumulasi Omset Kotor * Multiplier Tier Omset * (Alokasi Jabatan / 100) * Grade KPI Multiplier
-      // If Omset Kotor < minimal target (Tier III Rp 200M), omsetMultiplier = 0 (Bonus tidak cair)
-      const calculatedBonus = totalOmsetKotorVal * omsetMultiplier * jabatanPercentage * kpiGradeMultiplierVal;
+      // Exact Formula: Gaji Pokok * (Alokasi Jabatan / 100) * Grade KPI Multiplier % * Multiplier Tier Omset
+      // If Total Akumulasi Omset Kotor < minimal target (Tier III Rp 200M), omsetMultiplier = 0 (Bonus tidak cair)
+      const calculatedBonus = employeeGaji * jabatanPercentage * kpiGradeMultiplierVal * omsetMultiplier;
 
       // Check for project-specific bonuses released in this month
       const activeProjectBonuses = projectBonuses.filter(pb => {
@@ -4089,7 +4088,7 @@ export default function KPIModule({
                   </span>
                   <span className="text-[10px] opacity-80 font-medium block mt-0.5">
                     {activeOmsetMultiplier > 0 
-                      ? `✓ Syarat minimal omset terpenuhi (Multiplier ${activeOmsetMultiplier}x aktif). Rumus: Omset Kotor × Multiplier (${activeOmsetMultiplier}x) × Alokasi Jabatan % × Grade KPI %`
+                      ? `✓ Syarat minimal omset terpenuhi (Multiplier ${activeOmsetMultiplier}x aktif). Rumus: Gaji Pokok × Alokasi Jabatan % × Grade KPI % × Multiplier (${activeOmsetMultiplier}x)`
                       : `⚠️ Total Omset Kotor belum mencapai batas minimal Tier III (Rp 200.000.000). Sesuai aturan T&C, Multiplier = 0 (Bonus KPI Bulanan belum cair / Rp 0).`
                     }
                   </span>
@@ -4098,7 +4097,7 @@ export default function KPIModule({
 
               <div className="text-right">
                 <span className="text-[10px] font-mono uppercase bg-white/80 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs inline-block">
-                  Formula: Omset Kotor × Multiplier × Alokasi Jabatan × Grade
+                  Formula: Gaji Pokok × Alokasi Jabatan × Grade × Multiplier
                 </span>
               </div>
             </div>
