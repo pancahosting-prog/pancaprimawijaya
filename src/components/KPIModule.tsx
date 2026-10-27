@@ -2293,9 +2293,61 @@ export default function KPIModule({
       setRecordNotes(existing.notes || '');
       setEditingRecordId(existing.id);
 
-      if (existing.hardKPIs && existing.softSkills) {
+      if (existing.status !== 'approved' && template) {
+        // Auto-sync draft records with updated template structure/indicators/weights from Pengaturan KPI
+        const syncedHard = template.indicators.map((ind, idx) => {
+          const match = existing.hardKPIs?.find(h => h.indicatorId === ind.id || h.name.toLowerCase().trim() === ind.name.toLowerCase().trim()) || existing.hardKPIs?.[idx];
+          const realVal = match ? match.realisasi : (existing.scores[ind.id] ?? 80);
+          const targetVal = isSales && idx === 0 ? (salesBonusRow?.targetBulanan || ind.target || 200000000) : (ind.target || match?.target || 100);
+          const bobotVal = ind.bobot;
+          const metodeVal = ind.metode || match?.metode || 'Maximize';
+          const satuanVal = isSales && idx === 0 ? 'Rp' : (ind.satuan || match?.satuan || '%');
+          const realForSales = isSales && idx === 0 ? (salesBonusRow?.pencapaian || 0) : realVal;
+          const computedScore = targetVal > 0 ? (metodeVal === 'Minimize' ? (targetVal / Math.max(realForSales, 1)) * bobotVal : (realForSales / targetVal) * bobotVal) : 0;
+          return {
+            indicatorId: ind.id,
+            name: ind.name,
+            bobot: bobotVal,
+            metode: metodeVal as 'Maximize' | 'Minimize',
+            target: targetVal,
+            satuan: satuanVal,
+            realisasi: realForSales,
+            score: Math.round(computedScore * 100) / 100
+          };
+        });
+
+        // Also preserve custom individual indicators
+        customInds.forEach(cind => {
+          if (!syncedHard.some(k => k.indicatorId === cind.indicatorId)) {
+            const matchCustom = existing.hardKPIs?.find(h => h.indicatorId === cind.indicatorId);
+            const realVal = matchCustom ? matchCustom.realisasi : (cind.realisasi ?? 80);
+            syncedHard.push({
+              ...cind,
+              realisasi: realVal,
+              score: Math.round(((cind.bobot || 10) * (realVal / Math.max(cind.target || 100, 1))) * 100) / 100,
+              isCustom: true
+            });
+          }
+        });
+
+        const tplSS = (template.softSkills && template.softSkills.length > 0) ? template.softSkills : DEFAULT_SOFT_SKILL_INDICATORS;
+        const syncedSoft = tplSS.map((ss, idx) => {
+          const matchSS = existing.softSkills?.find(s => s.name.toLowerCase().trim() === ss.name.toLowerCase().trim()) || existing.softSkills?.[idx];
+          const nilaiVal = matchSS ? matchSS.nilai : 80;
+          return {
+            name: ss.name,
+            bobot: ss.bobot,
+            nilai: nilaiVal,
+            score: Math.round(((ss.bobot / 100) * nilaiVal) * 100) / 100
+          };
+        });
+
+        setHardKPIInputs(syncedHard);
+        setSoftSkillInputs(syncedSoft);
+        setHardWeight(template.hardWeight ?? 80);
+        setSoftWeight(template.softWeight ?? 20);
+      } else if (existing.hardKPIs && existing.softSkills) {
         let loadedHard = [...existing.hardKPIs];
-        // For sales roles: if not approved, sync indicator 0 with latest Pencapaian Omset Kotor & Target Bulanan
         if (isSales && salesBonusRow && existing.status !== 'approved' && loadedHard.length > 0) {
           const targetVal = salesBonusRow.targetBulanan || 200000000;
           const realVal = salesBonusRow.pencapaian || 0;
@@ -2999,41 +3051,41 @@ export default function KPIModule({
       </div>
 
       {/* Sub-tab Navigation */}
-      <div className="flex border-b border-slate-200 bg-white p-2 rounded-xl shadow-sm">
+      <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap border-b border-slate-200 bg-white p-2 rounded-xl shadow-xs scrollbar-thin">
         <button 
           onClick={() => setActiveSubTab('penilaian')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${activeSubTab === 'penilaian' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all shrink-0 ${activeSubTab === 'penilaian' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
         >
-          <Activity className="w-4 h-4" />
+          <Activity className="w-4 h-4 shrink-0" />
           Penilaian KPI
         </button>
         <button 
           onClick={() => setActiveSubTab('rekap')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${activeSubTab === 'rekap' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all shrink-0 ${activeSubTab === 'rekap' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
         >
-          <FileText className="w-4 h-4" />
+          <FileText className="w-4 h-4 shrink-0" />
           Rekap KPI & Gaji
         </button>
         <button 
           onClick={() => setActiveSubTab('project-bonus')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${activeSubTab === 'project-bonus' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all shrink-0 ${activeSubTab === 'project-bonus' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
         >
-          <Briefcase className="w-4 h-4" />
+          <Briefcase className="w-4 h-4 shrink-0" />
           Bonus Project
         </button>
         <button 
           onClick={() => setActiveSubTab('tnc')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${activeSubTab === 'tnc' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all shrink-0 ${activeSubTab === 'tnc' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
         >
-          <Shield className="w-4 h-4" />
+          <Shield className="w-4 h-4 shrink-0" />
           T&C Bonus
         </button>
         {isAuthorizedToManageKPI && (
           <button 
             onClick={() => setActiveSubTab('templates')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${activeSubTab === 'templates' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all shrink-0 ${activeSubTab === 'templates' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-4 h-4 shrink-0" />
             Pengaturan KPI
           </button>
         )}
@@ -3175,7 +3227,7 @@ export default function KPIModule({
               </button>
             </div>
             
-            <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[500px] sm:max-h-[calc(100vh-280px)] overflow-y-auto pr-1 pb-4 scrollbar-thin">
               {companyEmployees.length === 0 ? (
                 <div className="text-center py-8 space-y-2">
                   <p className="text-xs text-slate-400">Belum ada data karyawan.</p>
@@ -3478,41 +3530,13 @@ export default function KPIModule({
                                       className="p-1.5 bg-white border border-slate-200 hover:border-violet-300 focus:border-violet-500 rounded text-xs font-bold text-slate-800 w-full outline-none focus:ring-1 focus:ring-violet-500 transition-colors disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
                                     />
                                     <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                      {idx === 0 && isSalesRole(selectedEmployee) ? (
-                                        <div className="flex flex-wrap items-center gap-1.5 w-full">
-                                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
-                                            ✓ Terhubung Otomatis ke Pencapaian (Omset Kotor) Bonus Project
-                                          </span>
-                                          {!isRecordApproved && (
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                const bonusRow = getSalesBonusRowForEmployee(selectedEmployee);
-                                                if (bonusRow) {
-                                                  const nextTarget = bonusRow.targetBulanan || 200000000;
-                                                  const nextReal = bonusRow.pencapaian || 0;
-                                                  updateHardKPIField(0, 'name', 'Target Penjualan');
-                                                  updateHardKPIField(0, 'target', nextTarget);
-                                                  updateHardKPIField(0, 'realisasi', nextReal);
-                                                  updateHardKPIField(0, 'satuan', 'Rp');
-                                                  updateHardKPIField(0, 'metode', 'Maximize');
-                                                }
-                                              }}
-                                              className="text-[10px] font-bold text-violet-700 hover:text-violet-900 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1 transition-colors shrink-0 shadow-2xs"
-                                              title="Sinkronkan ulang data dari Tabel Bonus Project Bulan Ini"
-                                            >
-                                              <RefreshCw className="w-2.5 h-2.5" />
-                                              Sinkronkan Ulang
-                                            </button>
-                                          )}
-                                        </div>
-                                      ) : isCustomInd ? (
+                                      {isCustomInd ? (
                                         <span className="text-[9px] font-bold text-violet-700 bg-violet-100/70 px-1.5 py-0.5 rounded border border-violet-200 inline-flex items-center gap-1">
                                           ★ Custom Individu
                                         </span>
-                                      ) : (
-                                        <span className="text-[9px] text-slate-400 font-mono">Template: {item.indicatorId} (Custom Individu)</span>
-                                      )}
+                                      ) : item.indicatorId ? (
+                                        <span className="text-[9px] text-slate-400 font-mono">Template ID: {item.indicatorId}</span>
+                                      ) : null}
                                     </div>
                                   </td>
                                   <td className="p-3 text-center">
@@ -4143,8 +4167,6 @@ export default function KPIModule({
                 </button>
               </div>
             </div>
-              
-              /* Pay slip view */
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -4169,7 +4191,6 @@ export default function KPIModule({
                       </tr>
                     ) : (
                       filteredRecapRows.map((item, idx) => {
-                        const salaryVisible = showSalaryMap[item.employee.id] || false;
                         const hasReadPermission = isAuthorizedToSeeSalary || currentUser?.nama === item.employee.nama;
 
                         return (
@@ -4184,17 +4205,17 @@ export default function KPIModule({
                             <td className="p-4 font-bold text-slate-500 uppercase">{item.employee.jabatan || item.employee.role || 'Staff'}</td>
                             <td className="p-4">
                               {item.kpiScore !== null ? (
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 justify-center">
                                   <span className="font-bold text-slate-800">{item.kpiScore}</span>
                                   <span className={`text-[9px] px-1.5 py-0.5 rounded border font-black ${item.kpiGrade?.color}`}>
                                     {item.kpiGrade?.code}
                                   </span>
                                 </div>
                               ) : (
-                                <span className="text-slate-400">-</span>
+                                <span className="text-slate-400 text-center block">-</span>
                               )}
                             </td>
-                            <td className="p-4">
+                            <td className="p-4 text-center">
                               {item.kpiScore !== null ? (
                                 item.kpiApproved ? (
                                   <span className="text-emerald-600 font-bold">Approved</span>
@@ -4205,38 +4226,30 @@ export default function KPIModule({
                                 <span className="text-slate-400">Belum Dinilai</span>
                               )}
                             </td>
-                            <td className="p-4 font-mono font-bold">
+                            <td className="p-4 font-mono font-bold text-right">
                               {hasReadPermission ? (
-                                <div className="flex items-center gap-1">
-                                  <span>{salaryVisible ? formatRupiah(item.employee.gaji || 0) : '••••••••'}</span>
-                                  <button 
-                                    onClick={() => setShowSalaryMap(prev => ({ ...prev, [item.employee.id]: !salaryVisible }))}
-                                    className="text-slate-400 hover:text-slate-600 ml-1"
-                                  >
-                                    {salaryVisible ? <EyeOff size={12} /> : <Eye size={12} />}
-                                  </button>
-                                </div>
+                                <span>{formatRupiah(item.employee.gaji || 0)}</span>
                               ) : (
                                 <span className="text-slate-400"><Lock size={12} className="inline mr-1" /> Terkunci</span>
                               )}
                             </td>
-                            <td className="p-4 font-mono text-slate-600">
+                            <td className="p-4 font-mono text-slate-600 text-right">
                               {hasReadPermission ? (
-                                salaryVisible ? formatRupiah(item.calculatedBonus) : '••••••••'
+                                formatRupiah(item.calculatedBonus)
                               ) : (
                                 <span className="text-slate-400">-</span>
                               )}
                             </td>
-                            <td className="p-4 font-mono text-slate-600">
+                            <td className="p-4 font-mono text-slate-600 text-right">
                               {hasReadPermission ? (
-                                salaryVisible ? formatRupiah(item.bonusProjectKomisi) : '••••••••'
+                                formatRupiah(item.bonusProjectKomisi)
                               ) : (
                                 <span className="text-slate-400">-</span>
                               )}
                             </td>
-                            <td className="p-4 font-mono font-black text-slate-900 bg-slate-50/20">
+                            <td className="p-4 font-mono font-black text-slate-900 bg-slate-50/20 text-right">
                               {hasReadPermission ? (
-                                salaryVisible ? formatRupiah(item.totalTakeHomePay) : '••••••••'
+                                formatRupiah(item.totalTakeHomePay)
                               ) : (
                                 <span className="text-slate-400"><Lock size={12} className="inline mr-1" /> Terkunci</span>
                               )}
