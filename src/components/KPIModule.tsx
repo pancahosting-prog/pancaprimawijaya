@@ -2485,13 +2485,57 @@ export default function KPIModule({
     return companyEmployees.map(emp => {
       const key = `kpi-${emp.id}-${filterMonth}-${filterYear}`;
       const record = kpiRecords.find(r => r.id === key);
+      const indSheet = employeeIndividualSheets[emp.id];
       const template = activeTemplateForEmployee(emp);
       
       const empNameClean = emp.nama.toLowerCase().trim();
-      let kpiScore = record ? (record.finalScore !== undefined ? record.finalScore : calculateFinalKPIScore(record.scores, template)) : null;
+      let kpiScore: number | null = null;
       let kpiApproved = record?.status === 'approved';
 
-      // Fallback default score lookup matching KPI.xlsx if not yet formally graded in current session
+      // 1. If saved record exists in kpiRecords with hardKPIs & softSkills
+      if (record && record.hardKPIs && record.softSkills) {
+        const hardTotal = getHardKPITotal(record.hardKPIs);
+        const softTotal = getSoftSkillTotal(record.softSkills);
+        kpiScore = getOverallTotal(hardTotal, softTotal, record.hardWeight ?? 80, record.softWeight ?? 20);
+      } else if (record && record.finalScore !== undefined) {
+        kpiScore = record.finalScore;
+      } else if (indSheet && indSheet.hardKPIs && indSheet.softSkills) {
+        // 2. If employeeIndividualSheets exists with customized hardKPIs & softSkills
+        const hardTotal = getHardKPITotal(indSheet.hardKPIs);
+        const softTotal = getSoftSkillTotal(indSheet.softSkills);
+        kpiScore = getOverallTotal(hardTotal, softTotal, indSheet.hardWeight ?? 80, indSheet.softWeight ?? 20);
+      } else if (template) {
+        // 3. Compute live from active role template
+        const isSales = isSalesRole(emp);
+        const salesBonusRow = isSales ? getSalesBonusRowForEmployee(emp) : null;
+        const customInds = employeeCustomIndicators[emp.id] || [];
+
+        const hardKPIs = template.indicators.map((ind, idx) => {
+          if (isSales && idx === 0) {
+            const targetVal = salesBonusRow?.targetBulanan || ind.target || 200000000;
+            const realVal = salesBonusRow?.pencapaian || 0;
+            const bobotVal = ind.bobot || 50;
+            const computedScore = targetVal > 0 ? (realVal / targetVal) * bobotVal : 0;
+            return { score: Math.round(computedScore * 100) / 100 };
+          }
+          return { score: Math.round((ind.bobot * 0.8) * 100) / 100 };
+        });
+
+        customInds.forEach(cind => {
+          const realVal = cind.realisasi !== undefined ? cind.realisasi : 80;
+          const score = Math.round(((cind.bobot || 10) * (realVal / Math.max(cind.target || 100, 1))) * 100) / 100;
+          hardKPIs.push({ score });
+        });
+
+        const defaultSS = (template.softSkills && template.softSkills.length > 0) ? template.softSkills : DEFAULT_SOFT_SKILL_INDICATORS;
+        const softSkills = defaultSS.map(ss => ({ score: Math.round(((ss.bobot / 100) * 80) * 100) / 100 }));
+
+        const hardTotal = hardKPIs.reduce((acc, curr) => acc + curr.score, 0);
+        const softTotal = softSkills.reduce((acc, curr) => acc + curr.score, 0);
+        kpiScore = getOverallTotal(hardTotal, softTotal, template.hardWeight ?? 80, template.softWeight ?? 20);
+      }
+
+      // Fallback default score if no score could be evaluated
       if (kpiScore === null) {
         if (empNameClean.includes('yadi')) kpiScore = 79.66;
         else if (empNameClean.includes('sanjaya')) kpiScore = 40.00;
@@ -2503,11 +2547,11 @@ export default function KPIModule({
         else if (empNameClean.includes('mustaqim') || empNameClean.includes('inventory')) kpiScore = 97.25;
         else if (empNameClean.includes('rizqi') || empNameClean.includes('office boy')) kpiScore = 97.25;
         else kpiScore = 80.00;
-        kpiApproved = true;
       }
 
-      const gradeObj = kpiScore !== null ? getKPIGrade(kpiScore) : null;
-      const kpiGradeMultiplier = (kpiApproved && gradeObj) ? gradeObj.multiplier : 0;
+      const gradeObj = getKPIGrade(kpiScore);
+      // gradeObj.multiplier is already fractional (e.g. Grade A = 100/100 = 1.0, Grade B = 75/100 = 0.75, Grade C = 60/100 = 0.60)
+      const kpiGradeMultiplierVal = gradeObj ? gradeObj.multiplier : 0;
 
       const employeeGaji = emp.gaji || 3000000;
       
@@ -2517,13 +2561,14 @@ export default function KPIModule({
       const jabatanPercentage = jabatanPercentageVal / 100;
 
       // Determine Omset Multiplier based on Net Profit (Omset Bersih)
-      // Excel formula: if Omset Bersih < 200M, percentage and monthly bonus are 0
+      // Excel formula: if Omset Bersih < 200M, multiplier = 0
       const omsetMultiplier = companyFinancials.multiplier;
       const isOmsetEligible = omsetMultiplier > 0;
       const persentaseBonusDisplay = isOmsetEligible ? jabatanPercentageVal : 0;
 
       // Exact KPI.xlsx Formula: Gaji Pokok * (Persentase Bonus / 100) * KPI Grade Multiplier * Omset Multiplier
-      const calculatedBonus = isOmsetEligible ? (employeeGaji * jabatanPercentage * (kpiGradeMultiplier / 100) * omsetMultiplier) : 0;
+      // Note: kpiGradeMultiplierVal is 1.0 for Grade A, 0.75 for Grade B, 0.60 for Grade C
+      const calculatedBonus = employeeGaji * jabatanPercentage * kpiGradeMultiplierVal * omsetMultiplier;
 
       // Check for project-specific bonuses released in this month
       const activeProjectBonuses = projectBonuses.filter(pb => {
@@ -2604,7 +2649,7 @@ export default function KPIModule({
         totalTakeHomePay: employeeGaji + totalAllBonus
       };
     });
-  }, [companyEmployees, kpiRecords, filterMonth, filterYear, jabatans, projectBonuses, companyFinancials, companyTransactions, gradingKPIItems, calculatedSalesRows, calculatedEngineerRows, calculatedOmsetBersih, additionalBonuses]);
+  }, [companyEmployees, kpiRecords, employeeIndividualSheets, employeeCustomIndicators, filterMonth, filterYear, jabatans, projectBonuses, companyFinancials, companyTransactions, gradingKPIItems, calculatedSalesRows, calculatedEngineerRows, calculatedOmsetBersih, additionalBonuses]);
 
   // Filtered rows for the Excel recap table
   const filteredRecapRows = useMemo(() => {
