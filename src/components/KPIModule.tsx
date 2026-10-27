@@ -3206,16 +3206,16 @@ export default function KPIModule({
 
       {/* Main Content Areas */}
       {activeSubTab === 'penilaian' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Employee Selector */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
+          {/* Employee Selector - Sideways Expandable Panel */}
+          <div className="w-full lg:w-[220px] hover:lg:w-[320px] transition-all duration-300 ease-in-out bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 shrink-0 group/sidebar">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
+              <div className="min-w-0 pr-1">
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                  <User className="w-4 h-4 text-violet-600" />
-                  Pilih Karyawan
+                  <User className="w-4 h-4 text-violet-600 shrink-0" />
+                  <span className="truncate">Pilih Karyawan</span>
                 </h3>
-                <span className="text-[10px] text-slate-400 font-medium">Total: {companyEmployees.length} karyawan</span>
+                <span className="text-[10px] text-slate-400 font-medium block mt-0.5">Total: {companyEmployees.length} karyawan</span>
               </div>
               <button
                 type="button"
@@ -3223,7 +3223,8 @@ export default function KPIModule({
                 className="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold rounded-lg transition-all shadow-sm flex items-center gap-1 shrink-0"
                 title="Tambah Karyawan Baru & Input Gaji"
               >
-                <Plus size={13} /> Tambah
+                <Plus size={13} />
+                <span className="hidden group-hover/sidebar:inline">Tambah</span>
               </button>
             </div>
             
@@ -3248,7 +3249,7 @@ export default function KPIModule({
                     <div
                       key={emp.id}
                       onClick={() => setSelectedEmployeeId(emp.id)}
-                      className={`w-full text-left p-2.5 sm:p-3 rounded-xl border flex flex-col justify-between transition-all cursor-pointer group ${
+                      className={`w-full text-left p-2.5 rounded-xl border flex flex-col justify-between transition-all duration-200 cursor-pointer ${
                         isSelected 
                           ? 'bg-violet-50/90 border-violet-300 ring-1 ring-violet-200 shadow-sm' 
                           : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200'
@@ -3272,7 +3273,7 @@ export default function KPIModule({
                           </div>
 
                           {/* Desktop Action Buttons & Chevron */}
-                          <div className={`hidden sm:flex items-center gap-1 shrink-0 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 transition-opacity duration-150'}`}>
+                          <div className={`hidden sm:flex items-center gap-1 shrink-0 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200'}`}>
                             <button
                               type="button"
                               onClick={(e) => {
@@ -3299,13 +3300,13 @@ export default function KPIModule({
                           </div>
                         </div>
 
-                        {/* Expandable Details on Hover or Selected (Desktop) */}
-                        <div className={`transition-all duration-200 overflow-hidden flex flex-wrap items-center gap-x-2 gap-y-0.5 ${
+                        {/* Expandable Details on Sidebar Hover or Selected (Desktop) */}
+                        <div className={`transition-all duration-300 overflow-hidden flex flex-wrap items-center gap-x-2 gap-y-0.5 ${
                           isSelected 
                             ? 'max-h-20 opacity-100 mt-1.5' 
-                            : 'max-h-0 opacity-0 group-hover:max-h-20 group-hover:opacity-100 group-hover:mt-1.5'
+                            : 'max-h-0 opacity-0 group-hover/sidebar:max-h-20 group-hover/sidebar:opacity-100 group-hover/sidebar:mt-1.5'
                         }`}>
-                          <span className="text-[10px] text-slate-500 uppercase font-medium truncate max-w-[110px]">
+                          <span className="text-[10px] text-slate-500 uppercase font-medium truncate max-w-[120px]">
                             {jab ? jab.name : (
                               <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                                 ⚠️ Belum ada jabatan
@@ -3360,7 +3361,7 @@ export default function KPIModule({
           </div>
 
           {/* KPI Input Matrix form */}
-          <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+          <div className="flex-1 min-w-0 w-full bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             {!selectedEmployee ? (
               <div className="flex flex-col items-center justify-center py-20 text-center space-y-2">
                 <Award className="w-12 h-12 text-slate-300" />
