@@ -239,6 +239,85 @@ const DEFAULT_TEMPLATES: KPITemplate[] = [
     softWeight: 20
   },
   {
+    id: 'tpl-head-of-marketing',
+    jabatan: 'head of marketing',
+    indicators: [
+      { id: 'hom-campaign', name: 'Efektivitas Campaign & Brand Awareness', bobot: 40, type: 'kualitatif', satuan: '%' },
+      { id: 'hom-leads', name: 'Pencapaian Jumlah Qualified Leads', bobot: 35, type: 'kuantitatif', targetType: 'manual', satuan: 'Unit', target: 50, metode: 'Maximize' },
+      { id: 'hom-coop', name: 'Sinergi Tim Marketing & Sales', bobot: 25, type: 'kualitatif', satuan: '%' }
+    ],
+    softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
+    hardWeight: 80,
+    softWeight: 20
+  },
+  {
+    id: 'tpl-head-of-engineering',
+    jabatan: 'head of engineering',
+    indicators: [
+      { id: 'hoe-delivery', name: 'Ketepatan Waktu Delivery Proyek Tim', bobot: 40, type: 'kuantitatif', targetType: 'manual', satuan: '%', target: 100, metode: 'Maximize' },
+      { id: 'hoe-quality', name: 'Standarisasi Kualitas & Keandalan Sistem', bobot: 35, type: 'kualitatif', satuan: '%' },
+      { id: 'hoe-leadership', name: 'Kepemimpinan & Bimbingan Teknis Tim', bobot: 25, type: 'kualitatif', satuan: '%' }
+    ],
+    softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
+    hardWeight: 80,
+    softWeight: 20
+  },
+  {
+    id: 'tpl-engineering-staff',
+    jabatan: 'engineering staff',
+    indicators: [
+      { id: 'eng-project', name: 'Penyelesaian Project Tepat Waktu (Kuantitatif)', bobot: 50, type: 'kuantitatif', targetType: 'manual', satuan: '%', target: 100, metode: 'Maximize' },
+      { id: 'eng-quality', name: 'Kualitas Teknis & Minim Bug/Error (Kualitatif)', bobot: 50, type: 'kualitatif', satuan: '%' }
+    ],
+    softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
+    hardWeight: 80,
+    softWeight: 20
+  },
+  {
+    id: 'tpl-sales-admin-staff',
+    jabatan: 'sales admin staff',
+    indicators: [
+      { id: 'adm-docs', name: 'Ketepatan & Kecepatan Penerbitan PO / Invoice', bobot: 50, type: 'kualitatif', satuan: '%' },
+      { id: 'adm-coord', name: 'Koordinasi Jadwal & Rekonsiliasi Pesanan', bobot: 50, type: 'kualitatif', satuan: '%' }
+    ],
+    softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
+    hardWeight: 80,
+    softWeight: 20
+  },
+  {
+    id: 'tpl-inventory-control-staff',
+    jabatan: 'inventory control staff',
+    indicators: [
+      { id: 'inv-accuracy', name: 'Akurasi Stok Opname & Catatan Gudang', bobot: 50, type: 'kualitatif', satuan: '%' },
+      { id: 'inv-handling', name: 'Kecepatan Pengemasan & Pengiriman Barang', bobot: 50, type: 'kualitatif', satuan: '%' }
+    ],
+    softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
+    hardWeight: 80,
+    softWeight: 20
+  },
+  {
+    id: 'tpl-general-manager',
+    jabatan: 'general manager',
+    indicators: [
+      { id: 'gm-target', name: 'Pencapaian Target Profit & Operasional', bobot: 50, type: 'kuantitatif', targetType: 'manual', satuan: '%', target: 100, metode: 'Maximize' },
+      { id: 'gm-lead', name: 'Manajemen Strategis & Efisiensi Biaya', bobot: 50, type: 'kualitatif', satuan: '%' }
+    ],
+    softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
+    hardWeight: 80,
+    softWeight: 20
+  },
+  {
+    id: 'tpl-office-boy',
+    jabatan: 'office boy',
+    indicators: [
+      { id: 'ob-clean', name: 'Kebersihan & Kerapihan Area Kantor', bobot: 50, type: 'kualitatif', satuan: '%' },
+      { id: 'ob-resp', name: 'Kedisiplinan & Kecepatan Pelayanan Operasional', bobot: 50, type: 'kualitatif', satuan: '%' }
+    ],
+    softSkills: DEFAULT_SOFT_SKILL_INDICATORS,
+    hardWeight: 80,
+    softWeight: 20
+  },
+  {
     id: 'tpl-general',
     jabatan: 'default',
     indicators: [
@@ -291,6 +370,18 @@ interface JabatanConfig {
   name: string;
   percentage: number;
 }
+
+export const DEFAULT_JABATANS: JabatanConfig[] = [
+  { id: 'jab-1', name: 'General Manager', percentage: 2 },
+  { id: 'jab-2', name: 'Head of Sales', percentage: 8 },
+  { id: 'jab-3', name: 'Head of Marketing', percentage: 7 },
+  { id: 'jab-4', name: 'Head of Engineering', percentage: 8 },
+  { id: 'jab-5', name: 'Engineering Staff', percentage: 10 },
+  { id: 'jab-6', name: 'Sales Admin Staff', percentage: 7 },
+  { id: 'jab-7', name: 'Sales Staff', percentage: 15 },
+  { id: 'jab-8', name: 'Inventory Control Staff', percentage: 4 },
+  { id: 'jab-9', name: 'Office Boy', percentage: 3 }
+];
 
 interface KPIEmployee {
   id: string;
@@ -531,18 +622,19 @@ export default function KPIModule({
   // Dynamic States for Decoupled KPI Architecture
   const [jabatans, setJabatans] = useState<JabatanConfig[]>(() => {
     const saved = localStorage.getItem('mypanca_kpi_jabatans');
-    if (saved) return JSON.parse(saved);
-    return [
-      { id: 'jab-1', name: 'General Manager', percentage: 2 },
-      { id: 'jab-2', name: 'Head of Sales', percentage: 8 },
-      { id: 'jab-3', name: 'Head of Marketing', percentage: 7 },
-      { id: 'jab-4', name: 'Head of Engineering', percentage: 8 },
-      { id: 'jab-5', name: 'Engineering Staff', percentage: 10 },
-      { id: 'jab-6', name: 'Sales Admin Staff', percentage: 7 },
-      { id: 'jab-7', name: 'Sales Staff', percentage: 15 },
-      { id: 'jab-8', name: 'Inventory Control Staff', percentage: 4 },
-      { id: 'jab-9', name: 'Office Boy', percentage: 3 }
-    ];
+    if (saved) {
+      try {
+        const parsed: JabatanConfig[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const existingNames = new Set(parsed.map(p => p.name.toLowerCase().trim()));
+          const missingDefaults = DEFAULT_JABATANS.filter(d => !existingNames.has(d.name.toLowerCase().trim()));
+          return [...parsed, ...missingDefaults];
+        }
+      } catch (e) {
+        console.error("Failed to parse saved kpi jabatans", e);
+      }
+    }
+    return DEFAULT_JABATANS;
   });
 
   const [kpiEmployees, setKpiEmployees] = useState<KPIEmployee[]>(() => {
@@ -902,39 +994,7 @@ export default function KPIModule({
     });
   }, [kpiEmployees, jabatans, filterMonth, filterYear]);
 
-  // Auto-sync: every Jabatan in jabatans must have a Template in kpiTemplates for user setup
-  useEffect(() => {
-    setKpiTemplates(prevTemplates => {
-      let changed = false;
-      const updated = [...prevTemplates];
-      jabatans.forEach(jab => {
-        const cleanLower = jab.name.toLowerCase().trim();
-        if (!cleanLower) return;
-        const exists = updated.some(t => t.jabatan.toLowerCase().trim() === cleanLower);
-        if (!exists) {
-          changed = true;
-          const isSalesJab = cleanLower.includes('sales') || cleanLower.includes('penjualan');
-          updated.push({
-            id: `tpl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-            jabatan: cleanLower,
-            hardWeight: 80,
-            softWeight: 20,
-            indicators: isSalesJab ? [
-              { id: `ind-${Date.now()}-1`, name: 'Target Penjualan', bobot: 50, type: 'kuantitatif', targetType: 'sales_volume', satuan: 'Rp', target: 200000000, metode: 'Maximize' },
-              { id: `ind-${Date.now()}-2`, name: 'Follow-up Leads & Negosiasi', bobot: 20, type: 'kualitatif', satuan: '%' },
-              { id: `ind-${Date.now()}-3`, name: 'Kedisiplinan & Pelaporan Harian', bobot: 15, type: 'kualitatif', satuan: '%' },
-              { id: `ind-${Date.now()}-4`, name: 'Kepatuhan SOP Transaksi & Invoice', bobot: 15, type: 'kualitatif', satuan: '%' }
-            ] : [
-              { id: `ind-${Date.now()}-1`, name: 'Pencapaian Target Kerja & Output', bobot: 50, type: 'kualitatif', satuan: '%' },
-              { id: `ind-${Date.now()}-2`, name: 'Disiplin, Kepatuhan & SOP', bobot: 50, type: 'kualitatif', satuan: '%' }
-            ],
-            softSkills: DEFAULT_SOFT_SKILL_INDICATORS
-          });
-        }
-      });
-      return changed ? updated : prevTemplates;
-    });
-  }, [jabatans]);
+  // Note: Bi-directional sync between jabatans and kpiTemplates is handled after kpiTemplates declaration
 
   // Additional Bonus state per employee
   const [additionalBonuses, setAdditionalBonuses] = useState<Record<string, number>>(() => {
@@ -1382,41 +1442,200 @@ export default function KPIModule({
   // Configuration and Templates States (loaded from localStorage)
   const [kpiTemplates, setKpiTemplates] = useState<KPITemplate[]>(() => {
     const saved = localStorage.getItem('mypanca_kpi_templates');
+    let baseList = DEFAULT_TEMPLATES;
     if (saved) {
       try {
         const parsed: KPITemplate[] = JSON.parse(saved);
-        return parsed.map(tpl => {
-          const isSales = isSalesJabatan(tpl.jabatan);
-          let inds = tpl.indicators || [];
-          if (isSales && inds.length > 0) {
-            inds = [
-              {
-                ...inds[0],
-                name: 'Target Penjualan',
-                satuan: 'Rp',
-                metode: 'Maximize',
-                bobot: inds[0].bobot || 50,
-                type: 'kuantitatif',
-                targetType: 'sales_volume',
-                target: inds[0].target && inds[0].target > 1000 ? inds[0].target : 200000000
-              },
-              ...inds.slice(1)
-            ];
-          }
-          return {
-            ...tpl,
-            indicators: inds,
-            hardWeight: tpl.hardWeight ?? 80,
-            softWeight: tpl.softWeight ?? 20,
-            softSkills: tpl.softSkills && tpl.softSkills.length > 0 ? tpl.softSkills : DEFAULT_SOFT_SKILL_INDICATORS
-          };
-        });
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const existingNames = new Set(parsed.map(t => t.jabatan.toLowerCase().trim()));
+          const missingDefaults = DEFAULT_TEMPLATES.filter(d => !existingNames.has(d.jabatan.toLowerCase().trim()));
+          baseList = [...parsed, ...missingDefaults];
+        }
       } catch (e) {
         console.error("Failed to parse kpi templates", e);
       }
     }
-    return DEFAULT_TEMPLATES;
+    return baseList.map(tpl => {
+      const isSales = isSalesJabatan(tpl.jabatan);
+      let inds = tpl.indicators || [];
+      if (isSales && inds.length > 0) {
+        inds = [
+          {
+            ...inds[0],
+            name: 'Target Penjualan',
+            satuan: 'Rp',
+            metode: 'Maximize',
+            bobot: inds[0].bobot || 50,
+            type: 'kuantitatif',
+            targetType: 'sales_volume',
+            target: inds[0].target && inds[0].target > 1000 ? inds[0].target : 200000000
+          },
+          ...inds.slice(1)
+        ];
+      }
+      return {
+        ...tpl,
+        indicators: inds,
+        hardWeight: tpl.hardWeight ?? 80,
+        softWeight: tpl.softWeight ?? 20,
+        softSkills: tpl.softSkills && tpl.softSkills.length > 0 ? tpl.softSkills : DEFAULT_SOFT_SKILL_INDICATORS
+      };
+    });
   });
+
+  // Bi-directional Auto-sync between Jabatans and Template KPI Jabatan
+  useEffect(() => {
+    // 1. Ensure every Jabatan in jabatans has a Template in kpiTemplates
+    setKpiTemplates(prevTemplates => {
+      let changed = false;
+      const updated = [...prevTemplates];
+      jabatans.forEach(jab => {
+        const cleanLower = jab.name.toLowerCase().trim();
+        if (!cleanLower) return;
+        const exists = updated.some(t => t.jabatan.toLowerCase().trim() === cleanLower || t.id === jab.id);
+        if (!exists) {
+          changed = true;
+          const isSalesJab = cleanLower.includes('sales') || cleanLower.includes('penjualan');
+          updated.push({
+            id: `tpl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            jabatan: cleanLower,
+            hardWeight: 80,
+            softWeight: 20,
+            indicators: isSalesJab ? [
+              { id: `ind-${Date.now()}-1`, name: 'Target Penjualan', bobot: 50, type: 'kuantitatif', targetType: 'sales_volume', satuan: 'Rp', target: 200000000, metode: 'Maximize' },
+              { id: `ind-${Date.now()}-2`, name: 'Follow-up Leads & Negosiasi', bobot: 20, type: 'kualitatif', satuan: '%' },
+              { id: `ind-${Date.now()}-3`, name: 'Kedisiplinan & Pelaporan Harian', bobot: 15, type: 'kualitatif', satuan: '%' },
+              { id: `ind-${Date.now()}-4`, name: 'Kepatuhan SOP Transaksi & Invoice', bobot: 15, type: 'kualitatif', satuan: '%' }
+            ] : [
+              { id: `ind-${Date.now()}-1`, name: 'Pencapaian Target Kerja & Output', bobot: 50, type: 'kualitatif', satuan: '%' },
+              { id: `ind-${Date.now()}-2`, name: 'Disiplin, Kepatuhan & SOP', bobot: 50, type: 'kualitatif', satuan: '%' }
+            ],
+            softSkills: DEFAULT_SOFT_SKILL_INDICATORS
+          });
+        }
+      });
+      if (changed) {
+        safeSetLocalStorage('mypanca_kpi_templates', updated);
+      }
+      return changed ? updated : prevTemplates;
+    });
+
+    // 2. Ensure every Template in kpiTemplates has a corresponding Jabatan in jabatans
+    setJabatans(prevJabs => {
+      let changed = false;
+      const updated = [...prevJabs];
+
+      const getPercentageForName = (name: string): number => {
+        const lower = name.toLowerCase();
+        if (lower.includes('general') || lower.includes('gm')) return 2;
+        if (lower.includes('head') && lower.includes('sales')) return 8;
+        if (lower.includes('marketing')) return 7;
+        if (lower.includes('head') && (lower.includes('eng') || lower.includes('teknik'))) return 8;
+        if (lower.includes('eng') || lower.includes('teknisi')) return 10;
+        if (lower.includes('admin')) return 7;
+        if (lower.includes('sales')) return 15;
+        if (lower.includes('inventory') || lower.includes('control')) return 4;
+        if (lower.includes('office') || lower.includes('boy')) return 3;
+        return 5;
+      };
+
+      kpiTemplates.forEach(tpl => {
+        const cleanLower = tpl.jabatan.toLowerCase().trim();
+        if (!cleanLower) return;
+        const exists = updated.some(j => j.name.toLowerCase().trim() === cleanLower || j.id === tpl.id || tpl.id === `tpl-${j.id}`);
+        if (!exists) {
+          changed = true;
+          const formattedName = tpl.jabatan
+            .split(' ')
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+          updated.push({
+            id: `jab-${tpl.id}`,
+            name: formattedName,
+            percentage: getPercentageForName(cleanLower)
+          });
+        }
+      });
+
+      if (changed) {
+        safeSetLocalStorage('mypanca_kpi_jabatans', JSON.stringify(updated));
+      }
+      return changed ? updated : prevJabs;
+    });
+  }, [jabatans.length, kpiTemplates.length]);
+
+  // Unified available Jabatan options computed dynamically from both jabatans and kpiTemplates
+  // Guaranteeing that all positions in Template KPI Jabatan are always selectable
+  const availableJabatanOptions = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; percentage: number; templateId?: string }>();
+
+    // 1. Add all from jabatans
+    jabatans.forEach(j => {
+      const key = j.name.toLowerCase().trim();
+      if (!key) return;
+      const matchingTpl = kpiTemplates.find(t => 
+        t.jabatan.toLowerCase().trim() === key || 
+        t.id === j.id || 
+        j.id === `jab-${t.id}` || 
+        t.id === `tpl-${j.id}`
+      );
+      map.set(key, {
+        id: j.id,
+        name: j.name,
+        percentage: j.percentage ?? 0,
+        templateId: matchingTpl?.id
+      });
+    });
+
+    // 2. Add all from kpiTemplates (Template KPI Jabatan)
+    kpiTemplates.forEach(tpl => {
+      const key = tpl.jabatan.toLowerCase().trim();
+      if (!key) return;
+      if (map.has(key)) {
+        const existing = map.get(key)!;
+        if (!existing.templateId) existing.templateId = tpl.id;
+      } else {
+        const formattedName = tpl.jabatan
+          .split(' ')
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+        map.set(key, {
+          id: `jab-${tpl.id}`,
+          name: formattedName,
+          percentage: 5,
+          templateId: tpl.id
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [jabatans, kpiTemplates]);
+
+  // Helper to reliably resolve employee jabatan name everywhere
+  const getEmployeeJabatanName = (emp: KPIEmployee | Employee | undefined | null): string => {
+    if (!emp) return 'Staff';
+    const jabId = (emp as any).jabatanId;
+    if (jabId) {
+      const directJab = jabatans.find(j => j.id === jabId);
+      if (directJab) return directJab.name;
+      const opt = availableJabatanOptions.find(j => j.id === jabId);
+      if (opt) return opt.name;
+    }
+    
+    // Check by matching template
+    const matchingTpl = kpiTemplates.find(t => 
+      t.id === jabId || 
+      `jab-${t.id}` === jabId || 
+      `jab-tpl-${t.id}` === jabId || 
+      t.id === `tpl-${jabId}` ||
+      (jabId && t.jabatan.toLowerCase().trim() === String(jabId).toLowerCase().trim())
+    );
+    if (matchingTpl) {
+      return matchingTpl.jabatan.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    }
+    
+    return (emp as any).jabatan || (emp as any).role || 'Staff';
+  };
 
   const [kpiRecords, setKpiRecords] = useState<KPIRecord[]>(() => {
     const saved = localStorage.getItem('mypanca_kpi_records');
@@ -1710,15 +1929,30 @@ export default function KPIModule({
 
   // Reusable Employee Handlers (Penilaian & Karyawan)
   const openAddEmployeeModal = () => {
-    setNewEmployee({ nama: '', jabatanId: jabatans[0]?.id || '', gaji: 3000000, isNewJabatan: false, newJabatanName: '' });
+    setNewEmployee({ nama: '', jabatanId: availableJabatanOptions[0]?.id || jabatans[0]?.id || '', gaji: 3000000, isNewJabatan: false, newJabatanName: '' });
     setEditingEmployeeId(null);
     setIsAddingEmployee(true);
   };
 
   const openEditEmployeeModal = (emp: KPIEmployee) => {
+    let matchedJabId = emp.jabatanId;
+    const exists = availableJabatanOptions.some(j => j.id === matchedJabId);
+    if (!exists) {
+      const empRoleName = ((emp as any).jabatan || (emp as any).role || '').toLowerCase().trim();
+      const match = availableJabatanOptions.find(j => {
+        const jName = j.name.toLowerCase().trim();
+        return jName === empRoleName || (empRoleName && (jName.includes(empRoleName) || empRoleName.includes(jName)));
+      });
+      if (match) {
+        matchedJabId = match.id;
+      } else if (availableJabatanOptions.length > 0) {
+        matchedJabId = availableJabatanOptions[0].id;
+      }
+    }
+
     setNewEmployee({
       nama: emp.nama,
-      jabatanId: emp.jabatanId,
+      jabatanId: matchedJabId,
       gaji: emp.gaji,
       isNewJabatan: false,
       newJabatanName: ''
@@ -1739,7 +1973,8 @@ export default function KPIModule({
           nik: e.nik,
           jabatanId: e.jabatanId,
           gaji: e.gaji,
-          role: jabatans.find(j => j.id === e.jabatanId)?.name || 'Staff'
+          jabatan: getEmployeeJabatanName(e),
+          role: getEmployeeJabatanName(e)
         } as any)));
       }
       if (selectedEmployeeId === empId) {
@@ -1763,13 +1998,16 @@ export default function KPIModule({
     }
 
     let finalJabatanId = newEmployee.jabatanId;
+    let finalJabName = '';
+
     if (newEmployee.isNewJabatan) {
       const cleanName = newEmployee.newJabatanName.trim();
       const cleanLower = cleanName.toLowerCase();
       
-      const existingJab = jabatans.find(j => j.name.toLowerCase() === cleanLower);
+      const existingJab = availableJabatanOptions.find(j => j.name.toLowerCase() === cleanLower) || jabatans.find(j => j.name.toLowerCase() === cleanLower);
       if (existingJab) {
         finalJabatanId = existingJab.id;
+        finalJabName = existingJab.name;
       } else {
         const newJabId = `jab-${Date.now()}`;
         const newJab = {
@@ -1779,6 +2017,7 @@ export default function KPIModule({
         };
         setJabatans(prev => [...prev, newJab]);
         finalJabatanId = newJabId;
+        finalJabName = cleanName;
 
         // Auto create template for newly added role
         const newTpl: KPITemplate = {
@@ -1794,14 +2033,13 @@ export default function KPIModule({
         };
         setKpiTemplates(prev => [...prev, newTpl]);
       }
-    }
-
-    let finalJabName = '';
-    if (newEmployee.isNewJabatan) {
-      finalJabName = newEmployee.newJabatanName.trim();
     } else {
-      const matchJab = jabatans.find(j => j.id === finalJabatanId);
-      finalJabName = matchJab?.name || '';
+      const matchOpt = availableJabatanOptions.find(j => j.id === finalJabatanId) || jabatans.find(j => j.id === finalJabatanId);
+      finalJabName = matchOpt?.name || '';
+      // Ensure it exists in jabatans state if originating from kpiTemplates
+      if (matchOpt && !jabatans.some(j => j.id === matchOpt.id || j.name.toLowerCase().trim() === matchOpt.name.toLowerCase().trim())) {
+        setJabatans(prev => [...prev, { id: matchOpt.id, name: matchOpt.name, percentage: matchOpt.percentage }]);
+      }
     }
 
     const cleanNama = newEmployee.nama.trim();
@@ -1814,6 +2052,8 @@ export default function KPIModule({
         ...emp,
         nama: cleanNama,
         jabatanId: finalJabatanId,
+        jabatan: finalJabName,
+        role: finalJabName,
         gaji: Number(newEmployee.gaji) || 0
       } : emp);
     } else {
@@ -1822,6 +2062,8 @@ export default function KPIModule({
         nama: cleanNama,
         nik: `PPT-${Math.floor(100 + Math.random() * 900)}`,
         jabatanId: finalJabatanId,
+        jabatan: finalJabName,
+        role: finalJabName,
         gaji: Number(newEmployee.gaji) || 0
       };
       nextEmployees = [...kpiEmployees, payload];
@@ -1839,7 +2081,8 @@ export default function KPIModule({
         nik: e.nik,
         jabatanId: e.jabatanId,
         gaji: e.gaji,
-        role: jabatans.find(j => j.id === e.jabatanId)?.name || 'Staff'
+        jabatan: getEmployeeJabatanName(e),
+        role: getEmployeeJabatanName(e)
       } as any)));
     }
 
@@ -1943,8 +2186,11 @@ export default function KPIModule({
           let loadedCount = 0;
 
           if (cloud.jabatans && Array.isArray(cloud.jabatans) && cloud.jabatans.length > 0) {
-            setJabatans(cloud.jabatans);
-            safeSetLocalStorage('mypanca_kpi_jabatans', JSON.stringify(cloud.jabatans));
+            const existingNames = new Set(cloud.jabatans.map((j: any) => (j.name || '').toLowerCase().trim()));
+            const missingDefaults = DEFAULT_JABATANS.filter(d => !existingNames.has(d.name.toLowerCase().trim()));
+            const mergedJabs = [...cloud.jabatans, ...missingDefaults];
+            setJabatans(mergedJabs);
+            safeSetLocalStorage('mypanca_kpi_jabatans', JSON.stringify(mergedJabs));
             loadedCount++;
           }
           if (cloud.kpiEmployees && Array.isArray(cloud.kpiEmployees) && cloud.kpiEmployees.length > 0) {
@@ -1988,8 +2234,11 @@ export default function KPIModule({
             loadedCount++;
           }
           if (cloud.kpiTemplates && Array.isArray(cloud.kpiTemplates) && cloud.kpiTemplates.length > 0) {
-            setKpiTemplates(cloud.kpiTemplates);
-            safeSetLocalStorage('mypanca_kpi_templates', cloud.kpiTemplates);
+            const existingTpls = new Set(cloud.kpiTemplates.map((t: any) => (t.jabatan || '').toLowerCase().trim()));
+            const missingTpls = DEFAULT_TEMPLATES.filter(d => !existingTpls.has(d.jabatan.toLowerCase().trim()));
+            const mergedTpls = [...cloud.kpiTemplates, ...missingTpls];
+            setKpiTemplates(mergedTpls);
+            safeSetLocalStorage('mypanca_kpi_templates', mergedTpls);
             loadedCount++;
           }
           if (cloud.kpiRecords && Array.isArray(cloud.kpiRecords) && cloud.kpiRecords.length > 0) {
@@ -2370,10 +2619,10 @@ export default function KPIModule({
   const activeTemplateForEmployee = (emp: KPIEmployee | Employee | undefined): KPITemplate | null => {
     if (!emp) return null;
     const jabId = (emp as any).jabatanId;
-    const jab = jabId ? jabatans.find(j => j.id === jabId) : null;
+    const jab = jabId ? (availableJabatanOptions.find(j => j.id === jabId) || jabatans.find(j => j.id === jabId)) : null;
     const jabName = (jab?.name || '').toLowerCase().trim();
-    const empJabName = (emp.jabatan || '').toLowerCase().trim();
-    const empRole = (emp.role || '').toLowerCase().trim();
+    const empJabName = ((emp as any).jabatan || '').toLowerCase().trim();
+    const empRole = ((emp as any).role || '').toLowerCase().trim();
 
     // 1. Direct match by Jabatan Name or Role in kpiTemplates
     let matched = kpiTemplates.find(t => {
@@ -2389,7 +2638,9 @@ export default function KPIModule({
       matched = kpiTemplates.find(t => 
         t.id === jabId || 
         t.id === `tpl-${jabId}` ||
-        t.jabatan.toLowerCase().trim() === jabId.toLowerCase().trim()
+        `jab-${t.id}` === jabId ||
+        `jab-tpl-${t.id}` === jabId ||
+        t.jabatan.toLowerCase().trim() === String(jabId).toLowerCase().trim()
       );
       if (matched) return matched;
     }
@@ -3412,118 +3663,7 @@ export default function KPIModule({
         )}
       </div>
 
-      {/* Modal Tambah / Edit Karyawan & Input Gaji */}
-      {isAddingEmployee && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 border border-slate-200 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                <User className="w-4 h-4 text-violet-600" />
-                {editingEmployeeId ? 'Edit Data & Gaji Karyawan' : 'Tambah Karyawan Baru'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddingEmployee(false);
-                  setEditingEmployeeId(null);
-                }}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Nama Lengkap Karyawan</label>
-                <input
-                  type="text"
-                  value={newEmployee.nama}
-                  onChange={(e) => setNewEmployee(p => ({ ...p, nama: e.target.value }))}
-                  placeholder="Contoh: Budi Santoso"
-                  className="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Role / Jabatan</label>
-                <select
-                  value={newEmployee.isNewJabatan ? "new" : newEmployee.jabatanId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === "new") {
-                      setNewEmployee(p => ({ ...p, isNewJabatan: true, jabatanId: '' }));
-                    } else {
-                      setNewEmployee(p => ({ ...p, isNewJabatan: false, jabatanId: val }));
-                    }
-                  }}
-                  className="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-violet-500"
-                >
-                  <option value="">-- Pilih Jabatan --</option>
-                  {jabatans.map(jab => (
-                    <option key={jab.id} value={jab.id}>{jab.name} (Bonus Alokasi: {jab.percentage}%)</option>
-                  ))}
-                  <option value="new">+ Tambah Jabatan Baru Manual...</option>
-                </select>
-              </div>
-
-              {newEmployee.isNewJabatan && (
-                <div className="bg-violet-50/70 p-3.5 rounded-xl border border-violet-100 space-y-2">
-                  <label className="text-[10px] uppercase font-bold text-violet-700 block">Nama Jabatan Baru secara Manual</label>
-                  <input
-                    type="text"
-                    value={newEmployee.newJabatanName}
-                    onChange={(e) => setNewEmployee(p => ({ ...p, newJabatanName: e.target.value }))}
-                    placeholder="Masukkan nama jabatan baru (misal: HR Admin, Supervisor, dll)"
-                    className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none font-bold"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                  Gaji Pokok Karyawan (IDR)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-3 text-xs font-bold text-slate-400">Rp</span>
-                  <FormattedNumberInput
-                    value={newEmployee.gaji}
-                    onChange={(val) => setNewEmployee(p => ({ ...p, gaji: val }))}
-                    placeholder="Contoh: 5.000.000"
-                    className="w-full text-xs p-3 pl-11 bg-slate-50 border border-slate-200 rounded-xl outline-none font-black text-slate-800 focus:bg-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500 font-mono"
-                  />
-                </div>
-                <div className="mt-1 flex items-center justify-between text-[10px]">
-                  <span className="text-slate-400">Terbaca:</span>
-                  <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                    {formatRupiah(newEmployee.gaji || 0)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddingEmployee(false);
-                  setEditingEmployeeId(null);
-                }}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEmployee}
-                className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md"
-              >
-                {editingEmployeeId ? 'Simpan Perubahan' : 'Tambah Karyawan'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Main Content Areas */}
       {activeSubTab === 'penilaian' && (
@@ -3777,26 +3917,41 @@ export default function KPIModule({
                   <select
                     value={assignJabatanId}
                     onChange={(e) => setAssignJabatanId(e.target.value)}
-                    className="w-full sm:w-auto flex-1 p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-violet-500 shadow-xs"
+                    className="w-full sm:w-auto flex-1 p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-violet-500 shadow-xs cursor-pointer"
                   >
                     <option value="">-- Pilih Jabatan / Template KPI --</option>
-                    {jabatans
-                      .filter(j => kpiTemplates.some(t => t.jabatan.toLowerCase().trim() === j.name.toLowerCase().trim() || t.id === j.id))
-                      .map(j => (
-                        <option key={j.id} value={j.id}>{j.name} (Bonus: {j.percentage}%)</option>
-                      ))
-                    }
+                    {availableJabatanOptions.map(j => (
+                      <option key={j.id} value={j.id}>{j.name} (Bonus: {j.percentage}%)</option>
+                    ))}
                   </select>
                   <button
                     type="button"
                     disabled={!assignJabatanId}
                     onClick={() => {
                       if (!assignJabatanId) return;
+                      const matchOpt = availableJabatanOptions.find(j => j.id === assignJabatanId) || jabatans.find(j => j.id === assignJabatanId);
+                      const jabTitle = matchOpt?.name || '';
+
+                      if (matchOpt && !jabatans.some(j => j.id === matchOpt.id || j.name.toLowerCase().trim() === matchOpt.name.toLowerCase().trim())) {
+                        setJabatans(prev => [...prev, { id: matchOpt.id, name: matchOpt.name, percentage: matchOpt.percentage }]);
+                      }
+
                       setKpiEmployees(prev => {
-                        const updated = prev.map(e => e.id === selectedEmployee.id ? { ...e, jabatanId: assignJabatanId } : e);
+                        const updated = prev.map(e => e.id === selectedEmployee.id ? { ...e, jabatanId: assignJabatanId, jabatan: jabTitle, role: jabTitle } : e);
                         safeSetLocalStorage('mypanca_kpi_employees', JSON.stringify(updated));
                         return updated;
                       });
+
+                      if (onUpdateEmployees) {
+                        onUpdateEmployees(kpiEmployees.map(e => {
+                          if (e.id === selectedEmployee.id) {
+                            return { ...e, jabatanId: assignJabatanId, jabatan: jabTitle, role: jabTitle } as any;
+                          }
+                          const jName = getEmployeeJabatanName(e);
+                          return { ...e, jabatan: jName, role: jName } as any;
+                        }));
+                      }
+
                       setAssignJabatanId('');
                     }}
                     className="w-full sm:w-auto px-5 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm"
@@ -7239,7 +7394,7 @@ export default function KPIModule({
                   className="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700 focus:bg-white focus:border-violet-500 transition-colors cursor-pointer"
                 >
                   <option value="">-- Pilih Jabatan --</option>
-                  {jabatans.map(jab => (
+                  {availableJabatanOptions.map(jab => (
                     <option key={jab.id} value={jab.id}>{jab.name} (Bonus: {jab.percentage}%)</option>
                   ))}
                   <option value="new">+ Tambah Jabatan Baru Manual...</option>
