@@ -2560,15 +2560,16 @@ export default function KPIModule({
       const jabatanPercentageVal = empJab ? empJab.percentage : 0;
       const jabatanPercentage = jabatanPercentageVal / 100;
 
-      // Determine Omset Multiplier based on Net Profit (Omset Bersih)
-      // Excel formula: if Omset Bersih < 200M, multiplier = 0
-      const omsetMultiplier = companyFinancials.multiplier;
+      // Determine Omset Multiplier based on Total Akumulasi Omset Kotor vs Minimal Target Tiers in T&C
+      // Formula: Total Akumulasi Omset Kotor * Pengali Bonus (Multiplier) * Alokasi Bonus Jabatan % * Grade KPI %
+      const totalOmsetKotorVal = activeFinancials.omsetKotor;
+      const omsetMultiplier = activeOmsetMultiplier;
       const isOmsetEligible = omsetMultiplier > 0;
       const persentaseBonusDisplay = isOmsetEligible ? jabatanPercentageVal : 0;
 
-      // Exact KPI.xlsx Formula: Gaji Pokok * (Persentase Bonus / 100) * KPI Grade Multiplier * Omset Multiplier
-      // Note: kpiGradeMultiplierVal is 1.0 for Grade A, 0.75 for Grade B, 0.60 for Grade C
-      const calculatedBonus = employeeGaji * jabatanPercentage * kpiGradeMultiplierVal * omsetMultiplier;
+      // Exact Formula: Total Akumulasi Omset Kotor * Multiplier Tier Omset * (Alokasi Jabatan / 100) * Grade KPI Multiplier
+      // If Omset Kotor < minimal target (Tier III Rp 200M), omsetMultiplier = 0 (Bonus tidak cair)
+      const calculatedBonus = totalOmsetKotorVal * omsetMultiplier * jabatanPercentage * kpiGradeMultiplierVal;
 
       // Check for project-specific bonuses released in this month
       const activeProjectBonuses = projectBonuses.filter(pb => {
@@ -4069,6 +4070,36 @@ export default function KPIModule({
                 <div className="bg-emerald-50 border-2 border-emerald-300 px-4 py-1.5 rounded-xl text-xs font-mono font-black text-emerald-800 shadow-xs">
                   {formatRupiah(rekapTotals.gajiPokok + rekapTotals.totalAllBonus)}
                 </div>
+              </div>
+            </div>
+
+            {/* Omset Kotor & Multiplier Status Banner */}
+            <div className={`p-3.5 border-b flex flex-wrap items-center justify-between gap-3 text-xs font-bold ${
+              activeOmsetMultiplier > 0 
+                ? 'bg-emerald-50/90 text-emerald-950 border-emerald-200' 
+                : 'bg-amber-50/90 text-amber-950 border-amber-200'
+            }`}>
+              <div className="flex items-center gap-2">
+                <div className={`p-1.5 rounded-lg ${activeOmsetMultiplier > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  <Activity size={14} />
+                </div>
+                <div>
+                  <span className="block font-black text-xs">
+                    Akumulasi Omset Kotor Bulan Ini: {formatRupiah(activeFinancials.omsetKotor)} — Multiplier Pengali Omset = <span className="underline font-mono">{activeOmsetMultiplier}x</span>
+                  </span>
+                  <span className="text-[10px] opacity-80 font-medium block mt-0.5">
+                    {activeOmsetMultiplier > 0 
+                      ? `✓ Syarat minimal omset terpenuhi (Multiplier ${activeOmsetMultiplier}x aktif). Rumus: Omset Kotor × Multiplier (${activeOmsetMultiplier}x) × Alokasi Jabatan % × Grade KPI %`
+                      : `⚠️ Total Omset Kotor belum mencapai batas minimal Tier III (Rp 200.000.000). Sesuai aturan T&C, Multiplier = 0 (Bonus KPI Bulanan belum cair / Rp 0).`
+                    }
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="text-[10px] font-mono uppercase bg-white/80 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs inline-block">
+                  Formula: Omset Kotor × Multiplier × Alokasi Jabatan × Grade
+                </span>
               </div>
             </div>
 
