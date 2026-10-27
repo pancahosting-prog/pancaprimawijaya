@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Award, FileText, Plus, Trash2, Edit, Save, Check, CheckCircle, 
   TrendingUp, User, DollarSign, Calendar, ChevronDown, ChevronRight, 
@@ -521,6 +521,7 @@ export default function KPIModule({
     return (new Date().getMonth() + 1).toString().padStart(2, '0');
   });
   const [filterYear, setFilterYear] = useState<string>(() => new Date().getFullYear().toString());
+  const activeEmpMonthRef = useRef<string>('');
 
   // Dynamic States for Decoupled KPI Architecture
   const [jabatans, setJabatans] = useState<JabatanConfig[]>(() => {
@@ -541,42 +542,27 @@ export default function KPIModule({
 
   const [kpiEmployees, setKpiEmployees] = useState<KPIEmployee[]>(() => {
     const saved = localStorage.getItem('mypanca_kpi_employees');
-    let list: KPIEmployee[] = [];
     if (saved) {
       try {
-        list = JSON.parse(saved);
+        const parsed: KPIEmployee[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       } catch (e) {
-        list = [];
+        console.error("Failed to parse saved kpi employees", e);
       }
     }
-    if (!list || list.length === 0) {
-      return [
-        { id: 'emp-1', nama: 'Rudi', nik: 'PPT-001', jabatanId: 'jab-1', gaji: 20000000 },
-        { id: 'emp-2', nama: 'Yadi', nik: 'PPT-002', jabatanId: 'jab-2', gaji: 6000000 },
-        { id: 'emp-3', nama: 'Arie Putra', nik: 'PPT-003', jabatanId: 'jab-4', gaji: 6000000 },
-        { id: 'emp-4', nama: 'Sanjaya', nik: 'PPT-004', jabatanId: 'jab-7', gaji: 3000000 },
-        { id: 'emp-5', nama: 'Evan', nik: 'PPT-005', jabatanId: 'jab-5', gaji: 3000000 },
-        { id: 'emp-6', nama: 'Jeremia', nik: 'PPT-006', jabatanId: 'jab-5', gaji: 2700000 },
-        { id: 'emp-7', nama: 'Angel', nik: 'PPT-007', jabatanId: 'jab-6', gaji: 3000000 },
-        { id: 'emp-8', nama: 'Mustaqim', nik: 'PPT-008', jabatanId: 'jab-8', gaji: 3000000 },
-        { id: 'emp-9', nama: 'Rizqi', nik: 'PPT-009', jabatanId: 'jab-9', gaji: 2000000 }
-      ];
-    }
-    // Ensure Arie is updated to Arie Putra
-    list = list.map(emp => {
-      if (emp.nama.trim().toLowerCase() === 'arie') {
-        return { ...emp, nama: 'Arie Putra' };
-      }
-      return emp;
-    });
-    // Ensure Jeremia and Sanjaya exist for complete KPI.xlsx parity
-    if (!list.some(e => e.nama.toLowerCase().includes('jeremia'))) {
-      list.push({ id: 'emp-jeremia', nama: 'Jeremia', nik: 'PPT-006', jabatanId: 'jab-5', gaji: 2700000 });
-    }
-    if (!list.some(e => e.nama.toLowerCase().includes('sanjaya'))) {
-      list.push({ id: 'emp-sanjaya', nama: 'Sanjaya', nik: 'PPT-004', jabatanId: 'jab-7', gaji: 3000000 });
-    }
-    return list;
+    return [
+      { id: 'emp-1', nama: 'Rudi', nik: 'PPT-001', jabatanId: 'jab-1', gaji: 20000000 },
+      { id: 'emp-2', nama: 'Yadi', nik: 'PPT-002', jabatanId: 'jab-2', gaji: 6000000 },
+      { id: 'emp-3', nama: 'Arie Putra', nik: 'PPT-003', jabatanId: 'jab-4', gaji: 6000000 },
+      { id: 'emp-4', nama: 'Sanjaya', nik: 'PPT-004', jabatanId: 'jab-7', gaji: 3000000 },
+      { id: 'emp-5', nama: 'Evan', nik: 'PPT-005', jabatanId: 'jab-5', gaji: 3000000 },
+      { id: 'emp-6', nama: 'Jeremia', nik: 'PPT-006', jabatanId: 'jab-5', gaji: 2700000 },
+      { id: 'emp-7', nama: 'Angel', nik: 'PPT-007', jabatanId: 'jab-6', gaji: 3000000 },
+      { id: 'emp-8', nama: 'Mustaqim', nik: 'PPT-008', jabatanId: 'jab-8', gaji: 3000000 },
+      { id: 'emp-9', nama: 'Rizqi', nik: 'PPT-009', jabatanId: 'jab-9', gaji: 2000000 }
+    ];
   });
 
   const [gradingKPIItems, setGradingKPIItems] = useState<GradingKPIItem[]>(() => {
@@ -1567,12 +1553,7 @@ export default function KPIModule({
     if (targetTpl) {
       const currentTotal = targetTpl.indicators.reduce((acc, curr) => acc + (curr.bobot || 0), 0);
       const remaining = Math.max(0, 100 - currentTotal);
-      if (remaining <= 0) {
-        alert("Peringatan: Total akumulasi bobot Bagian A sudah mencapai 100%! Harap kurangi bobot indikator lain sebelum menambah indikator baru.");
-        setWeightWarningPengaturan("⚠️ Peringatan: Total akumulasi bobot Bagian A sudah mencapai 100%! Kurangi bobot indikator lain terlebih dahulu.");
-        return;
-      }
-      const newBobot = Math.min(10, remaining);
+      const newBobot = remaining > 0 ? Math.min(10, remaining) : 10;
       setWeightWarningPengaturan(null);
       setKpiTemplates(prev => prev.map(t => {
         if (t.id !== tplId) return t;
@@ -1625,12 +1606,7 @@ export default function KPIModule({
       const currentSS = targetTpl.softSkills && targetTpl.softSkills.length > 0 ? targetTpl.softSkills : DEFAULT_SOFT_SKILL_INDICATORS;
       const currentTotal = currentSS.reduce((acc, curr) => acc + (curr.bobot || 0), 0);
       const remaining = Math.max(0, 100 - currentTotal);
-      if (remaining <= 0) {
-        alert("Peringatan: Total akumulasi bobot Bagian B (Soft Skill) sudah mencapai 100%! Harap kurangi bobot aspek lain sebelum menambah aspek baru.");
-        setWeightWarningPengaturan("⚠️ Peringatan: Total akumulasi bobot Bagian B sudah mencapai 100%! Kurangi bobot aspek lain terlebih dahulu.");
-        return;
-      }
-      const newBobot = Math.min(20, remaining);
+      const newBobot = remaining > 0 ? Math.min(20, remaining) : 10;
       setWeightWarningPengaturan(null);
       setKpiTemplates(prev => prev.map(t => {
         if (t.id !== tplId) return t;
@@ -1748,13 +1724,21 @@ export default function KPIModule({
 
   const handleDeleteEmployee = (empId: string, empName: string) => {
     if (window.confirm(`Hapus karyawan "${empName}" dari data HR?`)) {
-      setKpiEmployees(prev => {
-        const next = prev.filter(e => e.id !== empId);
-        return next;
-      });
+      const next = kpiEmployees.filter(e => e.id !== empId);
+      setKpiEmployees(next);
+      safeSetLocalStorage('mypanca_kpi_employees', JSON.stringify(next));
+      if (onUpdateEmployees) {
+        onUpdateEmployees(next.map(e => ({
+          id: e.id,
+          nama: e.nama,
+          nik: e.nik,
+          jabatanId: e.jabatanId,
+          gaji: e.gaji,
+          role: jabatans.find(j => j.id === e.jabatanId)?.name || 'Staff'
+        } as any)));
+      }
       if (selectedEmployeeId === empId) {
-        const remaining = kpiEmployees.filter(e => e.id !== empId);
-        setSelectedEmployeeId(remaining.length > 0 ? remaining[0].id : '');
+        setSelectedEmployeeId(next.length > 0 ? next[0].id : '');
       }
     }
   };
@@ -1817,14 +1801,16 @@ export default function KPIModule({
 
     const cleanNama = newEmployee.nama.trim();
     const targetEmpId = editingEmployeeId || `emp-${Date.now()}`;
+    const previousEmp = kpiEmployees.find(e => e.id === editingEmployeeId);
 
+    let nextEmployees: KPIEmployee[];
     if (editingEmployeeId) {
-      setKpiEmployees(prev => prev.map(emp => emp.id === editingEmployeeId ? {
+      nextEmployees = kpiEmployees.map(emp => emp.id === editingEmployeeId ? {
         ...emp,
         nama: cleanNama,
         jabatanId: finalJabatanId,
         gaji: Number(newEmployee.gaji) || 0
-      } : emp));
+      } : emp);
     } else {
       const payload: KPIEmployee = {
         id: targetEmpId,
@@ -1833,8 +1819,61 @@ export default function KPIModule({
         jabatanId: finalJabatanId,
         gaji: Number(newEmployee.gaji) || 0
       };
-      setKpiEmployees(prev => [...prev, payload]);
+      nextEmployees = [...kpiEmployees, payload];
       setSelectedEmployeeId(targetEmpId);
+    }
+
+    setKpiEmployees(nextEmployees);
+    safeSetLocalStorage('mypanca_kpi_employees', JSON.stringify(nextEmployees));
+
+    // Propagate to parent onUpdateEmployees if provided
+    if (onUpdateEmployees) {
+      onUpdateEmployees(nextEmployees.map(e => ({
+        id: e.id,
+        nama: e.nama,
+        nik: e.nik,
+        jabatanId: e.jabatanId,
+        gaji: e.gaji,
+        role: jabatans.find(j => j.id === e.jabatanId)?.name || 'Staff'
+      } as any)));
+    }
+
+    // Also update bonusProjectSheets if the employee name changed
+    if (editingEmployeeId && previousEmp && previousEmp.nama !== cleanNama) {
+      setBonusProjectSheets(curr => {
+        const updated = { ...curr };
+        let changed = false;
+        Object.keys(updated).forEach(mKey => {
+          const sheet = updated[mKey];
+          if (sheet) {
+            const newSales = sheet.sales?.map(s => {
+              if (s.employeeId === editingEmployeeId || s.nama.toLowerCase().trim() === previousEmp.nama.toLowerCase().trim()) {
+                changed = true;
+                return { ...s, nama: cleanNama };
+              }
+              return s;
+            });
+            const newEngineers = sheet.engineers?.map(e => {
+              if (e.employeeId === editingEmployeeId || e.nama.toLowerCase().trim() === previousEmp.nama.toLowerCase().trim()) {
+                changed = true;
+                return { ...e, nama: cleanNama };
+              }
+              return e;
+            });
+            if (changed) {
+              updated[mKey] = {
+                ...sheet,
+                sales: newSales || sheet.sales,
+                engineers: newEngineers || sheet.engineers
+              };
+            }
+          }
+        });
+        if (changed) {
+          safeSetLocalStorage('mypanca_kpi_bonus_project_sheets', updated);
+        }
+        return changed ? updated : curr;
+      });
     }
 
     // Auto-sync employee to Engineer Bonus Project if their role is Engineer
@@ -2002,6 +2041,14 @@ export default function KPIModule({
         }
       }
 
+      if (field === 'nilai') {
+        if (value === '' || value === null || value === undefined) {
+          finalVal = '';
+        } else {
+          finalVal = Math.min(100, Math.max(0, parseFloat(value) || 0));
+        }
+      }
+
       const item = { ...updated[idx], [field]: finalVal };
       const bobot = parseFloat(item.bobot) || 0;
       const nilai = parseFloat(item.nilai) || 0;
@@ -2031,12 +2078,7 @@ export default function KPIModule({
   const addSoftSkillRow = () => {
     const currentTotal = softSkillInputs.reduce((sum, it) => sum + (parseFloat(it.bobot) || 0), 0);
     const remaining = Math.max(0, 100 - currentTotal);
-    if (remaining <= 0) {
-      alert("Peringatan: Total akumulasi bobot Soft Skill (Bagian B) sudah mencapai 100%! Harap kurangi bobot aspek lain terlebih dahulu.");
-      setWeightWarningPenilaian("⚠️ Peringatan: Total akumulasi bobot Soft Skill sudah mencapai 100%! Kurangi bobot aspek lain terlebih dahulu.");
-      return;
-    }
-    const newBobot = Math.min(25, remaining);
+    const newBobot = remaining > 0 ? Math.min(25, remaining) : 10;
     setWeightWarningPenilaian(null);
     const newSS = {
       id: `ss-custom-${Date.now()}`,
@@ -2241,15 +2283,21 @@ export default function KPIModule({
     if (!selectedEmployeeId) return;
 
     const totalHardBobot = hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
-    if (totalHardBobot > 100) {
-      alert(`Peringatan: Total akumulasi bobot KPI melebihi 100% (saat ini ${totalHardBobot}%)! Harap sesuaikan bobot agar tidak melebihi 100% sebelum menyimpan.`);
-      setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI melebihi 100% (${totalHardBobot}%)! Harap sesuaikan.`);
-      return;
-    }
-    if (totalHardBobot !== 100) {
-      alert(`Peringatan: Total akumulasi bobot KPI harus tepat 100% (saat ini ${totalHardBobot}%). Harap sesuaikan bobot sebelum menyimpan.`);
-      setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI harus tepat 100% (saat ini: ${totalHardBobot}%).`);
-      return;
+    if (status === 'approved') {
+      if (totalHardBobot > 100) {
+        alert(`Peringatan: Total akumulasi bobot KPI melebihi 100% (saat ini ${totalHardBobot}%)! Harap sesuaikan bobot agar tepat 100% sebelum menyetujui.`);
+        setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI melebihi 100% (${totalHardBobot}%)! Harap sesuaikan.`);
+        return;
+      }
+      if (totalHardBobot !== 100) {
+        alert(`Peringatan: Total akumulasi bobot KPI harus tepat 100% untuk disetujui (saat ini ${totalHardBobot}%). Harap sesuaikan bobot sebelum menyetujui.`);
+        setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI harus tepat 100% (saat ini: ${totalHardBobot}%).`);
+        return;
+      }
+    } else {
+      if (totalHardBobot > 100) {
+        setWeightWarningPenilaian(`⚠️ Peringatan: Total akumulasi bobot KPI melebihi 100% (${totalHardBobot}%)! Pastikan total tepat 100% saat menyetujui.`);
+      }
     }
 
     const hardTotal = getHardKPITotal(hardKPIInputs);
@@ -2308,13 +2356,16 @@ export default function KPIModule({
   const handleUnlockRecord = () => {
     if (!selectedEmployeeId) return;
     const key = `kpi-${selectedEmployeeId}-${filterMonth}-${filterYear}`;
+    activeEmpMonthRef.current = '';
     setKpiRecords(prev => prev.map(r => (r.id === key || r.id === editingRecordId) ? { ...r, status: 'draft' } : r));
     alert(`Status penilaian KPI untuk ${selectedEmployee?.nama || 'karyawan'} dikembalikan ke Draft. Sekarang Anda dapat mengedit penilaian kembali.`);
   };
 
   // Reset or Load existing record (Auto-applies Role Template + Individual Custom Indicators)
   useEffect(() => {
+    const empMonthKey = `${selectedEmployeeId}-${filterMonth}-${filterYear}`;
     if (!selectedEmployeeId) {
+      activeEmpMonthRef.current = '';
       setRecordScores({});
       setRecordNotes('');
       setEditingRecordId(null);
@@ -2324,6 +2375,11 @@ export default function KPIModule({
       setSoftWeight(20);
       return;
     }
+
+    if (activeEmpMonthRef.current === empMonthKey) {
+      return;
+    }
+    activeEmpMonthRef.current = empMonthKey;
 
     const key = `kpi-${selectedEmployeeId}-${filterMonth}-${filterYear}`;
     const existing = kpiRecords.find(r => r.id === key);
@@ -2543,7 +2599,7 @@ export default function KPIModule({
       setHardWeight(80);
       setSoftWeight(20);
     }
-  }, [selectedEmployeeId, filterMonth, filterYear, kpiRecords, kpiTemplates, employeeCustomIndicators, employeeIndividualSheets, bonusProjectSheets, activeProjectBonusSheet, selectedEmployee]);
+  }, [selectedEmployeeId, filterMonth, filterYear, kpiRecords, kpiTemplates, employeeCustomIndicators, selectedEmployee]);
 
   // Calculate Bonus Recap for all employees with full KPI.xlsx parity
   const employeesRecap = useMemo(() => {
@@ -3797,7 +3853,7 @@ export default function KPIModule({
                                     {isOver ? (
                                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-100/60 px-3 py-1 rounded-lg border border-red-200">
                                         <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600" />
-                                        <span>⚠️ Peringatan: Total bobot melebihi 100%! Harap kurangi bobot indikator sebelum menyimpan.</span>
+                                        <span>⚠️ Tidak Valid (Total bobot melebihi 100%! Saat ini {total}%. Harap kurangi bobot indikator lain)</span>
                                       </span>
                                     ) : isValid ? (
                                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-100/60 px-3 py-1 rounded-lg border border-emerald-200">
@@ -3807,7 +3863,7 @@ export default function KPIModule({
                                     ) : (
                                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-100/60 px-3 py-1 rounded-lg border border-amber-200">
                                         <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                                        <span>Tersisa {100 - total}% lagi untuk mencapai 100%</span>
+                                        <span>⚠️ Belum Valid (Total bobot baru {total}%. Tersisa {100 - total}% lagi untuk mencapai 100%)</span>
                                       </span>
                                     )}
                                   </td>
@@ -3827,12 +3883,7 @@ export default function KPIModule({
                             onClick={() => {
                               const currentTotal = hardKPIInputs.reduce((sum, item) => sum + (parseFloat(item.bobot) || 0), 0);
                               const remaining = Math.max(0, 100 - currentTotal);
-                              if (remaining <= 0) {
-                                alert("Peringatan: Total akumulasi bobot sudah mencapai 100%! Harap kurangi bobot indikator lain terlebih dahulu sebelum menambahkan indikator baru.");
-                                setWeightWarningPenilaian("⚠️ Peringatan: Total akumulasi bobot sudah mencapai 100%! Kurangi bobot indikator lain terlebih dahulu.");
-                                return;
-                              }
-                              const newBobot = Math.min(10, remaining);
+                              const newBobot = remaining > 0 ? Math.min(10, remaining) : 10;
                               setWeightWarningPenilaian(null);
                               const newInd = {
                                 indicatorId: `ind-custom-${Date.now()}`,
@@ -3934,9 +3985,9 @@ export default function KPIModule({
                                     type="number"
                                     min="0"
                                     max="100"
-                                    value={item.nilai}
+                                    value={item.nilai === '' ? '' : item.nilai}
                                     disabled={isRecordApproved}
-                                    onChange={(e) => updateSoftSkillField(idx, 'nilai', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                                    onChange={(e) => updateSoftSkillField(idx, 'nilai', e.target.value === '' ? '' : Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0)))}
                                     className="w-16 p-1 text-center bg-white border border-slate-200 rounded text-xs font-black text-emerald-700 focus:ring-1 focus:ring-emerald-500 outline-none disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
                                   />
                                 </td>
@@ -3977,17 +4028,17 @@ export default function KPIModule({
                                     {isOver ? (
                                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-100/60 px-2.5 py-0.5 rounded-lg border border-red-200">
                                         <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600" />
-                                        <span>⚠️ Melebihi 100%!</span>
+                                        <span>⚠️ Tidak Valid (Total bobot melebihi 100%! Saat ini {totalSoftBobot}%)</span>
                                       </span>
                                     ) : isValid ? (
                                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-100/60 px-2.5 py-0.5 rounded-lg border border-emerald-200">
                                         <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                                        <span>✓ 100% Valid</span>
+                                        <span>✓ 100% Valid (Total bobot pas 100%)</span>
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-100/60 px-2.5 py-0.5 rounded-lg border border-amber-200">
                                         <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                                        <span>Tersisa {100 - totalSoftBobot}%</span>
+                                        <span>⚠️ Belum Valid (Total bobot baru {totalSoftBobot}%. Tersisa {100 - totalSoftBobot}%)</span>
                                       </span>
                                     )}
                                   </td>
@@ -5949,92 +6000,6 @@ export default function KPIModule({
             </div>
           </div>
 
-          {/* Form inline on top of lists */}
-          {isAddingEmployee && (
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
-              <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider">
-                {editingEmployeeId ? 'Edit Data Karyawan' : 'Input Karyawan Baru'}
-              </h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Nama Lengkap</label>
-                  <input
-                    type="text"
-                    value={newEmployee.nama}
-                    onChange={(e) => setNewEmployee(p => ({ ...p, nama: e.target.value }))}
-                    placeholder="Contoh: Budi Santoso"
-                    className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Role / Jabatan default</label>
-                  <select
-                    value={newEmployee.isNewJabatan ? "new" : newEmployee.jabatanId}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === "new") {
-                        setNewEmployee(p => ({ ...p, isNewJabatan: true, jabatanId: '' }));
-                      } else {
-                        setNewEmployee(p => ({ ...p, isNewJabatan: false, jabatanId: val }));
-                      }
-                    }}
-                    className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none font-bold text-slate-700"
-                  >
-                    <option value="">-- Pilih Jabatan --</option>
-                    {jabatans.map(jab => (
-                      <option key={jab.id} value={jab.id}>{jab.name} (Bonus: {jab.percentage}%)</option>
-                    ))}
-                    <option value="new">+ Tambah Jabatan Baru Manual...</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Gaji Pokok (IDR)</label>
-                  <FormattedNumberInput
-                    value={newEmployee.gaji}
-                    onChange={(val) => setNewEmployee(p => ({ ...p, gaji: val }))}
-                    placeholder="Contoh: 3.000.000"
-                    className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none font-black text-slate-800 font-mono"
-                  />
-                </div>
-
-                {newEmployee.isNewJabatan && (
-                  <div className="md:col-span-3 bg-violet-50/50 p-4 rounded-xl border border-violet-100 space-y-2">
-                    <label className="text-[10px] uppercase font-bold text-violet-600 block">Nama Jabatan Baru secara Manual</label>
-                    <input
-                      type="text"
-                      value={newEmployee.newJabatanName}
-                      onChange={(e) => setNewEmployee(p => ({ ...p, newJabatanName: e.target.value }))}
-                      placeholder="Masukkan nama jabatan baru (misal: HR Admin, Supervisor, dll)"
-                      className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none font-bold"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  onClick={() => {
-                    setIsAddingEmployee(false);
-                    setEditingEmployeeId(null);
-                  }}
-                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-black uppercase rounded-xl"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveEmployee}
-                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-black uppercase rounded-xl transition-all shadow-sm"
-                >
-                  {editingEmployeeId ? 'Simpan Perubahan' : 'Simpan Karyawan'}
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Table display list of manual employees */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
@@ -6063,27 +6028,15 @@ export default function KPIModule({
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => {
-                                  setNewEmployee({
-                                    nama: emp.nama,
-                                    jabatanId: emp.jabatanId,
-                                    gaji: emp.gaji,
-                                    isNewJabatan: false,
-                                    newJabatanName: ''
-                                  });
-                                  setEditingEmployeeId(emp.id);
-                                  setIsAddingEmployee(true);
+                                  openEditEmployeeModal(emp);
                                 }}
-                                className="px-2.5 py-1 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors"
+                                className="px-2.5 py-1 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors font-bold"
                               >
                                 Edit
                               </button>
                               <button
-                                onClick={() => {
-                                  if (window.confirm(`Hapus karyawan ${emp.nama}?`)) {
-                                    setKpiEmployees(prev => prev.filter(e => e.id !== emp.id));
-                                  }
-                                }}
-                                className="px-2.5 py-1 text-red-500 bg-red-50 hover:bg-red-100 rounded border border-red-100 transition-colors"
+                                onClick={() => handleDeleteEmployee(emp.id, emp.nama)}
+                                className="px-2.5 py-1 text-red-500 bg-red-50 hover:bg-red-100 rounded border border-red-100 transition-colors font-bold"
                               >
                                 Hapus
                               </button>
@@ -6422,7 +6375,7 @@ export default function KPIModule({
                               <span>Total Akumulasi Bobot Indikator Bagian A:</span>
                             </div>
                             <span className="font-mono text-xs font-black">
-                              {total}% {isOver ? '(⚠️ Melebihi 100%!)' : isValid ? '(100% Valid)' : `(Harus Tepat 100% - Tersisa ${100 - total}%)`}
+                              {total}% {isOver ? '(⚠️ Tidak Valid: Melebihi 100%!)' : isValid ? '(✓ 100% Valid - Total bobot pas 100%)' : `(⚠️ Belum Valid - Tersisa ${100 - total}%)`}
                             </span>
                           </div>
                         );
@@ -6511,7 +6464,7 @@ export default function KPIModule({
                               <span>Total Akumulasi Bobot Bagian B (Soft Skill):</span>
                             </div>
                             <span className="font-mono text-xs font-black">
-                              {total}% {isOver ? '(⚠️ Melebihi 100%!)' : isValid ? '(100% Valid)' : `(Harus Tepat 100% - Tersisa ${100 - total}%)`}
+                              {total}% {isOver ? '(⚠️ Tidak Valid: Melebihi 100%!)' : isValid ? '(✓ 100% Valid - Total bobot pas 100%)' : `(⚠️ Belum Valid - Tersisa ${100 - total}%)`}
                             </span>
                           </div>
                         );
@@ -6985,6 +6938,109 @@ export default function KPIModule({
               >
                 <Trash2 size={13} />
                 Ya, Tetap Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Add / Edit Employee Modal (Accessible anywhere from Penilaian KPI and Data Karyawan) */}
+      {isAddingEmployee && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 w-full max-w-2xl space-y-4 my-8 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <User size={16} className="text-violet-600" />
+                {editingEmployeeId ? 'Edit Data & Gaji Karyawan' : 'Input Karyawan Baru'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddingEmployee(false);
+                  setEditingEmployeeId(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Nama Lengkap</label>
+                <input
+                  type="text"
+                  value={newEmployee.nama}
+                  onChange={(e) => setNewEmployee(p => ({ ...p, nama: e.target.value }))}
+                  placeholder="Contoh: Budi Santoso"
+                  className="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-800 focus:bg-white focus:border-violet-500 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Role / Jabatan default</label>
+                <select
+                  value={newEmployee.isNewJabatan ? "new" : newEmployee.jabatanId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "new") {
+                      setNewEmployee(p => ({ ...p, isNewJabatan: true, jabatanId: '' }));
+                    } else {
+                      setNewEmployee(p => ({ ...p, isNewJabatan: false, jabatanId: val }));
+                    }
+                  }}
+                  className="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700 focus:bg-white focus:border-violet-500 transition-colors cursor-pointer"
+                >
+                  <option value="">-- Pilih Jabatan --</option>
+                  {jabatans.map(jab => (
+                    <option key={jab.id} value={jab.id}>{jab.name} (Bonus: {jab.percentage}%)</option>
+                  ))}
+                  <option value="new">+ Tambah Jabatan Baru Manual...</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Gaji Pokok (IDR)</label>
+                <FormattedNumberInput
+                  value={newEmployee.gaji}
+                  onChange={(val) => setNewEmployee(p => ({ ...p, gaji: val }))}
+                  placeholder="Contoh: 3.000.000"
+                  className="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-black text-slate-800 font-mono focus:bg-white focus:border-violet-500 transition-colors"
+                />
+              </div>
+
+              {newEmployee.isNewJabatan && (
+                <div className="md:col-span-3 bg-violet-50/50 p-4 rounded-xl border border-violet-100 space-y-2">
+                  <label className="text-[10px] uppercase font-bold text-violet-600 block">Nama Jabatan Baru secara Manual</label>
+                  <input
+                    type="text"
+                    value={newEmployee.newJabatanName}
+                    onChange={(e) => setNewEmployee(p => ({ ...p, newJabatanName: e.target.value }))}
+                    placeholder="Masukkan nama jabatan baru (misal: HR Admin, Supervisor, dll)"
+                    className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none font-bold"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddingEmployee(false);
+                  setEditingEmployeeId(null);
+                }}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold uppercase rounded-xl transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEmployee}
+                className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-black uppercase rounded-xl transition-all shadow-md shadow-violet-200 flex items-center gap-2"
+              >
+                <Save size={14} />
+                {editingEmployeeId ? 'Simpan Perubahan' : 'Simpan Karyawan'}
               </button>
             </div>
           </div>
