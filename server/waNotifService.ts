@@ -41,21 +41,51 @@ class WANotifService {
   }
 
   private loadSettings(): WANotifSettings {
-    try {
-      if (fs.existsSync(SETTINGS_FILE)) {
-        const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
-        return JSON.parse(raw);
-      }
-    } catch (e) {
-      console.warn("[waNotifService] Failed loading settings file, using default.");
-    }
-    return {
+    const defaultSettings: WANotifSettings = {
       autoReminderEnabled: true,
       billingReminderTemplate: "Halo {nama}, ini adalah pengingat dari sistem bahwa tagihan No. Transaksi {noTrx} sebesar Rp {nominal} jatuh tempo pada {tanggal}. Mohon segera melakukan pembayaran. Terima kasih!",
       followupReminderTemplate: "Halo {nama}, menyambung penawaran No. {noTrx} terkait {produk}, apakah ada hal yang perlu kami bantu lebih lanjut?",
       dueDateReminderDays: 3,
       logs: []
     };
+
+    let local: Partial<WANotifSettings> = {};
+    try {
+      if (fs.existsSync(SETTINGS_FILE)) {
+        const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
+        local = JSON.parse(raw);
+      }
+    } catch (e) {
+      console.warn("[waNotifService] Failed loading settings file, using default.");
+    }
+
+    // Attempt async cloud load from Supabase app_settings
+    this.syncFromSupabaseCloud().catch(err => {
+      console.warn("[waNotifService] Supabase cloud settings fetch warning:", err?.message);
+    });
+
+    return { ...defaultSettings, ...local };
+  }
+
+  public async syncFromSupabaseCloud(): Promise<void> {
+    if (!supabaseServer) return;
+    try {
+      const { data, error } = await supabaseServer
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'wa_notif_settings')
+        .maybeSingle();
+
+      if (!error && data?.value && typeof data.value === 'object') {
+        this.notifSettings = { ...this.notifSettings, ...data.value };
+        // Sync local file cache
+        try {
+          fs.writeFileSync(SETTINGS_FILE, JSON.stringify(this.notifSettings, null, 2), "utf-8");
+        } catch {}
+      }
+    } catch (err: any) {
+      console.warn("[waNotifService] Sync from Supabase cloud error:", err?.message);
+    }
   }
 
   public async saveSettings(newSettings: Partial<WANotifSettings>): Promise<WANotifSettings> {
@@ -63,8 +93,23 @@ class WANotifService {
     try {
       fs.writeFileSync(SETTINGS_FILE, JSON.stringify(this.notifSettings, null, 2), "utf-8");
     } catch (e) {
-      console.error("[waNotifService] Error saving settings:", e);
+      console.error("[waNotifService] Error saving settings file:", e);
     }
+
+    // Persist to Supabase Cloud app_settings for cross-device sync
+    if (supabaseServer) {
+      try {
+        await supabaseServer.from('app_settings').upsert({
+          key: 'wa_notif_settings',
+          value: this.notifSettings,
+          updated_at: new Date().toISOString(),
+          updated_by: 'wa_notif_service'
+        }, { onConflict: 'key' });
+      } catch (err: any) {
+        console.warn("[waNotifService] Failed to save wa_notif_settings to Supabase cloud:", err?.message);
+      }
+    }
+
     return this.notifSettings;
   }
 

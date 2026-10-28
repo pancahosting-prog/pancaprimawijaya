@@ -36,14 +36,79 @@ async function startServer() {
     next();
   });
 
-  // WhatsApp Baileys Endpoints (CS AI & Notification Engine)
+  // WhatsApp Baileys Endpoints (CS AI & Notification Engine & Company AI)
   const { waService } = await import("./server/waService.ts");
   const { waNotifService } = await import("./server/waNotifService.ts");
+  const { companyAIService } = await import("./server/companyAiService.ts");
   const { supabaseServer } = await import("./server/supabaseServer.ts");
   
   // Auto-initialize WhatsApp CS & WhatsApp Notifikasi on server startup
   waService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp CS failed:", err));
   waNotifService.initBaileys().catch((err: any) => console.error("Auto-init WhatsApp Notifikasi failed:", err));
+
+  // --- Company AI Settings & Whitelist Endpoints ---
+  app.get("/api/company-ai/status", (_req, res) => {
+    res.json({
+      success: true,
+      connectionState: companyAIService.connectionState,
+      qrCodeBase64: companyAIService.qrCodeBase64,
+      userPhone: companyAIService.userPhone,
+      userName: companyAIService.userName
+    });
+  });
+
+  app.get("/api/company-ai/settings", async (_req, res) => {
+    await companyAIService.syncFromSupabaseCloud().catch(() => {});
+    res.json({ success: true, settings: companyAIService.settings });
+  });
+
+  app.post("/api/company-ai/settings", async (req, res) => {
+    await companyAIService.saveSettings(req.body);
+    res.json({ success: true, settings: companyAIService.settings });
+  });
+
+  app.post("/api/company-ai/connect", async (_req, res) => {
+    await companyAIService.initBaileys();
+    res.json({
+      success: true,
+      connectionState: companyAIService.connectionState,
+      qrCodeBase64: companyAIService.qrCodeBase64
+    });
+  });
+
+  app.post("/api/company-ai/logout", async (_req, res) => {
+    companyAIService.connectionState = "disconnected";
+    res.json({ success: true, message: "Koneksi Company AI diputuskan." });
+  });
+
+  app.post("/api/company-ai/whitelist/add", async (req, res) => {
+    const { name, phone, role } = req.body || {};
+    if (!name || !phone) {
+      return res.status(400).json({ success: false, error: "Nama dan Nomor WA wajib diisi." });
+    }
+    const cleanPhone = String(phone).replace(/\D/g, "");
+    const newUser = {
+      id: "wl-" + Date.now(),
+      name: String(name),
+      phone: cleanPhone.startsWith("0") ? "62" + cleanPhone.slice(1) : cleanPhone,
+      role: role || "sales",
+      isActive: true,
+      addedAt: Date.now()
+    };
+    const updatedUsers = [...(companyAIService.settings.whitelistedUsers || []), newUser];
+    await companyAIService.saveSettings({ whitelistedUsers: updatedUsers });
+    res.json({ success: true, settings: companyAIService.settings });
+  });
+
+  app.post("/api/company-ai/whitelist/delete", async (req, res) => {
+    const { id } = req.body || {};
+    if (!id) {
+      return res.status(400).json({ success: false, error: "ID pengguna tidak ditemukan." });
+    }
+    const updatedUsers = (companyAIService.settings.whitelistedUsers || []).filter(u => u.id !== id);
+    await companyAIService.saveSettings({ whitelistedUsers: updatedUsers });
+    res.json({ success: true, settings: companyAIService.settings });
+  });
 
   // WhatsApp Notification Sender Endpoint (Eksklusif Perangkat 2 / Baileys Gateway)
   app.post("/api/send-whatsapp", async (req, res) => {

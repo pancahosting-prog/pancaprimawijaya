@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import QRCode from "qrcode";
+import { supabaseServer } from "./supabaseServer.ts";
 
 const COMPANY_SESSION_DIR = path.resolve("./wa-company-session");
 const COMPANY_AI_SETTINGS_FILE = path.resolve("./company-ai-settings.json");
@@ -88,14 +89,51 @@ class CompanyAIService {
     } catch (e) {
       console.error("Error loading Company AI settings:", e);
     }
+
+    this.syncFromSupabaseCloud().catch(err => {
+      console.warn("[companyAiService] Supabase cloud fetch warning:", err?.message);
+    });
   }
 
-  public saveSettings(newSettings: Partial<CompanyAISettings>) {
+  public async syncFromSupabaseCloud(): Promise<void> {
+    if (!supabaseServer) return;
+    try {
+      const { data, error } = await supabaseServer
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'company_ai_settings')
+        .maybeSingle();
+
+      if (!error && data?.value && typeof data.value === 'object') {
+        this.settings = { ...this.settings, ...data.value };
+        try {
+          fs.writeFileSync(COMPANY_AI_SETTINGS_FILE, JSON.stringify(this.settings, null, 2), "utf-8");
+        } catch {}
+      }
+    } catch (err: any) {
+      console.warn("[companyAiService] Sync from Supabase error:", err?.message);
+    }
+  }
+
+  public async saveSettings(newSettings: Partial<CompanyAISettings>) {
     try {
       this.settings = { ...this.settings, ...newSettings };
       fs.writeFileSync(COMPANY_AI_SETTINGS_FILE, JSON.stringify(this.settings, null, 2), "utf-8");
     } catch (e) {
       console.error("Error saving Company AI settings:", e);
+    }
+
+    if (supabaseServer) {
+      try {
+        await supabaseServer.from('app_settings').upsert({
+          key: 'company_ai_settings',
+          value: this.settings,
+          updated_at: new Date().toISOString(),
+          updated_by: 'company_ai_service'
+        }, { onConflict: 'key' });
+      } catch (err: any) {
+        console.warn("[companyAiService] Failed saving to Supabase Cloud:", err?.message);
+      }
     }
   }
 
