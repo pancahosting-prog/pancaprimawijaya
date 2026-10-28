@@ -10,13 +10,14 @@ import { PancaProjectMobileView } from './PancaProjectMobileView';
 import { PancaQAMobileView } from './PancaQAMobileView';
 import { PancaEngineerTasksView } from './PancaEngineerTasksView';
 import { PancaProductMobileView } from './PancaProductMobileView';
+import { PancaKPIHomeWidget } from './PancaKPIHomeWidget';
 import { SharedPostView } from '../../../task/components/SharedPostView';
 import { 
   Bot, MessageSquare, Bell, HardDrive, ArrowLeft, Home as HomeIcon, LayoutGrid, Menu, MessageCircle, FolderKanban, Package
 } from 'lucide-react';
 import { PWAInstallButton } from '../PWAInstallButton';
 
-export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file' | 'whatsapp' | 'project' | 'qa' | 'tugas' | 'produk';
+export type PancaMobileTab = 'home' | 'ai' | 'pesan' | 'notifikasi' | 'file' | 'whatsapp' | 'project' | 'qa' | 'tugas' | 'produk' | 'kpi';
 
 interface PancaMobileAppProps {
   currentUser?: {
@@ -188,6 +189,7 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
               onOpenProject={() => setActiveTab('project')}
               onOpenQA={() => setActiveTab('qa')}
               onOpenTugas={() => setActiveTab('tugas')}
+              onOpenKPI={() => setActiveTab('kpi')}
               onLogout={onLogout}
             />
           )}
@@ -306,6 +308,15 @@ export const PancaMobileApp: React.FC<PancaMobileAppProps> = ({
                 activeCompany={activeCompany}
                 onGoToChatWithPrompt={handleSelectPromptFromHome}
               />
+            </div>
+          )}
+
+          {activeTab === 'kpi' && (
+            <div className="flex flex-col h-full bg-slate-50 dark:bg-zinc-950">
+              {renderHeader("Rekap KPI & Kinerja", "Kinerja Karyawan, Gaji & Bonus Project", () => setActiveTab('home'))}
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
+                <PancaKPIHomeWidget currentUser={currentUser} />
+              </div>
             </div>
           )}
         </div>

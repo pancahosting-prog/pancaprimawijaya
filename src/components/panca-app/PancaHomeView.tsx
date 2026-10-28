@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Bell, Search, ArrowRight, Sparkles, Send, User, FileText, 
   Tag, BarChart3, Zap, Target, FileEdit, TrendingUp, LayoutGrid, MessageSquare, FolderKanban, HelpCircle,
-  CheckSquare, HardDrive, Package, History, AlertTriangle
+  CheckSquare, HardDrive, Package, History, AlertTriangle, Award
 } from 'lucide-react';
 
 interface PancaHomeViewProps {
@@ -25,6 +25,7 @@ interface PancaHomeViewProps {
   onOpenProject?: () => void;
   onOpenQA?: () => void;
   onOpenTugas?: () => void;
+  onOpenKPI?: () => void;
   onLogout?: () => void;
 }
 
@@ -38,6 +39,7 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
   onOpenProject,
   onOpenQA,
   onOpenTugas,
+  onOpenKPI,
   onLogout,
 }) => {
   const [chatInput, setChatInput] = useState('');
@@ -233,6 +235,8 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
     }
   ];
 
+  const isHR = userRole === 'hr' || userRole === 'hrd';
+  const canAccessKPI = isSuperAdmin || isHR;
   const canAccessQA = isSuperAdmin || userRole === 'sales' || userRole === 'engineer';
 
   const fiturLayanan = userRole === 'engineer' ? [
@@ -263,8 +267,22 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
       icon: HelpCircle,
       onClick: onOpenQA,
       prompt: ''
-    }
+    },
+    ...(canAccessKPI ? [{
+      title: 'KPI Karyawan',
+      desc: 'Rekap kinerja bulanan, penilaian lembar KPI & bonus project.',
+      icon: Award,
+      onClick: onOpenKPI,
+      prompt: ''
+    }] : [])
   ] : [
+    ...(canAccessKPI ? [{
+      title: 'KPI Karyawan',
+      desc: 'Rekap kinerja bulanan, penilaian lembar KPI & bonus project.',
+      icon: Award,
+      onClick: onOpenKPI,
+      prompt: ''
+    }] : []),
     ...(canAccessQA ? [{
       title: 'Q&A',
       desc: 'Tanya jawab teknis, kendala SLD, sensor, & solusi lapangan.',
@@ -404,6 +422,49 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
           })}
         </div>
       </div>
+
+      {/* 4.5 Kontainer Menu Rekap KPI (Khusus Superadmin & HR) */}
+      {canAccessKPI && (
+        <div>
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center gap-1.5">
+              <Award className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+              <h4 className="text-xs font-bold text-slate-900 dark:text-white">KPI & Kinerja Karyawan</h4>
+            </div>
+            <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/60 px-2 py-0.5 rounded-full border border-violet-200/60 dark:border-violet-900/40">
+              Khusus {isSuperAdmin ? 'Superadmin' : 'HR'}
+            </span>
+          </div>
+
+          <button
+            onClick={onOpenKPI}
+            className="w-full p-4 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800/80 border border-slate-200/90 dark:border-zinc-800 rounded-2xl text-left shadow-2xs transition active:scale-[0.99] group flex items-center justify-between cursor-pointer"
+          >
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-violet-500/20">
+                <Award className="w-5 h-5 text-amber-300" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h5 className="text-xs font-extrabold text-slate-900 dark:text-white leading-tight">
+                    Rekap KPI, Gaji & Bonus Project
+                  </h5>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                </div>
+                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 mt-1 line-clamp-1 leading-relaxed">
+                  Buka ringkasan evaluasi bulanan, penilaian lembar KPI, gaji & komisi sales/engineer.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 ml-3">
+              <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-500 group-hover:bg-violet-600 group-hover:text-white transition">
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </div>
+          </button>
+        </div>
+      )}
 
       {/* 5. Pilihan Cepat AI */}
       <div>

@@ -2726,6 +2726,11 @@ export default function KPIModule({
     return null;
   };
 
+  // Target Perusahaan dynamically follows Total Akumulasi Target Bulanan Sales
+  const effectiveTargetPerusahaan = useMemo(() => {
+    return salesTotals.targetBulanan > 0 ? salesTotals.targetBulanan : (kpiConfig.targetProfitPerusahaan || 100000000);
+  }, [salesTotals.targetBulanan, kpiConfig.targetProfitPerusahaan]);
+
   // Net Profit & Bonus Pool Calculations Decoupled from Transactions (Manual Input Driven)
   const companyFinancials = useMemo(() => {
     const totalRevenue = activeFinancials.omsetKotor;
@@ -2734,7 +2739,9 @@ export default function KPIModule({
     
     const sortedTiers = [...omsetTiers].sort((a, b) => b.target - a.target);
     const lowestTarget = sortedTiers.length > 0 ? sortedTiers[sortedTiers.length - 1].target : 0;
-    const targetMet = totalNetProfit >= lowestTarget;
+    
+    // Target tercapai jika total omset mencapai akumulasi target bulanan sales (atau tier minimum)
+    const targetMet = effectiveTargetPerusahaan > 0 ? (totalRevenue >= effectiveTargetPerusahaan) : (totalNetProfit >= lowestTarget);
     
     const deferredNetProfit = 0;
     const bonusPool = totalNetProfit * (kpiConfig.alokasiProfitSharingBonus / 100);
@@ -2748,7 +2755,7 @@ export default function KPIModule({
       multiplier,
       monthlyTrxCount: 0
     };
-  }, [activeFinancials, calculatedOmsetBersih, activeOmsetMultiplier, omsetTiers, kpiConfig]);
+  }, [activeFinancials, calculatedOmsetBersih, activeOmsetMultiplier, omsetTiers, kpiConfig, effectiveTargetPerusahaan]);
 
   // Handle Save KPI Record
   const handleSaveKPIRecord = (status: 'draft' | 'approved') => {
@@ -3597,7 +3604,7 @@ export default function KPIModule({
           </div>
           <div>
             <span className="text-[10px] font-bold text-slate-400 block uppercase">Target Perusahaan</span>
-            <span className="text-base font-black text-slate-800">{formatRupiah(kpiConfig.targetProfitPerusahaan)}</span>
+            <span className="text-base font-black text-slate-800">{formatRupiah(effectiveTargetPerusahaan)}</span>
             <span className="flex items-center gap-1 text-[9px] font-bold mt-0.5">
               {companyFinancials.targetMet ? (
                 <span className="text-emerald-600">✓ Target Tercapai (Bonus Aktif)</span>
