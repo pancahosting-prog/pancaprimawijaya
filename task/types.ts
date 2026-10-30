@@ -50,7 +50,7 @@ export interface DrivePost {
   created_at?: string;
 }
 
-export type UserRole = 'superadmin' | 'user' | 'engineer' | 'commercial' | 'finance';
+export type UserRole = 'superadmin' | 'user' | 'engineer' | 'commercial' | 'finance' | 'hr' | 'hrd';
 
 export type ProjectFolderCategory = 'engineering' | 'commercial' | 'finance' | 'documentation';
 

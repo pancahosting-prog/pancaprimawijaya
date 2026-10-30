@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Task, TaskLog, CalendarViewType, Project, QAQuestion, QAAnswer } from './types';
 import CalendarHeader from './components/CalendarHeader';
 import MonthView from './components/MonthView';
@@ -32,7 +32,7 @@ interface AppProps {
 
 interface UserSession {
   username: string;
-  role: 'superadmin' | 'user';
+  role: string;
   name: string;
 }
 
@@ -51,9 +51,15 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
   const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
     if (externalUser) {
       const uname = externalUser.username.toLowerCase() === 'evan' ? 'Evan' : externalUser.username.toLowerCase();
+      const extRole = String(externalUser.role || '').toLowerCase();
+      const resolvedRole = extRole === 'superadmin' || extRole.includes('admin')
+        ? 'superadmin'
+        : (extRole === 'hr' || extRole === 'hrd')
+        ? 'hr'
+        : extRole || 'user';
       return {
         username: uname,
-        role: externalUser.role === "superadmin" ? "superadmin" : "user",
+        role: resolvedRole,
         name: externalUser.nama || externalUser.username
       };
     }
@@ -76,17 +82,29 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [shareDriveToken, setShareDriveToken] = useState<string | null>(null);
 
-  
   useEffect(() => {
     if (externalUser) {
       const uname = externalUser.username.toLowerCase() === 'evan' ? 'Evan' : externalUser.username.toLowerCase();
+      const extRole = String(externalUser.role || '').toLowerCase();
+      const resolvedRole = extRole === 'superadmin' || extRole.includes('admin')
+        ? 'superadmin'
+        : (extRole === 'hr' || extRole === 'hrd')
+        ? 'hr'
+        : extRole || 'user';
       setCurrentUser({
         username: uname,
-        role: externalUser.role === "superadmin" ? "superadmin" : "user",
+        role: resolvedRole,
         name: externalUser.nama || externalUser.username
       });
     }
   }, [externalUser]);
+
+  const isSuperAdminOrHR = useMemo(() => {
+    if (!currentUser) return false;
+    const r = String(currentUser.role || '').toLowerCase();
+    const u = String(currentUser.username || '').toLowerCase();
+    return r === 'superadmin' || r === 'hr' || r === 'hrd' || r.includes('admin') || u === 'superadmin';
+  }, [currentUser]);
 
   useEffect(() => {
     if (currentUser) {
@@ -660,10 +678,10 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
                       <span>Q&A Forum</span>
                     </button>
 
-                    {currentUser.role === 'superadmin' && (
+                    {isSuperAdminOrHR && (
                       <>
                         <div className="px-3 pt-2 pb-1 text-[9px] font-black text-slate-400 uppercase tracking-widest border-t border-slate-100 dark:border-slate-800 mt-2">
-                          Menu Superadmin
+                          Menu Superadmin & HR
                         </div>
                         <button
                           onClick={() => { setView('assign'); setIsMenuDropdownOpen(false); }}
@@ -851,7 +869,7 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
                 <div className="flex justify-between items-center mb-10">
                    <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Kotak Masuk</h3>
                    <div className="flex gap-4">
-                     {currentUser.role === 'superadmin' && <button onClick={() => setIsBroadcastOpen(true)} className="px-6 py-3 bg-zinc-900 dark:bg-zinc-100 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg">Broadcast</button>}
+                     {isSuperAdminOrHR && <button onClick={() => setIsBroadcastOpen(true)} className="px-6 py-3 bg-zinc-900 dark:bg-zinc-100 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg">Broadcast</button>}
                      <button onClick={markAllAsRead} className="px-6 py-3 bg-slate-100 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all">Tandai Dibaca</button>
                    </div>
                 </div>
@@ -866,7 +884,7 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
              </div>
            )}
 
-           {view === 'users' && currentUser.role === 'superadmin' && (
+           {view === 'users' && isSuperAdminOrHR && (
              <div className="p-6 lg:p-10 animate-fade-in space-y-10">
                 <div className="bg-slate-50 dark:bg-slate-950 p-8 rounded-[32px] border border-slate-200 dark:border-slate-800">
                   <h3 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6">Tambah User Baru</h3>
@@ -879,6 +897,7 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
                       <option value="engineer">Engineer</option>
                       <option value="commercial">Commercial / Sales</option>
                       <option value="finance">Finance / Admin</option>
+                      <option value="hr">HR / Human Resources</option>
                       <option value="superadmin">Superadmin</option>
                     </select>
                     <button type="submit" className="bg-zinc-900 dark:bg-zinc-100 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-zinc-800 dark:bg-zinc-200 transition-all">Simpan</button>
@@ -906,6 +925,7 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
                           <td className="p-6">
                             <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase ${
                               u.role === 'superadmin' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-200 dark:bg-zinc-800/70 dark:text-zinc-700 dark:text-zinc-300' :
+                              u.role === 'hr' || u.role === 'hrd' ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/50 dark:text-pink-300' :
                               u.role === 'engineer' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' :
                               u.role === 'commercial' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' :
                               u.role === 'finance' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300' :
@@ -953,7 +973,7 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
              </div>
            )}
 
-           {view === 'assign' && currentUser.role === 'superadmin' && (
+           {view === 'assign' && isSuperAdminOrHR && (
              <div className="p-6 lg:p-10 animate-fade-in flex flex-col h-full">
                 <div className="mb-10 flex flex-col md:flex-row justify-between items-end gap-6">
                   <div><h3 className="text-2xl font-black text-slate-800 tracking-tight">Penugasan Team</h3><p className="text-sm text-slate-400">Pilih user untuk menugaskan pekerjaan bersama.</p></div>
@@ -982,7 +1002,7 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
              </div>
            )}
 
-           {view === 'tracking' && currentUser.role === 'superadmin' && (
+           {view === 'tracking' && isSuperAdminOrHR && (
              <div className="p-6 lg:p-10 animate-fade-in flex flex-col h-full space-y-8">
                 {/* Header & User Selector & View Toggle */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-6 border-b border-slate-100 dark:border-slate-800">
@@ -1319,6 +1339,7 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
                     <option value="engineer">Engineer</option>
                     <option value="commercial">Commercial / Sales</option>
                     <option value="finance">Finance / Admin</option>
+                    <option value="hr">HR / Human Resources</option>
                     <option value="superadmin">Superadmin</option>
                   </select>
                 </div>

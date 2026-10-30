@@ -6,7 +6,7 @@ import { getProxiedUrl, isImageFile, isPdfFile, handleImageError } from '../serv
 interface DriveViewProps {
   currentUser: {
     username: string;
-    role: 'superadmin' | 'user';
+    role: string;
     name: string;
   };
 }
@@ -589,7 +589,8 @@ export const DriveView: React.FC<DriveViewProps> = ({ currentUser }) => {
           <div className="grid grid-cols-1 gap-6">
             {posts.map(post => {
               const isOwner = post.owner_username === currentUser.username;
-              const isAdmin = currentUser.role === 'superadmin';
+              const rLower = String(currentUser.role || '').toLowerCase();
+              const isAdmin = rLower === 'superadmin' || rLower === 'hr' || rLower === 'hrd' || rLower.includes('admin') || String(currentUser.username || '').toLowerCase() === 'superadmin';
               const isShared = post.share_token && post.share_expires_at;
               const hasExpired = isShared && new Date() > new Date(post.share_expires_at!);
 

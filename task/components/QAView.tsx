@@ -358,18 +358,24 @@ export const QAView: React.FC<QAViewProps> = ({
   const getRoleBadgeStyle = (role: string) => {
     const r = (role || '').toLowerCase();
     if (r === 'superadmin') return 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300';
+    if (r === 'hr' || r === 'hrd') return 'bg-pink-100 text-pink-700 dark:bg-pink-900/50 dark:text-pink-300';
     if (r === 'engineer' || r.includes('engineer')) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300';
     if (r === 'commercial') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300';
     if (r === 'finance') return 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-200 dark:bg-zinc-800 dark:text-zinc-300';
     return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
   };
 
+  const isSuperOrHR = (() => {
+    const r = String(currentUser?.role || '').toLowerCase();
+    return r === 'superadmin' || r === 'hr' || r === 'hrd' || r.includes('admin') || String(currentUser?.username || '').toLowerCase() === 'superadmin';
+  })();
+
   const canEditOrDeleteQuestion = (q: QAQuestion) => {
-    return currentUser.role === 'superadmin' || currentUser.username === q.author_username;
+    return isSuperOrHR || currentUser.username === q.author_username;
   };
 
   const canEditOrDeleteAnswer = (ans: QAAnswer) => {
-    return currentUser.role === 'superadmin' || currentUser.username === ans.author_username;
+    return isSuperOrHR || currentUser.username === ans.author_username;
   };
 
   return (

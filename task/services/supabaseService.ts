@@ -79,8 +79,11 @@ export const supabaseService = {
 
   // --- Manajemen Tugas ---
   async getTasks(currentUser: { username: string; role: string }, isTrackingView: boolean = false) {
+    const roleLower = String(currentUser?.role || '').toLowerCase();
     const isSuper = !currentUser || 
-      String(currentUser.role || '').toLowerCase().includes('admin') || 
+      roleLower.includes('admin') || 
+      roleLower === 'hr' || 
+      roleLower === 'hrd' || 
       String(currentUser.username || '').toLowerCase() === 'superadmin';
 
     // Join dengan task_logs untuk mendapatkan history lengkap
