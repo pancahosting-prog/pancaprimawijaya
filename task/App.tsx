@@ -17,6 +17,7 @@ import { SharedPostView } from './components/SharedPostView';
 import { ProjectView } from './components/ProjectView';
 import { QAView } from './components/QAView';
 import TimelineListView from './components/TimelineListView';
+import { ExportTrackingModal } from './components/ExportTrackingModal';
 
 
 export interface ExternalUser {
@@ -148,6 +149,7 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
   const [showModalPassword, setShowModalPassword] = useState(false);
   const [targetUser, setTargetUser] = useState<string>('');
+  const [isExportTrackingModalOpen, setIsExportTrackingModalOpen] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [targetUserTasks, setTargetUserTasks] = useState<Task[]>([]);
@@ -1063,6 +1065,21 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
                         <option key={u.username} value={u.username}>{u.name} (@{u.username})</option>
                       ))}
                     </select>
+
+                    {/* Download Excel Tracking Button (Superadmin & HR) */}
+                    <button
+                      type="button"
+                      onClick={() => setIsExportTrackingModalOpen(true)}
+                      className="flex items-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-md shadow-emerald-600/20 cursor-pointer shrink-0"
+                      title="Download Laporan Excel Tracking (1 User 1 Sheet)"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      <span>Download Excel</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1474,6 +1491,18 @@ const App: React.FC<AppProps> = ({ externalUser, onBack }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {isExportTrackingModalOpen && isSuperAdminOrHR && (
+        <ExportTrackingModal
+          isOpen={isExportTrackingModalOpen}
+          onClose={() => setIsExportTrackingModalOpen(false)}
+          allUsers={allUsers}
+          fetchUserTasks={async (uname) => {
+            const data = await supabaseService.getTasks({ username: uname, role: 'user' }, true);
+            return data;
+          }}
+        />
       )}
 
       <AboutModal isOpen={isAboutOpen} onClose={() => setIsAboutOpen(false)} />
