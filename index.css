@@ -80,3 +80,43 @@ code, pre, .font-mono {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Print Styles for Official KPI Documents */
+@media print {
+  body {
+    visibility: hidden !important;
+    background: white !important;
+  }
+  
+  #printable-kpi-sheet,
+  #printable-kpi-sheet * {
+    visibility: visible !important;
+  }
+
+  #printable-kpi-sheet {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm 15mm !important;
+    background: white !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    border: none !important;
+    z-index: 99999999 !important;
+  }
+
+  .print\:hidden,
+  .no-print,
+  nav,
+  header,
+  aside {
+    display: none !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+}

@@ -4,7 +4,7 @@ import {
   TrendingUp, User, DollarSign, Calendar, ChevronDown, ChevronRight, 
   AlertCircle, AlertTriangle, Filter, Shield, Activity, Briefcase, Percent, Clock, 
   Lock, Unlock, Settings, HelpCircle, BriefcaseIcon, RefreshCw, Eye, EyeOff,
-  Printer, FileSpreadsheet, Cloud, Database, UploadCloud
+  Printer, FileSpreadsheet, Cloud, Database, UploadCloud, Download, Loader2, X
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
@@ -1690,6 +1690,7 @@ export default function KPIModule({
   const [hardWeight, setHardWeight] = useState<number>(80);
   const [softWeight, setSoftWeight] = useState<number>(20);
   const [printModalRecord, setPrintModalRecord] = useState<KPIRecord | null>(null);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState<boolean>(false);
   
   // Custom indicators per individual employee (persisted permanently per employeeId)
   const [employeeCustomIndicators, setEmployeeCustomIndicators] = useState<Record<string, any[]>>(() => {
@@ -3423,6 +3424,42 @@ export default function KPIModule({
     };
 
     setPrintModalRecord(printObj);
+  };
+
+  // Direct High-Resolution PDF Download using html2pdf
+  const handleDownloadKPIPDF = async () => {
+    const element = document.getElementById('printable-kpi-sheet');
+    if (!element || !printModalRecord) return;
+    
+    setIsGeneratingPDF(true);
+    try {
+      const emp = companyEmployees.find(e => e.id === printModalRecord.employeeId) || employees.find(e => e.id === printModalRecord.employeeId);
+      const cleanEmpName = (emp?.nama || 'Karyawan').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `Lembar_KPI_${cleanEmpName}_${printModalRecord.month}_${printModalRecord.year}.pdf`;
+
+      // @ts-ignore
+      const html2pdfModule = (await import('html2pdf.js')).default || (window as any).html2pdf;
+      
+      const opt = {
+        margin: [8, 8, 8, 8],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollY: 0
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      await html2pdfModule().set(opt).from(element).save();
+    } catch (err) {
+      console.error('Error generating PDF with html2pdf:', err);
+      window.print();
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   // Sync active month financials from live company financials
@@ -7041,38 +7078,118 @@ export default function KPIModule({
 
       {/* High-Fidelity Printable Lembar KPI Modal */}
       {printModalRecord && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto print:p-0 print:bg-white print:static print:inset-auto">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto print:p-0 print:bg-white print:fixed print:inset-0 print:z-[9999999]">
+          <style dangerouslySetInnerHTML={{ __html: `
+            @media print {
+              body {
+                visibility: hidden !important;
+                background: white !important;
+              }
+              #printable-kpi-sheet,
+              #printable-kpi-sheet * {
+                visibility: visible !important;
+              }
+              #printable-kpi-sheet {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 10mm 15mm !important;
+                background: white !important;
+                color: #0f172a !important;
+                box-shadow: none !important;
+                border: none !important;
+                z-index: 99999999 !important;
+              }
+              .print\\:hidden,
+              .no-print,
+              button {
+                display: none !important;
+              }
+              @page {
+                size: A4 portrait;
+                margin: 10mm;
+              }
+            }
+          ` }} />
+
           <div className="bg-white rounded-2xl max-w-4xl w-full border border-slate-200 shadow-2xl flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
             {/* Modal Header Controls (hidden in print) */}
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl print:hidden">
-              <div className="flex items-center gap-2">
-                <Printer className="w-5 h-5 text-violet-600" />
-                <h3 className="text-sm font-black text-slate-800">Cetak Lembar KPI Karyawan</h3>
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-violet-100 text-violet-700 rounded-xl">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-800">Cetak & Unduh Lembar KPI Resmi</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Format lembar penilaian resmi PT Panca Prima Wijaya</p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-black uppercase rounded-xl flex items-center gap-1.5 shadow-sm transition-all"
+                  type="button"
+                  onClick={handleDownloadKPIPDF}
+                  disabled={isGeneratingPDF}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-black uppercase rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  title="Unduh langsung dokumen PDF"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak / PDF</span>
+                  {isGeneratingPDF ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Memproses PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>Download PDF</span>
+                    </>
+                  )}
                 </button>
                 <button
-                  onClick={() => setPrintModalRecord(null)}
-                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-black uppercase rounded-xl"
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-black uppercase rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  title="Cetak langsung menggunakan printer atau browser"
                 >
-                  Tutup
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak / Print</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintModalRecord(null)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                  title="Tutup"
+                >
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
             {/* Document Printable Body */}
             <div className="p-10 overflow-y-auto flex-1 space-y-6 print:overflow-visible print:p-0 font-sans text-slate-800 bg-white" id="printable-kpi-sheet">
-              {/* Header Letterhead */}
-              <div className="text-center border-b-2 border-slate-900 pb-4 space-y-1">
-                <h1 className="text-xl font-black uppercase tracking-wide text-slate-900">PT PANCA PRIMA WIJAYA</h1>
-                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">LEMBAR KEY PERFORMANCE INDICATOR (KPI)</h2>
-                <div className="text-[10px] text-slate-400 font-mono">Bulan: {printModalRecord.month} | Tahun: {printModalRecord.year}</div>
+              {/* Header Letterhead with Official Logo */}
+              <div className="border-b-2 border-slate-900 pb-4 mb-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <img 
+                      src="https://pancaprimawijaya.id/img/logo-panca-prima-wijaya.png" 
+                      alt="Logo PT Panca Prima Wijaya" 
+                      className="h-14 sm:h-16 w-auto object-contain shrink-0"
+                      crossOrigin="anonymous"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = '/logo-panca-prima-wijaya.png';
+                      }}
+                    />
+                  </div>
+                  <div className="text-right flex-1">
+                    <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wide text-slate-900 leading-tight">PT PANCA PRIMA WIJAYA</h1>
+                    <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-violet-800 mt-0.5">LEMBAR KEY PERFORMANCE INDICATOR (KPI)</h2>
+                    <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                      Bulan: <span className="font-bold text-slate-800">{printModalRecord.month}</span> | Tahun: <span className="font-bold text-slate-800">{printModalRecord.year}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Employee & Company Meta Grid */}
@@ -7267,14 +7384,14 @@ export default function KPIModule({
                     <div className="grid grid-cols-3 gap-8 pt-10 text-center text-[11px] leading-relaxed">
                       <div className="space-y-14">
                         <div>Dibuat oleh,</div>
-                        <div className="border-b border-slate-400 mx-6 pb-1 font-bold uppercase">{emp?.nama}</div>
-                        <div className="text-slate-400 text-[10px] -mt-1">Karyawan Bersangkutan</div>
+                        <div className="border-b border-slate-400 mx-6 pb-1 font-bold uppercase">Putra</div>
+                        <div className="text-slate-400 text-[10px] -mt-1">Evaluator / HR</div>
                       </div>
 
                       <div className="space-y-14">
-                        <div>Diperiksa oleh,</div>
-                        <div className="border-b border-slate-400 mx-6 pb-1 font-bold uppercase">{printModalRecord.approvedBy || 'Manager Operasional'}</div>
-                        <div className="text-slate-400 text-[10px] -mt-1">Atasan Evaluator</div>
+                        <div>Diketahui oleh,</div>
+                        <div className="border-b border-slate-400 mx-6 pb-1 font-bold uppercase">{emp?.nama || 'Karyawan'}</div>
+                        <div className="text-slate-400 text-[10px] -mt-1">Karyawan Bersangkutan</div>
                       </div>
 
                       <div className="space-y-14">
