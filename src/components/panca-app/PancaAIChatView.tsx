@@ -18,6 +18,7 @@ import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl, extractProductPhoto, hasDat
 import { safeSetLocalStorage, getApiUrl } from '../../lib/apiUtils';
 import TaskModal from '../../../task/components/TaskModal';
 import DayTaskPicker from '../../../task/components/DayTaskPicker';
+import { loadAllKPIDataFromSupabase, KPIMasterCloudData } from '../../lib/kpiSupabaseSync';
 
 export interface DraftData {
   type: 'customer' | 'transaction' | 'penawaran';
@@ -296,6 +297,48 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   const [selectedTaskForEdit, setSelectedTaskForEdit] = useState<Task | null>(null);
   const [selectedLogIndex, setSelectedLogIndex] = useState<number>(-1);
   const [isDayPickerOpen, setIsDayPickerOpen] = useState(false);
+
+  // Cloud & Local KPI Master Data State for Superadmin & HR
+  const [kpiMasterData, setKpiMasterData] = useState<KPIMasterCloudData | null>(() => {
+    try {
+      const localEmployees = localStorage.getItem('mypanca_kpi_employees');
+      const localJabatans = localStorage.getItem('mypanca_kpi_jabatans');
+      const localRecords = localStorage.getItem('mypanca_kpi_records');
+      const localFinancials = localStorage.getItem('mypanca_kpi_monthly_financials');
+      const localSheets = localStorage.getItem('mypanca_kpi_bonus_project_sheets');
+      const localTemplates = localStorage.getItem('mypanca_kpi_templates');
+      const localIndivSheets = localStorage.getItem('mypanca_kpi_employee_individual_sheets');
+      const localCustomInds = localStorage.getItem('mypanca_kpi_employee_custom_indicators');
+      const localAddBonuses = localStorage.getItem('mypanca_kpi_additional_bonuses');
+
+      if (localEmployees || localRecords || localSheets) {
+        return {
+          kpiEmployees: localEmployees ? JSON.parse(localEmployees) : [],
+          jabatans: localJabatans ? JSON.parse(localJabatans) : [],
+          kpiRecords: localRecords ? JSON.parse(localRecords) : [],
+          kpiMonthlyFinancials: localFinancials ? JSON.parse(localFinancials) : {},
+          bonusProjectSheets: localSheets ? JSON.parse(localSheets) : {},
+          kpiTemplates: localTemplates ? JSON.parse(localTemplates) : [],
+          employeeIndividualSheets: localIndivSheets ? JSON.parse(localIndivSheets) : {},
+          employeeCustomIndicators: localCustomInds ? JSON.parse(localCustomInds) : {},
+          additionalBonuses: localAddBonuses ? JSON.parse(localAddBonuses) : {}
+        };
+      }
+    } catch {}
+    return null;
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    loadAllKPIDataFromSupabase().then(res => {
+      if (res.success && res.data && isMounted) {
+        setKpiMasterData(res.data);
+      }
+    }).catch(err => {
+      console.warn('[PancaAIChatView] KPI sync notice:', err);
+    });
+    return () => { isMounted = false; };
+  }, []);
 
   // Live Database Products: combines props, LocalStorage, and direct Supabase database fetch
   const [effectiveProducts, setEffectiveProducts] = useState<any[]>(() => {
@@ -1477,7 +1520,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       employees,
       taskAppData,
       rolePermissions,
-      taskAppDataExt: { qaQuestions }
+      taskAppDataExt: { qaQuestions },
+      kpiData: kpiMasterData || undefined
     };
 
     try {
