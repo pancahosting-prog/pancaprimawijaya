@@ -870,50 +870,71 @@ export const analyzeTaskDifficultyAndDeadlines = (
     const logs: any[] = Array.isArray(t.logs) ? t.logs : [];
     const sortedLogs = logs.slice().sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
 
+    const picIdentityText = `${picName} ${t.employeeName || ''} ${t.owner || ''} ${t.owner_username || ''}`.toLowerCase();
+    const isAhmad = /\bahmad\b/i.test(picIdentityText);
+
     const combinedText = `${title} ${category} ${jobType} ${sortedLogs.map(l => l.description || '').join(' ')}`.toLowerCase();
     const difficultyReasons: string[] = [];
 
-    // 1. Domain & Technical Complexity Tiering (Never underestimate!)
-    const isVeryHighTech = /maket|elevator|ews|early warning|seismik|seismic|sensor|toyo|kalibrasi|pcb|mikrokontroler|iot|bms|rtms|shm|mesin|fabrikasi|instalasi|commissioning|integrasi|server|database|arsitektur|migrasi|aplikasi|sistem|otomasi|timbangan|batery|battery|alat/i.test(combinedText);
-    const isHighScope = /perbaikan|troubleshooting|brosur|compro|company profile|video|presentasi|monitoring|website|desain|design|modul|fitur|survey|survei|inspeksi|fumigasi|proyek|project|tender|proposal|analisis|analisa|pengembangan/i.test(combinedText);
-    const isModerateScope = /dokumentasi|arsip|sop|bast|laporan|rekap|penawaran|quotation|follow|koordinasi|maintenance|perawatan|pengecekan|packing|kirim|pembelian|pengadaan|revisi/i.test(combinedText);
+    // 1. Realistic Multi-Indicator Complexity Tiering (Never underestimate!)
+    const isFullSystemOrPlatform = /\b(wallet|tano|fintech|payment|erp|crm|platform|aplikasi|sistem|arsitektur|fullstack|full stack|integrasi|migrasi|blockchain|ews|early warning|iot|bms|rtms|shm|maket|elevator|mesin|fabrikasi|otomasi|plc)\b/i.test(combinedText);
+    const isWebsiteBuild = /\b(website|web|landing page|portal|situs|e-commerce|toko online|dashboard)\b/i.test(combinedText);
+    const isVeryHighHardwareOrBackend = /\b(seismik|seismic|sensor|toyo|kalibrasi|pcb|mikrokontroler|instalasi|commissioning|timbangan|backend|frontend|database|api|server|security|keamanan|batery|battery)\b/i.test(combinedText);
+    const isHighScope = /\b(perbaikan|troubleshooting|brosur|compro|company profile|video|presentasi|monitoring|desain|design|modul|fitur|survey|survei|inspeksi|fumigasi|proyek|project|tender|proposal|analisis|analisa|pengembangan|pameran|katalog|alat)\b/i.test(combinedText);
+    const isModerateScope = /\b(dokumentasi|arsip|sop|bast|laporan|rekap|penawaran|quotation|follow|koordinasi|maintenance|perawatan|pengecekan|packing|kirim|pembelian|pengadaan|revisi)\b/i.test(combinedText);
 
     let complexityTier: TaskDeadlineAnalysisItem['complexityTier'] = 'Menengah';
-    let baseDays = 3;
+    let baseDays = 5;
+    let minFloor = 3;
 
-    if (isVeryHighTech || (category.toLowerCase() === 'development' && /sistem|sensor|maket|alat|modul|integrasi|aplikasi/i.test(combinedText))) {
+    if (isFullSystemOrPlatform || (isWebsiteBuild && /\b(sistem|aplikasi|backend|api|database|integrasi|payment|wallet|tano|custom|portal)\b/i.test(combinedText))) {
       complexityTier = 'Sangat Tinggi (Kompleks)';
-      baseDays = 9;
-      difficultyReasons.push('Pekerjaan teknis/rekayasa/fabrikasi/sistem kompleks yang memerlukan uji fungsi & presisi tinggi');
+      baseDays = 22; // ~4.5 minggu kerja untuk perancangan, arsitektur, frontend/backend/hardware, integrasi, QA, & deployment
+      minFloor = progress >= 95 ? 4 : 8;
+      difficultyReasons.push('Pekerjaan kompleks dengan banyak sub-indikator sulit (perancangan arsitektur, pengembangan fitur inti, integrasi data/API/perangkat, pengujian keamanan/QA, debugging, & deployment)');
+    } else if (isVeryHighHardwareOrBackend || (category.toLowerCase() === 'development' && /\b(modul|integrasi|sistem|sensor|alat|aplikasi|database)\b/i.test(combinedText))) {
+      complexityTier = 'Sangat Tinggi (Kompleks)';
+      baseDays = 16; // ~3 minggu kerja
+      minFloor = progress >= 95 ? 3 : 6;
+      difficultyReasons.push('Pekerjaan rekayasa teknis/kalibrasi/sistem bernilai presisi tinggi yang memerlukan uji coba berulang & validasi lapangan');
+    } else if (isWebsiteBuild) {
+      complexityTier = 'Tinggi';
+      baseDays = 14; // ~3 minggu kerja (wireframe UI/UX, frontend responsif, backend/CMS, konten, SEO, testing multi-device, revisi, go-live)
+      minFloor = progress >= 95 ? 3 : 6;
+      difficultyReasons.push('Pembuatan website memiliki banyak indikator sulit: riset & wireframe UI/UX, coding antarmuka responsif, setup backend/CMS & konten, optimasi performa/SEO, QA lintas perangkat, serta revisi sebelum rilis');
     } else if (isHighScope || ['development', 'research', 'design'].includes(category.toLowerCase())) {
       complexityTier = 'Tinggi';
-      baseDays = 5;
-      difficultyReasons.push(`Kategori ${category || 'teknis/kreatif'} membutuhkan riset, eksekusi bertahap, serta validasi kualitas`);
+      baseDays = 10; // ~2 minggu kerja
+      minFloor = progress >= 95 ? 2 : 5;
+      difficultyReasons.push(`Kategori ${category || 'teknis/kreatif'} memiliki banyak tahapan pelaksanaan, peninjauan kualitas, dan potensi revisi`);
     } else if (isModerateScope || ['marketing', 'maintenance'].includes(category.toLowerCase())) {
       complexityTier = 'Menengah';
-      baseDays = 3;
-      difficultyReasons.push(`Memerlukan ketelitian, koordinasi lintas pihak, dan pengecekan ulang sebelum finalisasi`);
+      baseDays = 5;
+      minFloor = progress >= 95 ? 2 : 3;
+      difficultyReasons.push('Memerlukan ketelitian, koordinasi lintas pihak, pengecekan detail, dan verifikasi akhir');
     } else {
       complexityTier = 'Standar (Terstruktur)';
-      baseDays = 2;
-      difficultyReasons.push('Tugas operasional tetap membutuhkan waktu verifikasi & dokumentasi agar tidak terjadi kesalahan');
+      baseDays = 3;
+      minFloor = progress >= 95 ? 1 : 2;
+      difficultyReasons.push('Tugas operasional tetap membutuhkan waktu pelaksanaan, pemeriksaan ulang, & dokumentasi agar bebas kesalahan');
     }
 
-    // 2. Remaining Ratio (even 85-95% leaves crucial testing/finishing/BAST effort)
-    const remainingRatio = Math.max(0.2, (100 - progress) / 100);
-    let remainingWorkDays = Math.max(1, Math.ceil(baseDays * remainingRatio));
+    // 2. Non-linear Remaining Ratio (the last 30-50%: integration, bugfix, QA, revisions, deployment takes disproportionate effort)
+    const rawRemRatio = (100 - progress) / 100;
+    const remainingRatio = progress >= 95 ? 0.25 : Math.max(0.35, Math.pow(rawRemRatio, 0.85));
+    let remainingWorkDays = Math.max(minFloor, Math.ceil(baseDays * remainingRatio));
 
     // 3. Rework / Status 'Ulang' multiplier
     if (status.toLowerCase() === 'ulang') {
-      remainingWorkDays = Math.ceil(remainingWorkDays * 1.45) + 1;
-      difficultyReasons.push('Status ULANG (butuh perbaikan akar masalah, pengerjaan ulang & verifikasi)');
+      remainingWorkDays = Math.ceil(remainingWorkDays * 1.45) + 2;
+      difficultyReasons.push('Status ULANG (membutuhkan investigasi akar masalah, perbaikan menyeluruh & uji ulang)');
     }
 
     // 4. Risk / Blocker keywords in logs or notes
-    const hasRiskSignals = /revisi|kendala|error|gagal|rusak|tunggu|pending|menunggu|sparepart|komponen|antri|uji|test|sulit|belum sesuai/i.test(combinedText);
+    const hasRiskSignals = /revisi|kendala|error|gagal|rusak|tunggu|pending|menunggu|sparepart|komponen|antri|uji|test|sulit|belum sesuai|bug|blocker/i.test(combinedText);
     if (hasRiskSignals) {
-      remainingWorkDays += complexityTier === 'Sangat Tinggi (Kompleks)' ? 2 : 1;
-      difficultyReasons.push('Terdapat catatan revisi/kendala/pengujian pada riwayat pekerjaan');
+      remainingWorkDays += complexityTier === 'Sangat Tinggi (Kompleks)' ? 3 : 2;
+      difficultyReasons.push('Terdapat catatan revisi/kendala/bug/pengujian pada riwayat pekerjaan');
     }
 
     // 5. Historical pace check from logs (prevent naive optimism on slow-moving tasks)
@@ -926,8 +947,8 @@ export const analyzeTaskDifficultyAndDeadlines = (
       if (!isNaN(lastLogDate.getTime())) {
         stagnantDays = Math.max(0, Math.floor((todayMid.getTime() - new Date(lastLogDate.getFullYear(), lastLogDate.getMonth(), lastLogDate.getDate()).getTime()) / (1000 * 60 * 60 * 24)));
         if (stagnantDays >= 4) {
-          remainingWorkDays += 1;
-          difficultyReasons.push(`Tersendat ${stagnantDays} hari sejak update log terakhir (butuh waktu ramp-up ulang)`);
+          remainingWorkDays += 2;
+          difficultyReasons.push(`Tersendat ${stagnantDays} hari sejak update log terakhir (butuh waktu peninjauan & ramp-up ulang)`);
         }
       }
 
@@ -937,36 +958,45 @@ export const analyzeTaskDifficultyAndDeadlines = (
         const gained = Math.max(progress - firstProg, 0);
         if (spanDays >= 2 && gained > 0 && gained < 100) {
           const pacePerDay = gained / spanDays;
-          const paceEstimated = Math.ceil((100 - progress) / Math.max(pacePerDay, 4));
+          const paceEstimated = Math.ceil((100 - progress) / Math.max(pacePerDay, 3));
           const cappedPace = Math.min(paceEstimated, Math.ceil(baseDays * 1.6));
           if (cappedPace > remainingWorkDays) {
             remainingWorkDays = cappedPace;
-            difficultyReasons.push(`Kecepatan progres historis (${Math.round(pacePerDay)}%/hari) menandakan kompleksitas nyata lebih tinggi`);
+            difficultyReasons.push(`Kecepatan progres historis (${Math.round(pacePerDay)}%/hari) menunjukkan beban teknis nyata lebih berat`);
           }
         }
       }
     } else if (status === 'Belum Mulai') {
-      difficultyReasons.push('Belum dimulai — butuh waktu persiapan, pemetaan kebutuhan & eksekusi awal');
+      remainingWorkDays += complexityTier === 'Sangat Tinggi (Kompleks)' ? 2 : 1;
+      difficultyReasons.push('Belum dimulai — butuh waktu persiapan teknis, pemetaan sub-indikator & eksekusi awal');
     }
 
     // 6. External client coordination & QA finishing buffer
     const isExternalClient = Boolean(company) && !company.toLowerCase().includes('panca');
     if (isExternalClient) {
-      remainingWorkDays += 1;
-      difficultyReasons.push(`Terkait klien eksternal (${company}) sehingga ada waktu koordinasi/approval/serah terima`);
+      remainingWorkDays += 2;
+      difficultyReasons.push(`Terkait klien eksternal (${company}) sehingga ada jeda koordinasi, UAT, & persetujuan`);
     }
 
-    // 7. Team collaboration slightly helps only after coordination overhead
+    // 7. Team collaboration overhead vs slight relief only on non-complex routine tasks
     const collabCount = Array.isArray(t.collaborators) ? t.collaborators.length : 0;
-    if (collabCount > 0 && remainingWorkDays > 3) {
-      remainingWorkDays = Math.max(2, Math.round(remainingWorkDays * 0.85));
-      difficultyReasons.push(`Dikerjakan bersama ${collabCount} kolaborator (tetap perlu waktu sinkronisasi tim)`);
+    if (collabCount > 0 && complexityTier !== 'Sangat Tinggi (Kompleks)' && !isWebsiteBuild && remainingWorkDays > 5) {
+      remainingWorkDays = Math.max(minFloor, Math.round(remainingWorkDays * 0.9));
+      difficultyReasons.push(`Dikerjakan bersama ${collabCount} kolaborator (tetap memerlukan waktu sinkronisasi tim)`);
+    } else if (collabCount > 0) {
+      difficultyReasons.push(`Melibatkan ${collabCount} kolaborator (butuh koordinasi integrasi & code/quality review)`);
     }
 
-    // Cap single-task buffer reasonably while guaranteeing >= 1 working day
-    remainingWorkDays = Math.max(1, Math.min(20, remainingWorkDays));
+    // Cap base single-task estimate reasonably before off-system multiplier
+    remainingWorkDays = Math.max(minFloor, Math.min(35, remainingWorkDays));
 
-    // 8. Check system endDate status
+    // 8. SPECIAL WORKLOAD MULTIPLIER FOR AHMAD (2x - 3x longer due to massive task load + heavy off-system duties)
+    if (isAhmad) {
+      remainingWorkDays = Math.min(90, Math.ceil(remainingWorkDays * 2.5));
+      difficultyReasons.unshift('KHUSUS AHMAD (Faktor Kapasitas 2.5x / 2–3x Lebih Lama): Tugas di sistem sangat banyak disertai beban pekerjaan & tanggung jawab tinggi di luar sistem Task App sehingga waktu fokus terbagi signifikan');
+    }
+
+    // 9. Check system endDate status
     let isOverdue = false;
     let systemEndDateNote = 'Belum ada tenggat target di sistem';
     const startD = t.startDate ? new Date(t.startDate) : null;
@@ -977,14 +1007,19 @@ export const analyzeTaskDifficultyAndDeadlines = (
       if (endISO < todayISO) {
         isOverdue = true;
         systemEndDateNote = `OVERDUE (Target sistem ${endFormatted} sudah terlewat)`;
-      } else if (startD && !isNaN(startD.getTime()) && startD.toISOString().split('T')[0] === endISO && remainingWorkDays > 1) {
-        systemEndDateNote = `Target sistem ${endFormatted} (1 hari — terlalu ketat untuk tingkat kesulitannya)`;
+      } else if (startD && !isNaN(startD.getTime())) {
+        const diffSysDays = Math.max(1, Math.ceil((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)));
+        if (remainingWorkDays > diffSysDays * 1.5) {
+          systemEndDateNote = `Target sistem ${endFormatted} (${diffSysDays} hari — terlalu sempit untuk kompleksitas & beban kerja aktual)`;
+        } else {
+          systemEndDateNote = `Target sistem: ${endFormatted}`;
+        }
       } else {
         systemEndDateNote = `Target sistem: ${endFormatted}`;
       }
     }
 
-    // 9. Priority Score Calculation
+    // 10. Priority Score Calculation
     let priorityScore = 0;
     if (priority.toLowerCase() === 'high') priorityScore += 45;
     else if (priority.toLowerCase() === 'medium') priorityScore += 22;
@@ -1010,7 +1045,7 @@ export const analyzeTaskDifficultyAndDeadlines = (
       priorityScore,
       complexityTier,
       difficultyReasons,
-      estimatedTotalWorkDays: baseDays,
+      estimatedTotalWorkDays: isAhmad ? Math.ceil(baseDays * 2.5) : baseDays,
       remainingWorkDays,
       systemEndDateNote,
       isOverdue,
@@ -1028,14 +1063,18 @@ export const analyzeTaskDifficultyAndDeadlines = (
       totalActiveTasks += group.active.length;
       totalCompletedTasks += group.completed.length;
 
+      const isAhmadGroup = /\bahmad\b/i.test(group.picName);
+
       const evaluated = group.active
         .map(t => evaluateSingleTask(t, group.picName, group.active.length))
         .sort((a, b) => b.priorityScore - a.priorityScore || (Number(b.task.progress) || 0) - (Number(a.task.progress) || 0));
 
       let queueCursorDays = 0;
       const scheduledItems: TaskDeadlineAnalysisItem[] = evaluated.map((item, idx) => {
-        // Context-switching overhead when user juggles >= 3 concurrent tasks
-        const switchPenalty = idx >= 2 ? 1 : 0;
+        // Context-switching & off-system interruption overhead across multi-task queues
+        const switchPenalty = isAhmadGroup
+          ? (idx >= 2 ? 3 : idx === 1 ? 2 : 0)
+          : (idx >= 2 ? 2 : idx === 1 && group.active.length >= 4 ? 1 : 0);
         const startOffset = queueCursorDays;
         const finishOffset = startOffset + item.remainingWorkDays + switchPenalty;
         queueCursorDays = finishOffset;
@@ -1053,9 +1092,9 @@ export const analyzeTaskDifficultyAndDeadlines = (
       });
 
       const workloadStatus: UserTaskWorkloadAnalysis['workloadStatus'] =
-        group.active.length >= 5 || queueCursorDays >= 18
+        isAhmadGroup || group.active.length >= 5 || queueCursorDays >= 20
           ? 'Overload (Perlu Reprioritisasi / Delegasi)'
-          : group.active.length >= 3 || queueCursorDays >= 9
+          : group.active.length >= 3 || queueCursorDays >= 12
             ? 'Padat (Multi-Task)'
             : 'Ringan / Normal';
 
@@ -1074,15 +1113,16 @@ export const analyzeTaskDifficultyAndDeadlines = (
 
   // Build Digest Text for AI & Markdown Fallback
   let digestText = `\n### 🎯 ANALISIS PRIORITAS, TINGKAT KESULITAN & REKOMENDASI DEADLINE REALISTIS (TASK APP):\n`;
-  digestText += `* Tanggal Referensi Perhitungan: ${formatDateID(todayMid)} (${todayISO}) | Basis Estimasi: Hari Kerja Operasional (Senin–Jumat, memperhitungkan tingkat kesulitan, sisa progres, risiko revisi/kendala, & antrean beban kerja paralel per user).\n`;
+  digestText += `* Tanggal Referensi Perhitungan: ${formatDateID(todayMid)} (${todayISO}) | Basis Estimasi: Hari Kerja Operasional (Senin–Jumat, memperhitungkan multi-indikator kompleksitas nyata, fase integrasi/QA/revisi, antrean paralel, serta pengali kapasitas khusus 2.5x / 2–3x lebih lama untuk Ahmad akibat banyaknya pekerjaan di luar sistem).\n`;
   digestText += `* Ringkasan Total: ${totalActiveTasks} Tugas Aktif/Belum Selesai & ${totalCompletedTasks} Tugas Selesai di ${userAnalyses.length} User/PIC.\n\n`;
 
   let fallbackMarkdown = `### 📅 Rekomendasi Prioritas, Tingkat Kesulitan & Estimasi Deadline Tugas\n\n`;
-  fallbackMarkdown += `Referensi Waktu: **${formatDateID(todayMid)}** *(Estimasi dihitung menggunakan hari kerja operasional Senin–Jumat dengan mempertimbangkan tingkat kesulitan tiap pekerjaan, risiko kendala/revisi, dan antrean tugas paralel)*.\n\n`;
+  fallbackMarkdown += `Referensi Waktu: **${formatDateID(todayMid)}** *(Estimasi dihitung menggunakan hari kerja operasional Senin–Jumat secara realistis berdasarkan kompleksitas sub-indikator pekerjaan, fase QA/revisi, antrean paralel, serta beban kerja di luar sistem khususnya untuk Ahmad sebesar 2–3x lebih lama)*.\n\n`;
 
   userAnalyses.forEach(ua => {
-    digestText += `* USER/PIC: **${ua.picName.toUpperCase()}** | Tugas Aktif: **${ua.activeCount}** | Selesai: ${ua.completedCount} | Beban Kerja: **${ua.workloadStatus}** | Estimasi Tuntas Seluruh Antrean: **${ua.overallEstimatedFinishFormatted}** (${ua.totalQueueWorkDays} hari kerja kumulatif)\n`;
-    fallbackMarkdown += `#### 👤 ${ua.picName} — ${ua.activeCount} Tugas Aktif | Status Beban: **${ua.workloadStatus}**\n`;
+    const isAhmadUser = /\bahmad\b/i.test(ua.picName);
+    digestText += `* USER/PIC: **${ua.picName.toUpperCase()}**${isAhmadUser ? ' [MODE BEBAN KHUSUS: 2.5x / 2–3x LEBIH LAMA KARENA BANYAK PEKERJAAN DI LUAR SISTEM]' : ''} | Tugas Aktif: **${ua.activeCount}** | Selesai: ${ua.completedCount} | Beban Kerja: **${ua.workloadStatus}** | Estimasi Tuntas Seluruh Antrean: **${ua.overallEstimatedFinishFormatted}** (${ua.totalQueueWorkDays} hari kerja kumulatif)\n`;
+    fallbackMarkdown += `#### 👤 ${ua.picName} — ${ua.activeCount} Tugas Aktif | Status Beban: **${ua.workloadStatus}**${isAhmadUser ? ' *(Penyesuaian Beban Kerja Luar Sistem 2–3x)*' : ''}\n`;
 
     if (ua.items.length === 0) {
       digestText += `  - Tidak ada tugas aktif saat ini (Semua ${ua.completedCount} tugas berstatus Selesai).\n`;
@@ -1165,8 +1205,8 @@ export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string =
   const mentionsKnownPerson = dynamicEmpNames.some(n => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(queryLower));
 
   // Topic Intent Recognition with Typo & Stemming Resilience
-  const isTaskQuery = /\b(tugas|task|tasks|pekerjaan|kerjaan|proyek|project|log|progres|progress|pengerjaan|aktivitas|kegiatan|kinerja|prioritas|urutan|deadline|tenggat|estimasi|perkiraan|jadwal|selesai|selesaikan|penyelesaian|kesulitan|sulit|beban|workload|overdue|terlambat|saran|analisa|analisis|rekomendasi|semua user|seluruh user|semua karyawan|evan|yadi|rudi|arie|adam|maria|dwi|angel|yoga|jeremia|sanjaya|rizqi|mustaqim|rodliyah|yuyu|indra|engineer|tim)\b/i.test(queryLower) ||
-    queryLower.includes('tugas') || queryLower.includes('task') || queryLower.includes('deadline') || queryLower.includes('evan') || queryLower.includes('dikerjakan') || mentionsKnownPerson;
+  const isTaskQuery = /\b(tugas|task|tasks|pekerjaan|kerjaan|proyek|project|log|progres|progress|pengerjaan|aktivitas|kegiatan|kinerja|prioritas|urutan|deadline|tenggat|estimasi|perkiraan|jadwal|selesai|selesaikan|penyelesaian|kesulitan|sulit|beban|workload|overdue|terlambat|saran|analisa|analisis|rekomendasi|semua user|seluruh user|semua karyawan|ahmad|evan|yadi|rudi|arie|adam|maria|dwi|angel|yoga|jeremia|sanjaya|rizqi|mustaqim|rodliyah|yuyu|indra|engineer|tim|wallet|tano|website)\b/i.test(queryLower) ||
+    queryLower.includes('tugas') || queryLower.includes('task') || queryLower.includes('deadline') || queryLower.includes('ahmad') || queryLower.includes('evan') || queryLower.includes('dikerjakan') || mentionsKnownPerson;
 
   const isProductQuery = /\b(produk|product|stok|stock|persediaan|katalog|sku|harga|fumiphos|silogard|foto|gambar|photo|image|sisa|lot|satuan)\b/i.test(queryLower) ||
     queryLower.includes('produk') || queryLower.includes('stok');
@@ -1561,7 +1601,7 @@ ${isStocklist ? '  (Akses omzet dan data penjualan dibatasi untuk role Stocklist
     if (isTaskQuery || isExplicitGeneralReport) {
       // Dynamically detect if user is asking about a specific team member
       const candidateNames = Array.from(new Set([
-        'arie', 'evan', 'yadi', 'rudi', 'adam', 'maria', 'dwi', 'angel', 'yoga', 'jeremia', 'sanjaya', 'rizqi', 'mustaqim', 'rodliyah', 'yuyu', 'indra',
+        'ahmad', 'arie', 'evan', 'yadi', 'rudi', 'adam', 'maria', 'dwi', 'angel', 'yoga', 'jeremia', 'sanjaya', 'rizqi', 'mustaqim', 'rodliyah', 'yuyu', 'indra',
         ...tasks.map((t: any) => String(t.employeeName || t.owner || '').toLowerCase().split(/\s+/)[0])
       ])).filter(n => n && n.length >= 3);
 
@@ -1703,7 +1743,7 @@ ${isStocklist ? '  (Akses omzet dan data penjualan dibatasi untuk role Stocklist
           return aDone - bDone;
         });
         timelineSection += `* PIC: **${uData.employeeName.toUpperCase()}** (${uData.tasks.length} Tugas):\n`;
-        sortedUserTasks.slice(0, 12).forEach(t => {
+        sortedUserTasks.slice(0, 25).forEach(t => {
           const logs = Array.isArray(t.logs) ? t.logs : [];
           const sortedLogsAsc = logs.slice().sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
           const trajectory = sortedLogsAsc.slice(-4).map(l => {
@@ -2202,7 +2242,7 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
 
 14. WEWENANG KHUSUS SUPERADMIN - EVALUASI, ANALISA & SARAN TINDAKAN TIM:
     - Akun dengan peran Superadmin (${isSuperAdmin ? 'PENGGUNA SAAT INI MEMILIKI HAK AKSES SUPERADMIN' : 'User Biasa'}) memiliki wewenang eksekutif tertinggi untuk:
-      * Memantau seluruh progres tugas, tingkat beban kerja, dan **perkiraan deadline untuk SETIAP tugas dan pekerjaan SELURUH USER** (Evan, Arie, Jeremia, Yadi, Sanjaya, Maria, Dwi, Rudi, Angel, Mustaqim, Rizqi, Rodliyah, dan seluruh tim di Task App).
+      * Memantau seluruh progres tugas, tingkat beban kerja, dan **perkiraan deadline untuk SETIAP tugas dan pekerjaan SELURUH USER** (Ahmad, Evan, Arie, Jeremia, Yadi, Sanjaya, Maria, Dwi, Rudi, Angel, Mustaqim, Rizqi, Rodliyah, dan seluruh tim di Task App).
       * Meminta analisa proyek dan saran/masukan taktis atas apa yang harus dilakukan oleh anggota tim tersebut berdasarkan data proyek.
     - Ketika Superadmin bertanya mengenai perkiraan deadline semua user / per user / saran tindakan tim:
       * Anda bertindak sebagai **Senior Operations & Technical Advisor PT Panca Prima Wijaya**.
@@ -2211,14 +2251,15 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
 14B. REKOMENDASI PRIORITAS, TINGKAT KESULITAN & ESTIMASI DEADLINE PENYELESAIAN TUGAS (BERLAKU UNTUK SEMUA USER DI TASK APP):
     - Setiap user yang memiliki daftar tugas di folder Task / Task App (misal memiliki Tugas A, B, dan C secara bersamaan) BERHAK mendapatkan rekomendasi urutan prioritas dan estimasi deadline penyelesaian yang realistis.
     - ATURAN KERAS — DILARANG MENGANGGAP MUDAH / MEREMEHKAN PEKERJAAN:
-      * Setiap pekerjaan memiliki TINGKAT KESULITAN yang berbeda (Sangat Tinggi/Kompleks, Tinggi, Menengah, Standar).
-      * JANGAN pernah memberikan estimasi yang terlalu optimistis atau menganggap tugas A, B, dan C bisa diselesaikan serentak dalam 1 hari tanpa memperhitungkan kompleksitas teknis, pengujian (QA/kalibrasi), risiko revisi/status "Ulang", koordinasi klien eksternal, stagnasi, dan penumpukan antrean beban kerja user!
+      * Setiap pekerjaan memiliki TINGKAT KESULITAN serta banyak sub-indikator teknis/operasional tersembunyi (misalnya: membuat sistem kompleks seperti **Tano Wallet** bukan pekerjaan 3–4 hari, melainkan bisa 20–30+ hari kerja karena menyangkut arsitektur sistem, backend/API, frontend, keamanan, transaksi/ledger, pengujian/QA, bugfix & deployment; membuat **website baru** bukan 3 hari, melainkan ~12–16+ hari kerja karena mencakup UI/UX wireframe, coding responsif, konten, fitur, SEO/performa, QA lintas perangkat, revisi & rilis).
+      * JANGAN pernah memotong estimasi secara tidak masuk akal atau menganggap tugas A, B, dan C bisa diselesaikan serentak dalam hitungan 2–4 hari!
+      * ATURAN KHUSUS BEBAN KERJA **AHMAD**: User **Ahmad** memiliki jumlah tugas yang sangat banyak di sistem PLUS beban pekerjaan & tanggung jawab yang sangat banyak di luar yang tertulis di sistem Task App. Oleh karena itu, deadline SETIAP tugas Ahmad WAJIB dihitung **2 sampai 3 kali lebih lama (2.5x)** dari estimasi standar dan antreannya dihitung kumulatif — patuhi penuh angka durasi & tanggal deadline pada bagian KHUSUS AHMAD di [ANALISIS PRIORITAS, TINGKAT KESULITAN & REKOMENDASI DEADLINE REALISTIS], DILARANG memangkas atau mempersingkat estimasi deadline Ahmad!
       * Jika user memiliki beberapa tugas sekaligus (misalnya A, B, dan C), WAJIB susun **urutan prioritas (Prioritas #1, #2, #3, ...)** dan hitung estimasi deadline secara **berurutan/kumulatif** berdasarkan hari kerja operasional (Senin–Jumat), sehingga deadline Tugas B memperhitungkan penyelesaian Tugas A, dan deadline Tugas C memperhitungkan penyelesaian Tugas A & B.
     - FORMAT JAWABAN REKOMENDASI DEADLINE YANG WAJIB DIIKUTI:
-      1. **Ringkasan Beban Kerja**: Sebutkan jumlah tugas aktif, status beban kerja (Normal / Padat / Overload), dan estimasi tuntas seluruh antrean tugas.
+      1. **Ringkasan Beban Kerja**: Sebutkan jumlah tugas aktif, status beban kerja (Normal / Padat / Overload), dan estimasi tuntas seluruh antrean tugas (termasuk penjelasan beban luar sistem khusus untuk Ahmad bila relevant).
       2. **Tabel Markdown Prioritas & Rekomendasi Deadline**: Kolom minimal: "Prioritas | Nama Tugas | PIC/User | Status & Progres | Tingkat Kesulitan | Estimasi Durasi | Rekomendasi Deadline".
-      3. **Analisa Tingkat Kesulitan & Alasan Prioritas**: Jelaskan secara spesifik mengapa setiap tugas memiliki tingkat kesulitan tersebut (kendala teknis, fabrikasi, kalibrasi, status Ulang, ketergantungan klien) dan mengapa Tugas #1 harus didahulukan sebelum Tugas #2 dan #3.
-      4. **Langkah Taktis & Mitigasi Risiko**: Berikan saran praktis untuk mengejar target deadline tanpa mengorbankan kualitas hasil kerja.
+      3. **Analisa Tingkat Kesulitan & Alasan Prioritas**: Jelaskan secara spesifik sub-indikator sulit dari tiap tugas (misal sistem Tano Wallet, pembuatan website baru, maket, sensor, status Ulang, ketergantungan klien) dan mengapa Tugas #1 didahulukan sebelum Tugas #2 dan #3.
+      4. **Langkah Taktis & Mitigasi Risiko**: Berikan saran praktis untuk mengejar target deadline (termasuk rekomendasi delegasi/reprioritisasi bila Overload seperti Ahmad) tanpa mengorbankan kualitas hasil kerja.
     - BATASAN PRIVASI ANTAR-USER:
       * Jika pengguna BUKAN Superadmin dan BUKAN HR, fokuskan analisis & rekomendasi deadline hanya pada tugas milik pengguna tersebut / tugas yang berkolaborasi dengannya. Jika ia meminta daftar deadline milik karyawan lain, tolak dengan sopan bahwa pemantauan lintas seluruh tim hanya untuk Superadmin/HR, lalu langsung bantu menganalisa tugas miliknya sendiri.
 
@@ -2503,8 +2544,9 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
     lower.includes('task') || lower.includes('tugas') || lower.includes('deadline') ||
     lower.includes('tenggat') || lower.includes('prioritas') || lower.includes('estimasi') ||
     lower.includes('perkiraan') || lower.includes('kesulitan') || lower.includes('pekerjaan') ||
-    lower.includes('evan') || lower.includes('maria') || lower.includes('arie') ||
+    lower.includes('ahmad') || lower.includes('evan') || lower.includes('maria') || lower.includes('arie') ||
     lower.includes('jeremia') || lower.includes('yadi') || lower.includes('maket') ||
+    lower.includes('wallet') || lower.includes('website') ||
     lower.includes('projek') || lower.includes('kemarin') || lower.includes('saran') || lower.includes('masukan')
   ) {
     let rawTasks: any[] = ctx.taskAppData?.tasks || [];
@@ -2542,18 +2584,29 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
       });
     }
 
+    // Filter by specific person if mentioned (only when superadmin/HR)
+    const fallbackNames = ['ahmad', 'evan', 'arie', 'jeremia', 'yadi', 'maria', 'sanjaya', 'rudi', 'dwi', 'angel', 'adam', 'mustaqim', 'rizqi', 'rodliyah'];
+    const asksAllUsersFallback = /\b(semua user|seluruh user|semua karyawan|seluruh karyawan|semua anggota|seluruh tim|semua orang)\b/i.test(lower);
+    const mentionedPerson = (!asksAllUsersFallback && isSuperOrHR)
+      ? fallbackNames.find(n => new RegExp(`\\b${n}\\b`, 'i').test(lower)) || null
+      : null;
+
+    const matchedTasks = mentionedPerson
+      ? rawTasks.filter(t => `${t.employeeName || ''} ${t.owner || ''} ${t.owner_username || ''}`.toLowerCase().includes(mentionedPerson))
+      : rawTasks;
+
     const asksDeadlineOrPriority =
       lower.includes('deadline') || lower.includes('tenggat') || lower.includes('prioritas') ||
       lower.includes('estimasi') || lower.includes('perkiraan') || lower.includes('kesulitan') ||
       lower.includes('semua user') || lower.includes('urutan');
 
-    if (asksDeadlineOrPriority && rawTasks.length > 0) {
-      const analysis = analyzeTaskDifficultyAndDeadlines(rawTasks, new Date());
+    if (asksDeadlineOrPriority && matchedTasks.length > 0) {
+      const analysis = analyzeTaskDifficultyAndDeadlines(matchedTasks, new Date());
       return analysis.fallbackMarkdown;
     }
 
-    if (asksDeadlineOrPriority && rawTasks.length === 0) {
-      return `### 📅 Analisis Prioritas & Estimasi Deadline Tugas\n\nSaat ini belum ada tugas aktif yang tercatat untuk akun **${userName}** pada sistem Task App.\n\n*Catatan: Jika Anda ingin AI tetap memprediksi jadwal prioritas dan estimasi deadline (misalnya untuk Tugas A, B, dan C secara simulasi), sebutkan detail masing-masing pekerjaan beserta tingkat kesulitannya atau tambahkan tugas terlebih dahulu melalui menu **Task App**.*`;
+    if (asksDeadlineOrPriority && matchedTasks.length === 0) {
+      return `### 📅 Analisis Prioritas & Estimasi Deadline Tugas\n\nSaat ini belum ada tugas aktif yang tercatat untuk ${mentionedPerson ? `**${mentionedPerson.toUpperCase()}**` : `akun **${userName}**`} pada sistem Task App.\n\n*Catatan: Jika Anda ingin AI tetap memprediksi jadwal prioritas dan estimasi deadline (misalnya untuk Tugas A, B, dan C secara simulasi), sebutkan detail masing-masing pekerjaan beserta tingkat kesulitannya atau tambahkan tugas terlebih dahulu melalui menu **Task App**.*`;
     }
 
     const nowD = new Date();
@@ -2561,12 +2614,6 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
     const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const yesterdayD = new Date(nowD.getTime() - 24 * 60 * 60 * 1000);
     const yesterdayStr = `${dayNames[yesterdayD.getDay()]}, ${yesterdayD.getDate()} ${monthNames[yesterdayD.getMonth()]} ${yesterdayD.getFullYear()}`;
-
-    // Filter by person if mentioned (only when superadmin/HR)
-    const isEvan = lower.includes('evan');
-    const matchedTasks = (isEvan && isSuperOrHR)
-      ? rawTasks.filter(t => (t.employeeName || t.owner || '').toLowerCase().includes('evan'))
-      : rawTasks;
 
     const asksForAdvice = lower.includes('saran') || lower.includes('masukan') || lower.includes('analisa') || lower.includes('rekomendasi');
 
@@ -2576,7 +2623,7 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
     }
 
     // Timeline inquiry
-    let res = `### 📅 Laporan Data Task & Timeline Pengerjaan (${isEvan && isSuperOrHR ? 'Evan' : (isSuperOrHR ? 'Seluruh Tim' : userName)}):\n\n`;
+    let res = `### 📅 Laporan Data Task & Timeline Pengerjaan (${mentionedPerson ? mentionedPerson.toUpperCase() : (isSuperOrHR ? 'Seluruh Tim' : userName)}):\n\n`;
     res += `Waktu Referensi: Hari ini (${dayNames[nowD.getDay()]}, ${nowD.getDate()} ${monthNames[nowD.getMonth()]} ${nowD.getFullYear()}) | Kemarin: **${yesterdayStr}**\n\n`;
 
     if (lower.includes('kemarin')) {
