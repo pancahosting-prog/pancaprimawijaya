@@ -78,7 +78,7 @@ export const supabaseService = {
   },
 
   // --- Manajemen Tugas ---
-  async getTasks(currentUser: { username: string; role: string }, isTrackingView: boolean = false) {
+  async getTasks(currentUser: { username: string; role: string; nama?: string; name?: string }, isTrackingView: boolean = false) {
     const roleLower = String(currentUser?.role || '').toLowerCase();
     const isSuper = !currentUser || 
       roleLower.includes('admin') || 
@@ -89,21 +89,39 @@ export const supabaseService = {
     // Join dengan task_logs untuk mendapatkan history lengkap
     let query = supabase.from('tasks').select('*, task_logs(*)');
     
+    const buildUserOrFilter = (uRaw: string, nRaw: string) => {
+      const u = String(uRaw || 'user').replace(/[(),"]/g, '').trim() || 'user';
+      const uLower = u.toLowerCase();
+      const uCap = u.charAt(0).toUpperCase() + u.slice(1);
+      const nClean = String(nRaw || '').replace(/[(),"]/g, '').trim();
+      const firstName = nClean ? nClean.split(/\s+/)[0].replace(/[(),"]/g, '').trim() : '';
+      const clauses = [
+        `owner_username.ilike."${u}"`,
+        `employee_name.ilike."${u}"`,
+        `collaborators.cs.{${u}}`,
+        `collaborators.cs.{${uLower}}`,
+        `collaborators.cs.{${uCap}}`
+      ];
+      if (nClean && nClean.toLowerCase() !== 'user' && nClean.toLowerCase() !== uLower) {
+        clauses.push(`employee_name.ilike."${nClean}"`);
+      }
+      if (firstName && firstName.length >= 2 && firstName.toLowerCase() !== 'user' && firstName.toLowerCase() !== nClean.toLowerCase()) {
+        clauses.push(`employee_name.ilike."${firstName}"`);
+      }
+      return clauses.join(',');
+    };
+
     // Jika BUKAN tampilan tracking (artinya tampilan Kalender/Dashboard/List Pribadi)
     if (!isTrackingView) {
       const u = currentUser?.username || 'superadmin';
-      const n = (currentUser as any)?.nama || (currentUser as any)?.name || 'Superadmin';
-      const uLower = u.toLowerCase();
-      const uCap = u.charAt(0).toUpperCase() + u.slice(1);
-      query = query.or(`owner_username.eq.${u},owner_username.eq.${uLower},owner_username.eq.${uCap},employee_name.eq.${n},employee_name.eq.${u},collaborators.cs.{${u}},collaborators.cs.{${uLower}},collaborators.cs.{${uCap}}`);
+      const n = currentUser?.nama || currentUser?.name || '';
+      query = query.or(buildUserOrFilter(u, n));
     } else {
-      // Jika tampilan tracking / AI view, ambil semua jika superadmin/admin, atau filter jika user biasa
+      // Jika tampilan tracking / AI view, ambil semua jika superadmin/admin/hr, atau filter jika user biasa
       if (!isSuper) {
         const u = currentUser?.username || 'user';
-        const n = (currentUser as any)?.nama || (currentUser as any)?.name || 'User';
-        const uLower = u.toLowerCase();
-        const uCap = u.charAt(0).toUpperCase() + u.slice(1);
-        query = query.or(`owner_username.eq.${u},owner_username.eq.${uLower},owner_username.eq.${uCap},employee_name.eq.${n},employee_name.eq.${u},collaborators.cs.{${u}},collaborators.cs.{${uLower}},collaborators.cs.{${uCap}}`);
+        const n = currentUser?.nama || currentUser?.name || '';
+        query = query.or(buildUserOrFilter(u, n));
       }
     }
 

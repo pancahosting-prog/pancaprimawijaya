@@ -836,6 +836,28 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
   });
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
 
+  const userRoleLower = (currentUser?.role || '').toLowerCase();
+  const isHRUser = userRoleLower === 'hr' || userRoleLower === 'hrd' || userRoleLower.includes('human resource');
+  const canViewAllTasks = isSuperAdmin || isHRUser;
+
+  const doesTaskBelongToCurrentUser = (t: any) => {
+    const curName = (currentUser?.nama || '').trim().toLowerCase();
+    const curFirst = curName.split(/\s+/)[0] || '';
+    const curUsername = (currentUser?.username || '').trim().toLowerCase();
+    const emp = String(t.employeeName || '').trim().toLowerCase();
+    const owner = String((t as any).owner_username || (t as any).owner || '').trim().toLowerCase();
+    const isCollab = Array.isArray(t.collaborators) && t.collaborators.some((c: any) => {
+      const cl = String(c).trim().toLowerCase();
+      return (curUsername && cl === curUsername) || (curName && cl === curName);
+    });
+    return (
+      (curUsername && (emp === curUsername || owner === curUsername)) ||
+      (curName && (emp === curName || owner === curName)) ||
+      (curFirst && curFirst.length >= 3 && (emp === curFirst || emp.includes(curFirst))) ||
+      isCollab
+    );
+  };
+
   // Task App data state for SuperAdmin & AI
   const [taskAppData, setTaskAppData] = useState<{
     tasks: Task[];
@@ -845,10 +867,17 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     let initialTasks: Task[] = [];
     try {
       const cached = localStorage.getItem('mypanca_cached_tasks');
-      if (cached) initialTasks = JSON.parse(cached);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          initialTasks = canViewAllTasks ? parsed : parsed.filter(doesTaskBelongToCurrentUser);
+        }
+      }
     } catch {}
     return { tasks: initialTasks, projects: [], drivePosts: [] };
   });
+
+  const taskLoadPromiseRef = useRef<Promise<{ tasks: Task[]; projects: Project[]; drivePosts: DrivePost[] }> | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -856,28 +885,40 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       try {
         const userObj = {
           username: currentUser?.username || 'superadmin',
-          role: currentUser?.role || (isSuperAdmin ? 'superadmin' : 'user')
+          role: currentUser?.role || (isSuperAdmin ? 'superadmin' : 'user'),
+          nama: currentUser?.nama || ''
         };
-        // Request full tracking view (true) so the AI has access to all team tasks and timelines
+        // Request full tracking view (true) so the AI has access to all team tasks (for superadmin/HR) or full user tasks
         const [tasksList, projectsList, postsList] = await Promise.all([
           supabaseService.getTasks(userObj, true),
           supabaseService.getProjects(),
           supabaseService.getDrivePosts()
         ]);
+        const safeTasks = Array.isArray(tasksList)
+          ? (canViewAllTasks ? tasksList : tasksList.filter(doesTaskBelongToCurrentUser))
+          : [];
+        const resolvedData = {
+          tasks: safeTasks,
+          projects: projectsList || [],
+          drivePosts: postsList || []
+        };
         if (isMounted) {
           setTaskAppData(prev => ({
-            tasks: (tasksList && tasksList.length > 0) ? tasksList : prev.tasks,
-            projects: projectsList || [],
-            drivePosts: postsList || []
+            tasks: (safeTasks.length > 0 || prev.tasks.length === 0) ? safeTasks : (canViewAllTasks ? prev.tasks : prev.tasks.filter(doesTaskBelongToCurrentUser)),
+            projects: resolvedData.projects,
+            drivePosts: resolvedData.drivePosts
           }));
         }
+        return resolvedData;
       } catch (e) {
         console.warn("Failed loading task app data for Mobile AI:", e);
+        return { tasks: [], projects: [], drivePosts: [] };
       }
     };
-    loadTaskAppData();
+    const p = loadTaskAppData();
+    taskLoadPromiseRef.current = p;
     return () => { isMounted = false; };
-  }, [isSuperAdmin, currentUser]);
+  }, [isSuperAdmin, canViewAllTasks, currentUser]);
 
   // Filter tasks visible to current user for updating tasks (always user's own tasks for Lanjutkan Task)
   const userVisibleTasks = React.useMemo(() => {
@@ -1509,6 +1550,19 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       }
       return { role: m.role, content: m.content };
     });
+    let latestTaskAppData = taskAppData;
+    if (taskLoadPromiseRef.current && latestTaskAppData.tasks.length === 0) {
+      try {
+        const loaded = await Promise.race([
+          taskLoadPromiseRef.current,
+          new Promise<null>(resolve => setTimeout(() => resolve(null), 3500))
+        ]);
+        if (loaded && (loaded.tasks.length > 0 || loaded.projects.length > 0)) {
+          latestTaskAppData = loaded;
+        }
+      } catch {}
+    }
+
     const contextPayload: PancaAIContext = {
       currentUser,
       activeCompany,
@@ -1518,7 +1572,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       suppliers,
       purchaseOrders,
       employees,
-      taskAppData,
+      appUsers,
+      taskAppData: latestTaskAppData,
       rolePermissions,
       taskAppDataExt: { qaQuestions },
       kpiData: kpiMasterData || undefined

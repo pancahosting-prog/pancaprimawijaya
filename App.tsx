@@ -2332,6 +2332,16 @@ const App: React.FC = () => {
   const canEditCurrentView = useMemo(() => {
     if (!currentUser || currentUser.role === 'superadmin') return true;
     
+    // Core access: purchasing role in Purchasing, stocklist role in Stocklist, admin in either
+    if (activeView === 'Produk') {
+        if (activeModule === 'Purchasing' && ['superadmin', 'admin', 'purchasing'].includes(currentUser.role)) {
+            return true;
+        }
+        if (activeModule === 'Stocklist' && ['superadmin', 'admin', 'stocklist'].includes(currentUser.role)) {
+            return true;
+        }
+    }
+
     let effectivePermId = activeView;
     const currentCategory = MENU_STRUCTURE.find(c => c.category === activeModule);
     if (currentCategory) {
@@ -2341,9 +2351,10 @@ const App: React.FC = () => {
         }
     }
 
-    const legacyPerm = currentUser.permissions?.find(p => p.id === activeView);
-    const perm = currentUser.permissions?.find(p => p.id === effectivePermId) || legacyPerm;
-    if (perm) return perm.canEdit;
+    const specificPerm = currentUser.permissions?.find(p => p.id === effectivePermId);
+    const genericPerm = currentUser.permissions?.find(p => p.id === activeView);
+    if (specificPerm !== undefined) return specificPerm.canEdit;
+    if (genericPerm !== undefined) return genericPerm.canEdit;
     
     // Check fallback to roleTemplates
     const roleTpl = roleTemplates[currentUser.role];
@@ -3580,12 +3591,16 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
           setRecycleBinCategory('All');
       }
 
-      // Find category for this view
+      // Check if current activeModule already has this viewId to avoid switching module inadvertently (e.g. Stocklist vs Purchasing Produk)
+      const currentCategoryHasItem = MENU_STRUCTURE.find(c => c.category === activeModule)?.items.some(item => item.id === viewId);
+
       let foundModule = activeModule;
-      for (const cat of MENU_STRUCTURE) {
-          if (cat.items.some(item => item.id === viewId)) {
-              foundModule = cat.category;
-              break;
+      if (!currentCategoryHasItem) {
+          for (const cat of MENU_STRUCTURE) {
+              if (cat.items.some(item => item.id === viewId)) {
+                  foundModule = cat.category;
+                  break;
+              }
           }
       }
       
@@ -5430,7 +5445,16 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                          </button>
 
                          {(() => {
-                             const showAddActions = ['Contacts', 'Produk', 'Suppliers', 'Purchase Orders', 'Procurement', 'Employees', 'Users', 'Access Control', 'Penawaran'].includes(activeView) && canEditCurrentView;
+                             const isProductInPurchasingOrStocklist = activeView === 'Produk' && (activeModule === 'Purchasing' || activeModule === 'Stocklist');
+                             const canAddProduct = isProductInPurchasingOrStocklist && (
+                                 !currentUser || 
+                                 ['superadmin', 'admin', 'purchasing', 'stocklist'].includes(currentUser.role) || 
+                                 canEditCurrentView
+                             );
+                             const showAddActions = (
+                                 canAddProduct ||
+                                 (['Contacts', 'Produk', 'Suppliers', 'Purchase Orders', 'Procurement', 'Employees', 'Users', 'Access Control', 'Penawaran'].includes(activeView) && canEditCurrentView)
+                             );
                              const showImportTrx = ['Transaksi', 'Penawaran', 'Invoice', 'Pembayaran', 'Belum Lunas', 'Pengiriman', 'Pesanan Selesai', 'Pesanan Batal'].includes(activeView as string) && currentUser?.role === 'superadmin';
                              const showImportOther = ['Users', 'Contacts', 'Produk'].includes(activeView) && currentUser?.role === 'superadmin';
                              
@@ -7241,31 +7265,63 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                   /* LIST / TABLE VIEW */
                   <div className={`${isCardView ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 md:gap-4' : 'bg-card border border-border shadow-xs rounded-xl overflow-hidden'}`}>
                       {!isCardView && (
-                          <div className="bg-muted/40 border-b border-border px-4 py-2.5 flex items-center gap-3">
-                              <div 
-                                   className="cursor-pointer"
-                                   onClick={() => toggleSelectAll(viewData)}
-                              >
-                                  <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedIds.length === viewData.length && viewData.length > 0 ? 'bg-primary border-primary text-primary-foreground' : 'bg-background border-input hover:border-ring'}`}>
-                                      {selectedIds.length === viewData.length && viewData.length > 0 && <Check size={11} strokeWidth={3} />}
+                          <div className="bg-muted/40 border-b border-border px-4 py-2.5 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                  <div 
+                                       className="cursor-pointer"
+                                       onClick={() => toggleSelectAll(viewData)}
+                                  >
+                                      <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedIds.length === viewData.length && viewData.length > 0 ? 'bg-primary border-primary text-primary-foreground' : 'bg-background border-input hover:border-ring'}`}>
+                                          {selectedIds.length === viewData.length && viewData.length > 0 && <Check size={11} strokeWidth={3} />}
+                                      </div>
                                   </div>
+                                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Pilih Semua ({selectedIds.length}/{viewData.length})</span>
                               </div>
-                              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Pilih Semua ({selectedIds.length}/{viewData.length})</span>
+                              {activeView === 'Produk' && (activeModule === 'Purchasing' || activeModule === 'Stocklist') && (
+                                  <button
+                                      type="button"
+                                      onClick={() => {
+                                          setCurrentProd({ satuan: 'Pcs', kode: generateProductCode() } as any);
+                                          setTempStock({ stock: 0, hpp: 0, hargaJual: 0, supplierId: '' });
+                                          setShowDrawer('prod');
+                                      }}
+                                      className="bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-50 dark:hover:bg-zinc-200 text-zinc-50 dark:text-zinc-900 text-xs font-semibold px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer active:scale-[0.98]"
+                                  >
+                                      <Plus size={14} />
+                                      <span>Tambah Produk</span>
+                                  </button>
+                              )}
                           </div>
                       )}
                       
                       {/* CARD VIEW FOR MOBILE (Simplified) */}
                       {isCardView && (
-                          <div className="bg-muted/40 border-b border-border px-4 py-2.5 flex items-center gap-3 col-span-full rounded-lg mb-2">
-                              <div 
-                                   className="cursor-pointer"
-                                   onClick={() => toggleSelectAll(viewData)}
-                              >
-                                  <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedIds.length === viewData.length && viewData.length > 0 ? 'bg-primary border-primary text-primary-foreground' : 'bg-background border-input hover:border-ring'}`}>
-                                      {selectedIds.length === viewData.length && viewData.length > 0 && <Check size={11} strokeWidth={3} />}
+                          <div className="bg-muted/40 border-b border-border px-4 py-2.5 flex items-center justify-between gap-3 col-span-full rounded-lg mb-2">
+                              <div className="flex items-center gap-3">
+                                  <div 
+                                       className="cursor-pointer"
+                                       onClick={() => toggleSelectAll(viewData)}
+                                  >
+                                      <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedIds.length === viewData.length && viewData.length > 0 ? 'bg-primary border-primary text-primary-foreground' : 'bg-background border-input hover:border-ring'}`}>
+                                          {selectedIds.length === viewData.length && viewData.length > 0 && <Check size={11} strokeWidth={3} />}
+                                      </div>
                                   </div>
+                                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Pilih Semua ({selectedIds.length}/{viewData.length})</span>
                               </div>
-                              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Pilih Semua ({selectedIds.length}/{viewData.length})</span>
+                              {activeView === 'Produk' && (activeModule === 'Purchasing' || activeModule === 'Stocklist') && (
+                                  <button
+                                      type="button"
+                                      onClick={() => {
+                                          setCurrentProd({ satuan: 'Pcs', kode: generateProductCode() } as any);
+                                          setTempStock({ stock: 0, hpp: 0, hargaJual: 0, supplierId: '' });
+                                          setShowDrawer('prod');
+                                      }}
+                                      className="bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-50 dark:hover:bg-zinc-200 text-zinc-50 dark:text-zinc-900 text-xs font-semibold px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer active:scale-[0.98]"
+                                  >
+                                      <Plus size={14} />
+                                      <span>Tambah Produk</span>
+                                  </button>
+                              )}
                           </div>
                       )}
                       {isCardView ? (
@@ -8723,10 +8779,28 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                                 {viewData.length === 0 && (
                                     <tr>
                                         <td colSpan={10} className="px-4 py-10 text-center text-slate-400 text-sm">
-                                            {activeView === 'Recycle Bin' 
-                                                ? `Tidak ada data ${recycleBinCategory === 'All' ? '' : recycleBinCategory} di Recycle Bin.`
-                                                : `No records found in ${activeView}.`
-                                            }
+                                            <div>
+                                                {activeView === 'Recycle Bin' 
+                                                    ? `Tidak ada data ${recycleBinCategory === 'All' ? '' : recycleBinCategory} di Recycle Bin.`
+                                                    : `No records found in ${activeView}.`
+                                                }
+                                            </div>
+                                            {activeView === 'Produk' && (activeModule === 'Purchasing' || activeModule === 'Stocklist') && (
+                                                <div className="mt-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setCurrentProd({ satuan: 'Pcs', kode: generateProductCode() } as any);
+                                                            setTempStock({ stock: 0, hpp: 0, hargaJual: 0, supplierId: '' });
+                                                            setShowDrawer('prod');
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-50 dark:hover:bg-zinc-200 text-zinc-50 dark:text-zinc-900 transition-colors shadow-xs cursor-pointer active:scale-95"
+                                                    >
+                                                        <Plus size={14} />
+                                                        <span>Tambah Produk</span>
+                                                    </button>
+                                                </div>
+                                            )}
                                         </td>
                                     </tr>
                                 )}
