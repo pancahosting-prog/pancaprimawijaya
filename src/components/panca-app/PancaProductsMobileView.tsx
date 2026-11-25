@@ -178,7 +178,7 @@ export const PancaProductsMobileView: React.FC<PancaProductsMobileViewProps> = (
 
     const newId = 'P-' + Date.now();
     const activeCompanyId = activeCompany?.id || '1';
-    const initStok = Number(newProdData.stok) || 0;
+    const initStok = Math.max(0, Number(newProdData.stok) || 0);
 
     const initialLots = initStok > 0 ? [{
       lot: Date.now(),

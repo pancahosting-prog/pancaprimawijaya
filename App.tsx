@@ -1143,8 +1143,15 @@ const UploadDataView = ({
   transactions, setTransactions,
   suppliers, setSuppliers,
   activeCompanyId, syncToSupabase,
-  salesMembers
+  salesMembers,
+  currentUser
 }: any) => {
+  const isUploadSuperadmin = Boolean(
+    currentUser && (
+      String(currentUser.role || '').trim().toLowerCase() === 'superadmin' ||
+      String(currentUser.username || '').trim().toLowerCase() === 'superadmin'
+    )
+  );
   const headers = UPLOAD_HEADERS[activeUploadType] || [];
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1462,6 +1469,11 @@ const UploadDataView = ({
             
             // Deterministic Lot ID for imports to prevent duplication on re-import
             const importLotId = `${product.id}_lot_IMPORT`;
+            const prevImportLot = (product.lots || []).find(l => l.id === importLotId);
+            const prevImportStock = Number(prevImportLot?.stock) || 0;
+            const safeImportStock = !isUploadSuperadmin && prevImportLot
+              ? Math.max(stockVal, prevImportStock)
+              : stockVal;
             const otherLots = (product.lots || []).filter(l => l.id !== importLotId);
             
             product.lots = [
@@ -1471,7 +1483,7 @@ const UploadDataView = ({
                 lot: Date.now(),
                 kode: `${product.kode}-IMPORT`,
                 supplierId: defaultSupplier.id,
-                stock: stockVal,
+                stock: safeImportStock,
                 hpp: hppVal || product.hpp || 0,
                 hargaJual: priceVal || (product.lots.length > 0 ? product.lots[product.lots.length - 1].hargaJual : 0) || 0,
                 tanggal: new Date().toISOString()
@@ -2134,6 +2146,12 @@ const App: React.FC = () => {
   const [editingTutorialId, setEditingTutorialId] = useState<string | null>(null);
   const [tutorialEditContent, setTutorialEditContent] = useState<string>('');
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const isStrictSuperAdmin = Boolean(
+    currentUser && (
+      String(currentUser.role || '').trim().toLowerCase() === 'superadmin' ||
+      String(currentUser.username || '').trim().toLowerCase() === 'superadmin'
+    )
+  );
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
 
@@ -4596,6 +4614,13 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
             return;
         }
         
+        // Non-superadmin cannot reduce stock outside transactions
+        if (!isStrictSuperAdmin && tempStock.stock < 0) {
+            setConfirmModal(null);
+            alert("Akses Ditolak: Selain Superadmin, pengurangan stok di luar Transaksi tidak diperbolehkan.");
+            return;
+        }
+
         // Check if adding initial stock, supplier is mandatory
         if (tempStock.stock > 0 && !tempStock.supplierId) {
             setConfirmModal(null);
@@ -4709,6 +4734,14 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
             newProd.supplierId = tempStock.supplierId;
         }
         newProd.stok = newProd.lots.reduce((acc, l) => acc + (l.stock || 0), 0);
+        if (existingProd && !isStrictSuperAdmin) {
+            const prevLotTotal = (existingProd.lots || []).reduce((acc, l) => acc + (Number(l.stock) || 0), 0);
+            if (newProd.stok < prevLotTotal) {
+                setConfirmModal(null);
+                alert("Akses Ditolak: Selain Superadmin, pengurangan stok di luar Transaksi tidak diperbolehkan.");
+                return;
+            }
+        }
 
         setProducts(prev => {
             const result = currentProd.id ? prev.map(p => p.id === newProd.id ? newProd : p) : [...prev, newProd];
@@ -4838,17 +4871,26 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
 
   const handleQuickUpdateProduct = async (p: Product, field: 'stock' | 'hargaJual' | 'hpp') => {
     let currentVal = '';
-    if (field === 'stock') currentVal = getAvailableStock(p.nama).toString();
+    const currentAvailableStock = getAvailableStock(p.nama);
+    if (field === 'stock') currentVal = currentAvailableStock.toString();
     if (field === 'hargaJual') currentVal = getProductPrice(p).toString();
     if (field === 'hpp') currentVal = getProductHPP(p).toString();
 
     let titleLabel = field === 'stock' ? 'Stok' : field === 'hargaJual' ? 'Harga Jual' : 'HPP';
-    const input = prompt(`Update ${titleLabel} untuk ${p.nama}:`, currentVal);
+    const promptNote = (field === 'stock' && !isStrictSuperAdmin)
+      ? `\n(Minimal ${currentVal} — selain Superadmin tidak diperbolehkan mengurangi stok di luar Transaksi)`
+      : '';
+    const input = prompt(`Update ${titleLabel} untuk ${p.nama}:${promptNote}`, currentVal);
     
     if (input === null || input.trim() === '') return;
     const numValue = parseFloat(input);
     if (isNaN(numValue) || numValue < 0) {
         alert('Nilai tidak valid');
+        return;
+    }
+
+    if (field === 'stock' && !isStrictSuperAdmin && numValue < currentAvailableStock) {
+        alert('Akses Ditolak: Selain Superadmin, pengurangan stok di luar Transaksi tidak diperbolehkan. Stok hanya dapat berkurang melalui menu Transaksi.');
         return;
     }
 
@@ -4875,6 +4917,10 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
         const totalIncoming = updatedProd.lots.reduce((acc, lot) => acc + lot.stock, 0);
         const newIncoming = numValue + totalSold;
         const diff = newIncoming - totalIncoming;
+        if (!isStrictSuperAdmin && diff < 0) {
+            alert('Akses Ditolak: Selain Superadmin, pengurangan stok di luar Transaksi tidak diperbolehkan. Stok hanya dapat berkurang melalui menu Transaksi.');
+            return;
+        }
         updatedProd.stok = numValue;
         updatedProd.lots[lastLotIndex].stock += diff;
         if (updatedProd.lots[lastLotIndex].stock < 0) {
@@ -6772,6 +6818,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                         activeCompanyId={activeCompanyId}
                         syncToSupabase={syncToSupabase}
                         salesMembers={salesMembers}
+                        currentUser={currentUser}
                       />
                   ) : activeView === 'Log User' ? (
                       <div className="max-w-6xl mx-auto space-y-6">
@@ -11704,7 +11751,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                       <div className="font-bold text-sm text-slate-800 border-b pb-2">{currentProd.id ? 'Tambah/Penyesuaian Stok (Opsional)' : 'Stok Awal (Opsional)'}</div>
                       <div><label className={labelClass}>Supplier</label><SearchableSelect options={suppliers.filter(s => s.companyId === activeCompanyId || s.company_id === activeCompanyId).map(s => ({ value: s.id, label: s.nama }))} value={tempStock.supplierId || ''} onChange={v => setTempStock({...tempStock, supplierId: v})} placeholder="Pilih Supplier" className="bg-white" /></div>
                       <div className={`grid ${activeModule === 'Stocklist' ? 'grid-cols-1' : 'grid-cols-3'} gap-3`}>
-                         <div><label className={labelClass}>Stok Masuk</label><input className={`${inputClass} bg-white`} value={formatInputNumber(tempStock.stock)} onChange={e => setTempStock({...tempStock, stock: parseInputNumber(e.target.value)})} placeholder="0"/></div>
+                         <div><label className={labelClass}>Stok Masuk</label><input className={`${inputClass} bg-white`} value={formatInputNumber(tempStock.stock)} onChange={e => { const val = parseInputNumber(e.target.value); setTempStock({...tempStock, stock: !isStrictSuperAdmin ? Math.max(0, val) : val}); }} placeholder="0"/></div>
                          {activeModule !== 'Stocklist' && (
                              <>
                                 <div>

@@ -150,7 +150,7 @@ export const PancaProductMobileView: React.FC<PancaProductMobileViewProps> = ({
       nama: newProd.nama.trim(),
       kategori: newProd.kategori,
       satuan: newProd.satuan || 'Unit',
-      stok: Number(newProd.stokAwal) || 0,
+      stok: Math.max(0, Number(newProd.stokAwal) || 0),
       minStok: Number(newProd.minStok) || 10,
       hargaJual: 0,
       hpp: 0,
@@ -163,7 +163,7 @@ export const PancaProductMobileView: React.FC<PancaProductMobileViewProps> = ({
         {
           lot: Date.now(),
           kode: 'INIT',
-          stock: Number(newProd.stokAwal) || 0,
+          stock: Math.max(0, Number(newProd.stokAwal) || 0),
           hpp: 0,
           hargaJual: 0,
           tanggal: new Date().toISOString().split('T')[0]

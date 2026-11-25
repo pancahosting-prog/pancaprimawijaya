@@ -11,7 +11,7 @@ import remarkGfm from 'remark-gfm';
 import { supabaseService } from '../../../task/services/supabaseService';
 import { supabase } from '../../lib/supabase';
 import { Task, Project, DrivePost } from '../../../task/types';
-import { queryPancaAI, PancaAIContext, generateSmartDynamicFallback } from '../../services/pancaAIService';
+import { queryPancaAI, PancaAIContext, generateSmartDynamicFallback, isCandidateAuthorizedUser } from '../../services/pancaAIService';
 import { AnswerSource, detectAnswerSources } from '../../services/webKnowledgeService';
 import { SUPPORTED_GEMINI_MODELS } from '../../services/geminiKeyService';
 import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl, extractProductPhoto, hasDatabaseProductImage } from '../../services/pancaProductCatalog';
@@ -329,10 +329,12 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     return null;
   });
 
+  const canAccessCandidates = isCandidateAuthorizedUser(currentUser);
   const [candidateMasterData, setCandidateMasterData] = useState<{
     folders: CandidateFolder[];
     candidates: CandidateRecord[];
   } | null>(null);
+  const candidateLoadPromiseRef = useRef<Promise<{ folders: CandidateFolder[]; candidates: CandidateRecord[] }> | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -344,20 +346,24 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       console.warn('[PancaAIChatView] KPI sync notice:', err);
     });
 
-    const roleLow = (currentUser?.role || '').toLowerCase();
-    const isHROrSuper = isSuperAdmin || roleLow === 'hr' || roleLow === 'hrd' || roleLow.includes('human resource');
-    if (isHROrSuper) {
-      loadCandidateDataFromSupabase()
+    if (canAccessCandidates) {
+      const candPromise = loadCandidateDataFromSupabase()
         .then(res => {
+          const payload = { folders: res.folders || [], candidates: res.candidates || [] };
           if (isMounted) {
-            setCandidateMasterData({ folders: res.folders, candidates: res.candidates });
+            setCandidateMasterData(payload);
           }
+          return payload;
         })
-        .catch(() => {});
+        .catch(() => ({ folders: [], candidates: [] }));
+      candidateLoadPromiseRef.current = candPromise;
+    } else {
+      setCandidateMasterData(null);
+      candidateLoadPromiseRef.current = null;
     }
 
     return () => { isMounted = false; };
-  }, [isSuperAdmin, currentUser?.role]);
+  }, [canAccessCandidates, currentUser?.role, currentUser?.username]);
 
   // Live Database Products: combines props, LocalStorage, and direct Supabase database fetch
   const [effectiveProducts, setEffectiveProducts] = useState<any[]>(() => {
@@ -1582,6 +1588,31 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       } catch {}
     }
 
+    let latestCandidateData = candidateMasterData;
+    if (canAccessCandidates) {
+      if (!latestCandidateData && candidateLoadPromiseRef.current) {
+        try {
+          const loadedCand = await Promise.race([
+            candidateLoadPromiseRef.current,
+            new Promise<null>(resolve => setTimeout(() => resolve(null), 4000))
+          ]);
+          if (loadedCand) latestCandidateData = loadedCand;
+        } catch {}
+      }
+      if (!latestCandidateData) {
+        try {
+          const freshCand = await Promise.race([
+            loadCandidateDataFromSupabase(),
+            new Promise<null>(resolve => setTimeout(() => resolve(null), 4000))
+          ]);
+          if (freshCand) {
+            latestCandidateData = { folders: freshCand.folders || [], candidates: freshCand.candidates || [] };
+            setCandidateMasterData(latestCandidateData);
+          }
+        } catch {}
+      }
+    }
+
     const contextPayload: PancaAIContext = {
       currentUser,
       activeCompany,
@@ -1596,7 +1627,7 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       rolePermissions,
       taskAppDataExt: { qaQuestions },
       kpiData: kpiMasterData || undefined,
-      candidateData: (isSuperAdmin || isHRUser) ? (candidateMasterData || undefined) : undefined
+      candidateData: canAccessCandidates ? (latestCandidateData || undefined) : undefined
     };
 
     try {
@@ -3283,11 +3314,13 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
               { label: '➕ Tugas Baru', action: handleOpenNewTaskModal },
               { label: '🔄 Lanjutkan Task', action: handleOpenUpdateTaskPicker },
               { label: '📊 Analisa Pekerjaan', prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
+              ...(canAccessCandidates ? [{ label: '👥 Screening Kandidat', prompt: 'Rekap seluruh data kandidat pelamar kerja, analisa detail isi CV masing-masing, dan rekomendasikan kandidat terbaik untuk tiap posisi.' }] : []),
               { label: 'Tambah Customer', prompt: 'tambah customer baru' },
               { label: 'Transaksi Baru', prompt: 'tambah transaksi baru' },
               { label: 'Tambah Penawaran', prompt: 'tambah penawaran baru' },
               { label: 'Stok Menipis', prompt: 'Stok menipis' }
             ] : [
+              ...(canAccessCandidates ? [{ label: '👥 Screening Kandidat', prompt: 'Rekap seluruh data kandidat pelamar kerja, analisa detail isi CV masing-masing, dan rekomendasikan kandidat terbaik untuk tiap posisi.' }] : []),
               { label: '➕ Tugas Baru', action: handleOpenNewTaskModal },
               { label: '🔄 Lanjutkan Task', action: handleOpenUpdateTaskPicker },
               { label: '📊 Analisa Pekerjaan', prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' }

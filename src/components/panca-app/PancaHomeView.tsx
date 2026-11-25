@@ -104,6 +104,14 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
   };
 
   const userRole = (currentUser?.role || '').toLowerCase();
+  const isStrictSuperAdmin = Boolean(
+    currentUser && (
+      userRole === 'superadmin' ||
+      userRole === 'super admin' ||
+      currentUser?.username?.toLowerCase() === 'superadmin' ||
+      currentUser?.nama?.toLowerCase() === 'superadmin'
+    )
+  );
   const isSuperAdmin = !currentUser || userRole.includes('admin') || currentUser?.username?.toLowerCase() === 'superadmin' || currentUser?.nama?.toLowerCase() === 'superadmin';
   const isStocklist = userRole === 'stocklist' || userRole === 'purchasing' || userRole === 'gudang';
   const isSalesOrAdmin = (isSuperAdmin || userRole === 'sales') && !isStocklist;
@@ -125,7 +133,7 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
     { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
     { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
     { label: '📊 Analisa Pekerjaan', icon: Target, prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
-    ...(isSuperAdmin ? [{ label: '👥 Screening Kandidat', icon: Award, prompt: 'Rekap data kandidat dan rekomendasikan pelamar terbaik berdasarkan isi CV PDF.' }] : []),
+    ...(isStrictSuperAdmin ? [{ label: '👥 Screening Kandidat', icon: Award, prompt: 'Rekap data kandidat dan rekomendasikan pelamar terbaik berdasarkan isi CV PDF.' }] : []),
   ] : userRole === 'engineer' ? [
     { label: '📁 Knowledge Project', icon: FolderKanban, prompt: 'buka database project', onClick: onOpenProject },
     { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },

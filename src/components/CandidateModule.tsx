@@ -70,6 +70,10 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
   currentUser,
   activeCompanyId = '1',
 }) => {
+  const userRoleLower = (currentUser?.role || '').trim().toLowerCase();
+  const usernameLower = (currentUser?.username || '').trim().toLowerCase();
+  const isSuperadmin = userRoleLower === 'superadmin' || userRoleLower === 'super admin' || usernameLower === 'superadmin';
+
   const [folders, setFolders] = useState<CandidateFolder[]>([]);
   const [candidates, setCandidates] = useState<CandidateRecord[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
@@ -166,7 +170,7 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
         );
       }
 
-      if (cloudIk && typeof cloudIk === 'object' && !ikConfig.publicKey) {
+      if (cloudIk && typeof cloudIk === 'object' && (!ikConfig.publicKey || !ikConfig.privateKey || !ikConfig.urlEndpoint)) {
         const merged: ImageKitConfigState = {
           urlEndpoint: String(cloudIk.urlEndpoint || ikConfig.urlEndpoint || '').trim(),
           publicKey: String(cloudIk.publicKey || ikConfig.publicKey || '').trim(),
@@ -258,9 +262,14 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
     };
   };
 
-  // Save ImageKit Config
+  // Save ImageKit Config (Superadmin only)
   const handleSaveIkConfig = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSuperadmin) {
+      setShowIkModal(false);
+      showToast('error', 'Hanya Superadmin yang diperbolehkan mengubah pengaturan ImageKit.');
+      return;
+    }
     const cleaned: ImageKitConfigState = {
       urlEndpoint: ikDraft.urlEndpoint.trim(),
       publicKey: ikDraft.publicKey.trim(),
@@ -270,7 +279,7 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
     localStorage.setItem('mypanca_imagekit_url', cleaned.urlEndpoint);
     localStorage.setItem('mypanca_imagekit_public', cleaned.publicKey);
     localStorage.setItem('mypanca_imagekit_private', cleaned.privateKey);
-    await saveAppSettingToSupabase('imagekit_settings', cleaned, currentUser?.username || 'hr').catch(() => {});
+    await saveAppSettingToSupabase('imagekit_settings', cleaned, currentUser?.username || 'superadmin').catch(() => {});
     setShowIkModal(false);
     showToast('success', 'Konfigurasi ImageKit tersimpan dan siap digunakan.');
   };
@@ -343,11 +352,16 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
   const handleConfirmDelete = async () => {
     if (!confirmDelete) return;
     if (confirmDelete.type === 'folder') {
+      if (!isSuperadmin) {
+        showToast('error', 'Role HR tidak diperbolehkan menghapus folder kandidat. Hubungi Superadmin untuk menghapus folder.');
+        setConfirmDelete(null);
+        return;
+      }
       const res = await deleteCandidateFolderFromDb(
         confirmDelete.id,
         folders,
         candidates,
-        currentUser?.username || 'hr'
+        currentUser?.username || 'superadmin'
       );
       const nextFolders = folders.filter(f => f.id !== confirmDelete.id);
       const nextCandidates = candidates.filter(c => c.folderId !== confirmDelete.id);
@@ -455,9 +469,13 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
     }
 
     if (!isIkConfigured) {
-      setIkDraft(ikConfig);
-      setShowIkModal(true);
-      showToast('error', 'Konfigurasi ImageKit belum diisi. Silakan lengkapi terlebih dahulu.');
+      if (isSuperadmin) {
+        setIkDraft(ikConfig);
+        setShowIkModal(true);
+        showToast('error', 'Konfigurasi ImageKit belum diisi. Silakan lengkapi terlebih dahulu.');
+      } else {
+        showToast('error', 'Konfigurasi ImageKit belum diatur oleh Superadmin. Silakan hubungi Superadmin.');
+      }
       return;
     }
 
@@ -607,9 +625,13 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
     }
 
     if (!isIkConfigured) {
-      setIkDraft(ikConfig);
-      setShowIkModal(true);
-      showToast('error', 'Konfigurasi ImageKit belum lengkap. Lengkapi terlebih dahulu sebelum menarik file.');
+      if (isSuperadmin) {
+        setIkDraft(ikConfig);
+        setShowIkModal(true);
+        showToast('error', 'Konfigurasi ImageKit belum lengkap. Lengkapi terlebih dahulu sebelum menarik file.');
+      } else {
+        showToast('error', 'Konfigurasi ImageKit belum diatur oleh Superadmin. Silakan hubungi Superadmin.');
+      }
       return;
     }
 
@@ -761,13 +783,13 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
   );
 
   return (
-    <div className="h-full flex flex-col gap-4 text-foreground">
+    <div className="min-h-full lg:h-full flex flex-col gap-4 text-foreground">
       {/* Top Module Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-card border border-border rounded-xl px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-card border border-border rounded-xl px-4 sm:px-5 py-4">
         <div>
           <div className="flex items-center gap-2.5">
             <UserCheck className="w-5 h-5 text-violet-600 dark:text-violet-400" />
-            <h1 className="text-lg font-bold tracking-tight">Manajemen Kandidat & Pelamar Kerja</h1>
+            <h1 className="text-base sm:text-lg font-bold tracking-tight">Manajemen Kandidat & Pelamar Kerja</h1>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             Kelola folder lowongan secara manual, tarik CV PDF dari link folder Google Drive atau upload langsung ke ImageKit, lalu ekstrak profil otomatis via AI.
@@ -785,21 +807,23 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
               <span>Setup SQL Supabase</span>
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              setIkDraft(ikConfig);
-              setShowIkModal(true);
-            }}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition cursor-pointer ${
-              isIkConfigured
-                ? 'bg-background hover:bg-accent text-foreground border-border'
-                : 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 hover:bg-rose-500/20'
-            }`}
-          >
-            <Settings size={14} />
-            <span>{isIkConfigured ? 'ImageKit Terhubung' : 'Atur ImageKit'}</span>
-          </button>
+          {isSuperadmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setIkDraft(ikConfig);
+                setShowIkModal(true);
+              }}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                isIkConfigured
+                  ? 'bg-background hover:bg-accent text-foreground border-border'
+                  : 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 hover:bg-rose-500/20'
+              }`}
+            >
+              <Settings size={14} />
+              <span>{isIkConfigured ? 'ImageKit Terhubung' : 'Atur ImageKit'}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={loadAll}
@@ -846,9 +870,9 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
       )}
 
       {/* Main Split Content */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="lg:flex-1 lg:min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left Sidebar: Manual Position Folders */}
-        <div className="lg:col-span-3 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
+        <div className="lg:col-span-3 bg-card border border-border rounded-xl flex flex-col overflow-hidden lg:h-full">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Folder Posisi ({folders.length})
@@ -862,7 +886,7 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="max-h-56 lg:max-h-none lg:flex-1 overflow-y-auto p-2 space-y-1">
             {isLoading && folders.length === 0 ? (
               <div className="py-10 flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
                 <Loader2 size={18} className="animate-spin" />
@@ -927,17 +951,19 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
                       >
                         <Edit3 size={12} />
                       </button>
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation();
-                          setConfirmDelete({ type: 'folder', id: folder.id, label: folder.name });
-                        }}
-                        title="Hapus Folder"
-                        className="p-1 rounded hover:bg-rose-500/20 text-rose-500 cursor-pointer"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      {isSuperadmin && (
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            setConfirmDelete({ type: 'folder', id: folder.id, label: folder.name });
+                          }}
+                          title="Hapus Folder"
+                          className="p-1 rounded hover:bg-rose-500/20 text-rose-500 cursor-pointer"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -947,7 +973,7 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
         </div>
 
         {/* Right Area: Selected Folder Workspace */}
-        <div className="lg:col-span-9 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
+        <div className="lg:col-span-9 bg-card border border-border rounded-xl flex flex-col lg:overflow-hidden lg:h-full min-h-[420px]">
           {!selectedFolder ? (
             <div className="flex-1 flex flex-col items-center justify-center p-10 text-center space-y-3">
               <Briefcase className="w-10 h-10 text-muted-foreground/40" />
@@ -1066,10 +1092,10 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
                 </div>
               </div>
 
-              {/* Candidate Table */}
-              <div className="flex-1 overflow-auto">
+              {/* Candidate List (Mobile Cards + Desktop Table) */}
+              <div className="flex-1 lg:overflow-auto">
                 {folderCandidates.length === 0 ? (
-                  <div className="p-12 text-center space-y-3">
+                  <div className="p-8 sm:p-12 text-center space-y-3">
                     <FileText className="w-9 h-9 mx-auto text-muted-foreground/40" />
                     <div className="space-y-1">
                       <p className="text-sm font-semibold">Belum ada CV kandidat di folder ini</p>
@@ -1079,60 +1105,58 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead className="bg-muted/40 border-b border-border text-[11px] uppercase tracking-wider text-muted-foreground sticky top-0 z-10">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Kandidat & Kontak</th>
-                        <th className="px-4 py-3 font-semibold">Pendidikan & Pengalaman</th>
-                        <th className="px-4 py-3 font-semibold">Keahlian & Ringkasan AI</th>
-                        <th className="px-4 py-3 font-semibold">Status</th>
-                        <th className="px-4 py-3 font-semibold text-right">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
+                  <>
+                    {/* Mobile Card List (< md) */}
+                    <div className="md:hidden divide-y divide-border">
                       {folderCandidates.map(cand => {
                         const isAnalyzingThis = Boolean(analyzingIds[cand.id]);
                         return (
-                          <tr
+                          <div
                             key={cand.id}
                             onClick={() => setSelectedCandidateId(cand.id)}
-                            className={`hover:bg-muted/40 transition cursor-pointer ${
-                              selectedCandidateId === cand.id ? 'bg-muted/60' : ''
+                            className={`p-4 space-y-2.5 transition cursor-pointer ${
+                              selectedCandidateId === cand.id ? 'bg-muted/60' : 'hover:bg-muted/30'
                             }`}
                           >
-                            <td className="px-4 py-3 align-top min-w-[200px]">
-                              <div className="font-bold text-foreground">{cand.namaKandidat}</div>
-                              <div className="text-[11px] text-muted-foreground mt-0.5 space-y-0.5">
-                                <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-sm font-bold text-foreground break-words">
+                                  {cand.namaKandidat}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground mt-0.5">
                                   {cand.noHp || 'No. HP belum terbaca'}
                                   {cand.domisili ? ` · ${cand.domisili}` : ''}
                                 </div>
-                                {cand.email && <div className="truncate max-w-[200px]">{cand.email}</div>}
-                                <div className="text-[10px] opacity-80">
-                                  Sumber: {cand.sourceType === 'drive' ? 'Google Drive' : 'Upload Manual'} · {formatBytes(cand.fileSize)}
-                                </div>
+                                {cand.email && (
+                                  <div className="text-[11px] text-muted-foreground truncate">
+                                    {cand.email}
+                                  </div>
+                                )}
                               </div>
-                            </td>
+                              <div onClick={e => e.stopPropagation()} className="shrink-0">
+                                <select
+                                  value={cand.statusRekrutmen}
+                                  onChange={e =>
+                                    handleUpdateCandidateStatus(cand, e.target.value as RecruitmentStatus)
+                                  }
+                                  className="bg-background border border-input rounded-md px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
+                                >
+                                  {RECRUITMENT_STATUSES.map(st => (
+                                    <option key={st} value={st}>
+                                      {st}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
 
-                            <td className="px-4 py-3 align-top min-w-[190px]">
+                            <div className="text-xs space-y-1">
                               <div className="font-medium text-foreground">
-                                {cand.pendidikan || <span className="text-muted-foreground italic">Belum terbaca AI</span>}
+                                {cand.pendidikan || <span className="text-muted-foreground italic">Pendidikan belum terbaca AI</span>}
+                                {cand.pengalamanTahun ? ` · ${cand.pengalamanTahun}` : ''}
                               </div>
-                              {cand.pengalamanTahun && (
-                                <div className="text-[11px] text-muted-foreground mt-0.5">
-                                  Pengalaman: {cand.pengalamanTahun}
-                                </div>
-                              )}
-                              {cand.pengalamanUtama && (
-                                <div className="text-[11px] text-muted-foreground mt-1 line-clamp-2 max-w-[240px]">
-                                  {cand.pengalamanUtama}
-                                </div>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3 align-top max-w-[300px]">
                               {cand.aiStatus === 'done' ? (
-                                <div className="space-y-1">
+                                <>
                                   {cand.skills.length > 0 && (
                                     <div className="text-[11px] font-medium text-violet-700 dark:text-violet-300">
                                       {cand.skills.slice(0, 5).join(' · ')}
@@ -1141,7 +1165,7 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
                                   <p className="text-[11px] text-muted-foreground line-clamp-2">
                                     {cand.ringkasanAi || cand.aiFullText}
                                   </p>
-                                </div>
+                                </>
                               ) : cand.aiStatus === 'error' ? (
                                 <div className="text-[11px] text-rose-600 dark:text-rose-400">
                                   Gagal analisa AI: {cand.ringkasanAi || 'Coba ulangi'}
@@ -1151,26 +1175,13 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
                                   Menunggu pembacaan PDF oleh AI
                                 </div>
                               )}
-                            </td>
+                            </div>
 
-                            <td className="px-4 py-3 align-top" onClick={e => e.stopPropagation()}>
-                              <select
-                                value={cand.statusRekrutmen}
-                                onChange={e =>
-                                  handleUpdateCandidateStatus(cand, e.target.value as RecruitmentStatus)
-                                }
-                                className="bg-background border border-input rounded-md px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
-                              >
-                                {RECRUITMENT_STATUSES.map(st => (
-                                  <option key={st} value={st}>
-                                    {st}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-
-                            <td className="px-4 py-3 align-top text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                              <div className="inline-flex items-center gap-1">
+                            <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60">
+                              <span className="text-[10px] text-muted-foreground">
+                                {cand.sourceType === 'drive' ? 'Google Drive' : 'Upload Manual'} · {formatBytes(cand.fileSize)}
+                              </span>
+                              <div className="inline-flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                 <button
                                   type="button"
                                   onClick={() => setSelectedCandidateId(cand.id)}
@@ -1216,12 +1227,159 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
                                   <Trash2 size={14} />
                                 </button>
                               </div>
-                            </td>
-                          </tr>
+                            </div>
+                          </div>
                         );
                       })}
-                    </tbody>
-                  </table>
+                    </div>
+
+                    {/* Desktop Table (>= md) */}
+                    <div className="hidden md:block overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-muted/40 border-b border-border text-[11px] uppercase tracking-wider text-muted-foreground sticky top-0 z-10">
+                          <tr>
+                            <th className="px-4 py-3 font-semibold">Kandidat & Kontak</th>
+                            <th className="px-4 py-3 font-semibold">Pendidikan & Pengalaman</th>
+                            <th className="px-4 py-3 font-semibold">Keahlian & Ringkasan AI</th>
+                            <th className="px-4 py-3 font-semibold">Status</th>
+                            <th className="px-4 py-3 font-semibold text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {folderCandidates.map(cand => {
+                            const isAnalyzingThis = Boolean(analyzingIds[cand.id]);
+                            return (
+                              <tr
+                                key={cand.id}
+                                onClick={() => setSelectedCandidateId(cand.id)}
+                                className={`hover:bg-muted/40 transition cursor-pointer ${
+                                  selectedCandidateId === cand.id ? 'bg-muted/60' : ''
+                                }`}
+                              >
+                                <td className="px-4 py-3 align-top min-w-[200px]">
+                                  <div className="font-bold text-foreground">{cand.namaKandidat}</div>
+                                  <div className="text-[11px] text-muted-foreground mt-0.5 space-y-0.5">
+                                    <div>
+                                      {cand.noHp || 'No. HP belum terbaca'}
+                                      {cand.domisili ? ` · ${cand.domisili}` : ''}
+                                    </div>
+                                    {cand.email && <div className="truncate max-w-[200px]">{cand.email}</div>}
+                                    <div className="text-[10px] opacity-80">
+                                      Sumber: {cand.sourceType === 'drive' ? 'Google Drive' : 'Upload Manual'} · {formatBytes(cand.fileSize)}
+                                    </div>
+                                  </div>
+                                </td>
+
+                                <td className="px-4 py-3 align-top min-w-[190px]">
+                                  <div className="font-medium text-foreground">
+                                    {cand.pendidikan || <span className="text-muted-foreground italic">Belum terbaca AI</span>}
+                                  </div>
+                                  {cand.pengalamanTahun && (
+                                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                                      Pengalaman: {cand.pengalamanTahun}
+                                    </div>
+                                  )}
+                                  {cand.pengalamanUtama && (
+                                    <div className="text-[11px] text-muted-foreground mt-1 line-clamp-2 max-w-[240px]">
+                                      {cand.pengalamanUtama}
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="px-4 py-3 align-top max-w-[300px]">
+                                  {cand.aiStatus === 'done' ? (
+                                    <div className="space-y-1">
+                                      {cand.skills.length > 0 && (
+                                        <div className="text-[11px] font-medium text-violet-700 dark:text-violet-300">
+                                          {cand.skills.slice(0, 5).join(' · ')}
+                                        </div>
+                                      )}
+                                      <p className="text-[11px] text-muted-foreground line-clamp-2">
+                                        {cand.ringkasanAi || cand.aiFullText}
+                                      </p>
+                                    </div>
+                                  ) : cand.aiStatus === 'error' ? (
+                                    <div className="text-[11px] text-rose-600 dark:text-rose-400">
+                                      Gagal analisa AI: {cand.ringkasanAi || 'Coba ulangi'}
+                                    </div>
+                                  ) : (
+                                    <div className="text-[11px] text-muted-foreground italic">
+                                      Menunggu pembacaan PDF oleh AI
+                                    </div>
+                                  )}
+                                </td>
+
+                                <td className="px-4 py-3 align-top" onClick={e => e.stopPropagation()}>
+                                  <select
+                                    value={cand.statusRekrutmen}
+                                    onChange={e =>
+                                      handleUpdateCandidateStatus(cand, e.target.value as RecruitmentStatus)
+                                    }
+                                    className="bg-background border border-input rounded-md px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
+                                  >
+                                    {RECRUITMENT_STATUSES.map(st => (
+                                      <option key={st} value={st}>
+                                        {st}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+
+                                <td className="px-4 py-3 align-top text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                  <div className="inline-flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedCandidateId(cand.id)}
+                                      title="Lihat Detail & Hasil AI"
+                                      className="p-1.5 rounded-md hover:bg-muted text-foreground cursor-pointer"
+                                    >
+                                      <Eye size={14} />
+                                    </button>
+                                    <a
+                                      href={cand.pdfUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Buka PDF di ImageKit"
+                                      className="p-1.5 rounded-md hover:bg-muted text-violet-600 dark:text-violet-400"
+                                    >
+                                      <ExternalLink size={14} />
+                                    </a>
+                                    <button
+                                      type="button"
+                                      disabled={isAnalyzingThis}
+                                      onClick={() => analyzeSingleCandidate(cand, selectedFolder.name)}
+                                      title="Analisa Ulang PDF dengan AI"
+                                      className="p-1.5 rounded-md hover:bg-muted text-emerald-600 dark:text-emerald-400 disabled:opacity-50 cursor-pointer"
+                                    >
+                                      {isAnalyzingThis ? (
+                                        <Loader2 size={14} className="animate-spin" />
+                                      ) : (
+                                        <Sparkles size={14} />
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setConfirmDelete({
+                                          type: 'candidate',
+                                          id: cand.id,
+                                          label: cand.namaKandidat,
+                                        })
+                                      }
+                                      title="Hapus Kandidat"
+                                      className="p-1.5 rounded-md hover:bg-rose-500/10 text-rose-500 cursor-pointer"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
               </div>
             </>
@@ -1471,18 +1629,18 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
       {selectedCandidate && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3 shrink-0">
-              <div className="min-w-0">
+            <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-border flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="min-w-0 flex-1">
                 <h3 className="text-base font-bold truncate">{selectedCandidate.namaKandidat}</h3>
                 <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-2 mt-0.5">
                   <span>{selectedCandidate.posisiDilamar || selectedFolder?.name || 'Kandidat'}</span>
                   <span aria-hidden="true">·</span>
-                  <span>File: {selectedCandidate.fileName}</span>
+                  <span className="truncate max-w-[180px] sm:max-w-none">File: {selectedCandidate.fileName}</span>
                   <span aria-hidden="true">·</span>
                   <span>Status: {selectedCandidate.statusRekrutmen}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
                   type="button"
                   disabled={Boolean(analyzingIds[selectedCandidate.id])}
@@ -1665,8 +1823,8 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
         </div>
       )}
 
-      {/* Modal: ImageKit Configuration */}
-      {showIkModal && (
+      {/* Modal: ImageKit Configuration (Superadmin only) */}
+      {isSuperadmin && showIkModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-xl w-full max-w-md shadow-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-border flex items-center justify-between">
