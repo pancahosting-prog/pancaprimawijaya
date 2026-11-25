@@ -7,6 +7,7 @@ import {
 } from './webKnowledgeService';
 import { DEFAULT_PANCA_PRODUCTS, getProductImageUrl } from './pancaProductCatalog';
 import { KPIMasterCloudData } from '../lib/kpiSupabaseSync';
+import { CandidateFolder, CandidateRecord, readLocalCandidateCache } from '../lib/candidateSync';
 
 export interface PancaAIContext {
   currentUser: {
@@ -36,6 +37,10 @@ export interface PancaAIContext {
     qaQuestions: any[];
   };
   kpiData?: KPIMasterCloudData;
+  candidateData?: {
+    folders: CandidateFolder[];
+    candidates: CandidateRecord[];
+  };
 }
 
 // Helper to calculate exact amount of a transaction
@@ -828,6 +833,84 @@ export interface UserTaskWorkloadAnalysis {
   items: TaskDeadlineAnalysisItem[];
 }
 
+export const compileCandidateSystemDigest = (ctx: PancaAIContext, queryText: string = ''): string => {
+  const userRole = (ctx.currentUser?.role || '').toLowerCase();
+  const isSuperAdmin = !ctx.currentUser ||
+    userRole.includes('admin') ||
+    ctx.currentUser?.username?.toLowerCase() === 'superadmin' ||
+    ctx.currentUser?.nama?.toLowerCase() === 'superadmin';
+  const isHR = userRole === 'hr' || userRole === 'hrd' || userRole.includes('human resource');
+
+  if (!isSuperAdmin && !isHR) {
+    return '';
+  }
+
+  let folders: CandidateFolder[] = ctx.candidateData?.folders || [];
+  let candidates: CandidateRecord[] = ctx.candidateData?.candidates || [];
+
+  if (folders.length === 0 && candidates.length === 0 && typeof window !== 'undefined') {
+    const cached = readLocalCandidateCache();
+    folders = cached.folders || [];
+    candidates = cached.candidates || [];
+  }
+
+  let digest = `\n\n--- [MENU 10: HR KANDIDAT & REKRUTMEN PELAMAR KERJA (EKSKLUSIF SUPERADMIN & HR)] ---\n`;
+  if (folders.length === 0 && candidates.length === 0) {
+    digest += `* Belum ada folder posisi atau dokumen CV PDF kandidat yang diunggah ke menu HR -> Kandidat.\n`;
+    return digest;
+  }
+
+  const folderNameMap: Record<string, string> = {};
+  folders.forEach(f => {
+    folderNameMap[f.id] = f.name;
+  });
+
+  const analyzedCount = candidates.filter(c => c.aiStatus === 'done').length;
+  digest += `* Total Folder Posisi: ${folders.length} Folder | Total Pelamar/CV PDF: ${candidates.length} Kandidat (${analyzedCount} PDF sudah dianalisa AI)\n`;
+  digest += `* Daftar Folder Posisi:\n`;
+  folders.forEach(f => {
+    const fCands = candidates.filter(c => c.folderId === f.id);
+    digest += `  - Folder "${f.name}" (${fCands.length} CV PDF)${f.description ? ` — Keterangan: ${f.description}` : ''}\n`;
+  });
+
+  const qLower = queryText.toLowerCase();
+  const isSpecificCandidateAsk = /\b(kandidat|pelamar|rekrutmen|lamaran|cv|resume|interview|posisi|sales|marketing|engineer|skill|pengalaman|pendidikan|pdf)\b/i.test(qLower) ||
+    candidates.some(c => c.namaKandidat && qLower.includes(c.namaKandidat.toLowerCase().split(/\s+/)[0]));
+
+  const maxCandidates = isSpecificCandidateAsk ? 60 : 20;
+  const sortedCands = candidates.slice().sort((a, b) => {
+    const aMatch = qLower && `${a.namaKandidat} ${a.posisiDilamar} ${(a.skills || []).join(' ')}`.toLowerCase().includes(qLower) ? 1 : 0;
+    const bMatch = qLower && `${b.namaKandidat} ${b.posisiDilamar} ${(b.skills || []).join(' ')}`.toLowerCase().includes(qLower) ? 1 : 0;
+    return bMatch - aMatch;
+  }).slice(0, maxCandidates);
+
+  digest += `\n* Rincian Profil & Ekstraksi CV PDF Kandidat:\n`;
+  sortedCands.forEach((c, idx) => {
+    const folderLabel = folderNameMap[c.folderId] || c.posisiDilamar || 'Umum';
+    const skillsStr = Array.isArray(c.skills) && c.skills.length > 0 ? c.skills.join(', ') : '-';
+    digest += `  ${idx + 1}. [KANDIDAT: ${c.namaKandidat}] Folder/Posisi: ${folderLabel} | Status Rekrutmen: **${c.statusRekrutmen}** | Kontak: ${c.noHp || '-'} / ${c.email || '-'} | Domisili: ${c.domisili || '-'}\n`;
+    digest += `     Pendidikan: ${c.pendidikan || '-'} | Lama Pengalaman: ${c.pengalamanTahun || '-'} | Skills: ${skillsStr}\n`;
+    if (c.pengalamanUtama) {
+      digest += `     Pengalaman Utama: ${c.pengalamanUtama}\n`;
+    }
+    if (c.ringkasanAi) {
+      digest += `     Ringkasan AI CV: ${c.ringkasanAi}\n`;
+    }
+    if (c.kelebihanUtama) {
+      digest += `     Kelebihan Utama: ${c.kelebihanUtama}\n`;
+    }
+    if (isSpecificCandidateAsk && c.aiFullText) {
+      digest += `     Isi Lengkap CV PDF: ${c.aiFullText.slice(0, 950)}\n`;
+    }
+    if (c.catatanHr) {
+      digest += `     Catatan HR: ${c.catatanHr}\n`;
+    }
+    digest += `     Link PDF (ImageKit): ${c.pdfUrl} (File: ${c.fileName}, Sumber: ${c.sourceType === 'drive' ? 'Google Drive' : 'Upload Manual'})\n`;
+  });
+
+  return digest;
+};
+
 // Realistic Task Complexity, Priority & Cumulative Deadline Engine (Anti-Underestimation)
 export const analyzeTaskDifficultyAndDeadlines = (
   tasks: any[],
@@ -1196,6 +1279,8 @@ export const generatePancaDataDigest = (ctx: PancaAIContext, queryText: string =
   // Topic Intent Recognition with Typo & Stemming Resilience
   const isKPIQuery = /\b(kpi|kinerja|penilaian|indikator|bobot|skor|grade|evaluasi|rekap kpi|thp|take home pay|gaji|bonus bulanan|bonus project|bonus proyek|komisi|profit share|multiplier|omset tier|omset kotor|omset bersih|tnc|t&c|pengaturan kpi|template kpi|performa|saran|rekomendasi)\b/i.test(queryLower);
 
+  const isCandidateQuery = /\b(kandidat|pelamar|rekrutmen|rekruitmen|lamaran|cv|resume|interview|lolos|pelamar kerja|lowongan|calon karyawan)\b/i.test(queryLower);
+
   const dynamicEmpNames = Array.from(new Set([
     ...(ctx.employees || []).map((e: any) => String(e.nama || '').toLowerCase().split(/\s+/)[0]),
     ...(ctx.appUsers || []).map((u: any) => String(u.nama || u.username || '').toLowerCase().split(/\s+/)[0]),
@@ -1365,7 +1450,7 @@ ${isStocklist ? '  (Akses omzet dan data penjualan dibatasi untuk role Stocklist
 `;
 
   // Menu 1: Transactions
-  const showTrxList = isTrxQuery || isExplicitGeneralReport || (!isTaskQuery && !isProductQuery && !isQuoteQuery && !isContactQuery && !isFinanceQuery && !isQAQuery);
+  const showTrxList = isTrxQuery || isExplicitGeneralReport || (!isTaskQuery && !isProductQuery && !isQuoteQuery && !isContactQuery && !isFinanceQuery && !isQAQuery && !isCandidateQuery && !isKPIQuery);
   if (showTrxList) {
     if (isHR) {
       // Role HR: Strict privacy, no customer names, no item breakdowns, grouped by sales rep
@@ -1827,16 +1912,17 @@ ${isStocklist ? '  (Akses omzet dan data penjualan dibatasi untuk role Stocklist
     }
   }
 
-  // Append full KPI & Payroll module data for Superadmin & HR
+  // Append full KPI & Payroll module data AND HR Kandidat module data for Superadmin & HR
   if (canAccessKPI) {
     digest += compileKPISystemDigest(ctx, queryLower);
+    digest += compileCandidateSystemDigest(ctx, queryText);
   }
 
   // Explicit notice for HR Drive policy
   if (isHR) {
     digest += `\n* CATATAN HAK AKSES RESMI ROLE HR PADA TASK APP:
-- Role HR memiliki akses penuh memantau tugas, proyek, dan riwayat timeline pengerjaan seluruh anggota tim.
-- RESTRIKSI DOKUMEN DRIVE: Akses terhadap berkas / file di Panca Drive DIBATASI (tidak diizinkan membuka/mengakses file drive).\n`;
+- Role HR memiliki akses penuh memantau tugas, proyek, riwayat timeline pengerjaan seluruh anggota tim, KPI, serta seluruh data Folder & CV PDF Kandidat (Menu HR -> Kandidat).
+- RESTRIKSI DOKUMEN DRIVE TASK APP: Akses terhadap berkas / file di Panca Drive DIBATASI (tidak diizinkan membuka/mengakses file Panca Drive).\n`;
   }
 
   return digest;
@@ -1881,7 +1967,7 @@ export const detectLackingContext = (
     return null;
   }
 
-  const isTaskDeadlineOrWorkQuery = /\b(tugas|task|tasks|pekerjaan|kerjaan|deadline|tenggat|prioritas|estimasi|perkiraan|kesulitan|beban|progres|progress|selesai|selesaikan|penyelesaian|proyek|project)\b/i.test(q);
+  const isTaskDeadlineOrWorkQuery = /\b(tugas|task|tasks|pekerjaan|kerjaan|deadline|tenggat|prioritas|estimasi|perkiraan|kesulitan|beban|progres|progress|selesai|selesaikan|penyelesaian|proyek|project|kandidat|pelamar|rekrutmen|lamaran|cv|resume|interview)\b/i.test(q);
 
   // 1. Omzet / Penjualan without period or customer or ID
   const isOmzetTopic = /\b(omset|omzet|penjualan|revenue|pendapatan|sales)\b/i.test(q);
@@ -1972,7 +2058,7 @@ export const isConversationalGreeting = (query: string): boolean => {
   const hasSpecificContext = /(trx|pp)[-_ ]?\d+|inv[-_ ]?\d+|po[-_ ]?\d+|agustus|september|oktober|november|desember|januari|februari|maret|april|mei|juni|juli|2024|2025|2026|rp\b|indofood|mayora/i.test(q);
   if (hasSpecificContext) return false;
 
-  const hasBusinessDataTerm = /\b(omset|omzet|transaksi|stok|stock|piutang|tagihan|laporan|produk|customer|pelanggan|karyawan|supplier|vendor|po|invoice|harga|gaji|penjualan|ews|banjir|longsor|mitigasi|geohazard|teknis|forum|diskusi|kpi|kinerja|penilaian|indikator|bobot|thp|take home pay|bonus|komisi|evaluasi|rekomendasi|tugas|task|tasks|pekerjaan|kerjaan|deadline|tenggat|estimasi|perkiraan|prioritas|kesulitan|beban|progres|progress|proyek|project|saran|analisa|analisis)\b/i.test(q);
+  const hasBusinessDataTerm = /\b(omset|omzet|transaksi|stok|stock|piutang|tagihan|laporan|produk|customer|pelanggan|karyawan|supplier|vendor|po|invoice|harga|gaji|penjualan|ews|banjir|longsor|mitigasi|geohazard|teknis|forum|diskusi|kpi|kinerja|penilaian|indikator|bobot|thp|take home pay|bonus|komisi|evaluasi|rekomendasi|tugas|task|tasks|pekerjaan|kerjaan|deadline|tenggat|estimasi|perkiraan|prioritas|kesulitan|beban|progres|progress|proyek|project|saran|analisa|analisis|kandidat|pelamar|rekrutmen|lamaran|cv|resume|interview|lowongan)\b/i.test(q);
   if (hasBusinessDataTerm) return false;
 
   const exactGreetings = [
@@ -2283,18 +2369,24 @@ ATURAN UTAMA & PROTOKOL LAYANAN BERSIH & AKURAT (STRICT BUSINESS SCOPE):
       * Analisalah gap antara target dan realisasi indikator (misal: realisasi omset sales masih di bawah target, atau progres task tertentu belum 100%).
       * Berikan 2-4 SARAN & MASUKAN REKOMENDASI PERBAIKAN PERFORMA (Action Plan) yang aplikatif dan konstruktif agar karyawan dapat mencapai performa maksimal.
 
+16B. WEWENANG KHUSUS SUPERADMIN & HR PADA MODUL KANDIDAT & ANALISA CV PDF:
+    - Pengguna berstatus Superadmin (${isSuperAdmin ? 'YA' : 'TIDAK'}) dan HR (${isHR ? 'YA' : 'TIDAK'}) MEMILIKI AKSES PENUH ke [MENU 10: HR KANDIDAT & REKRUTMEN PELAMAR KERJA].
+    - Anda dapat membaca seluruh folder posisi (misal Sales, Digital Marketing), detail profil & isi CV PDF tiap kandidat yang sudah dianalisa AI (pendidikan, pengalaman kerja, skills, domisili, kontak, kelebihan, ringkasan, catatan HR, dan link PDF ImageKit).
+    - Saat HR atau Superadmin meminta perbandingan, rekomendasi kandidat terbaik untuk posisi tertentu, pencarian skill spesifik dari CV, atau ringkasan pelamar:
+      * Berikan analisis objektif berbasis fakta isi CV PDF yang tercantum di [MENU 10], tampilkan tabel Markdown perbandingan kandidat (Nama, Posisi/Folder, Pengalaman, Pendidikan, Keahlian Utama, Status, Link PDF), dan rekomendasikan kandidat terkuat beserta alasannya.
+
 17. HAK AKSES KHUSUS & KEBIJAKAN PRIVASI ROLE HR (HUMAN RESOURCES):
     - Pengguna dengan peran HR:
       * Task App: Memiliki wewenang yang sama dengan Superadmin untuk memantau tugas (tasks), proyek tim (projects), dan riwayat timeline aktivitas seluruh anggota tim (Evan, Yadi, Maria, dll).
-      * RESTRIKSI DRIVE MUTLAK: Dokumen dan berkas file di Panca Drive DIBATASI (Role HR tidak memiliki izin membaca file Drive). Jika HR menanyakan isi file/dokumen Drive, tolak sopan bahwa berkas Drive bersifat rahasia.
+      * RESTRIKSI DRIVE MUTLAK: Dokumen dan berkas file di Panca Drive DIBATASI (Role HR tidak memiliki izin membaca file Panca Drive). Jika HR menanyakan isi file/dokumen Panca Drive, tolak sopan bahwa berkas Panca Drive bersifat rahasia. (Pengecualian resmi: CV PDF di modul HR -> Kandidat BOLEH dibaca penuh oleh HR).
       * Transaksi Penjualan (Customer Privacy): HR berhak mendapatkan rekapan ringkas seluruh transaksi penjualan dan nilainya, DENGAN ATURAN PRIVASI MUTLAK: DILARANG MENYEBUTKAN NAMA CUSTOMER/PELANGGAN DAN DILARANG MENYEBUTKAN RINCIAN ITEM BARANG! Sebutkan nama sales, jumlah deal, nomor transaksi (PP/TRX) dan nominal nilainya saja.
       * Penawaran Sales: HR berhak mendapatkan rekapan jumlah penawaran (quotations) yang dibuat oleh tim sales pada bulan tertentu beserta total nilainya.
       * Kontak Baru: HR berhak mendapatkan data kontak baru apa saja yang ditambahkan oleh masing-masing sales pada bulan tertentu.
 
-18. KEBIJAKAN KERAHASIAAN KPI & GAJI UNTUK ROLE LAIN (NON-SUPERADMIN & NON-HR):
-    - Jika pengguna BUKAN Superadmin dan BUKAN HR (seperti Sales, Engineer, Stocklist, atau Staff) bertanya mengenai KPI orang lain, rekap KPI tim, atau informasi gaji/bonus/THP karyawan lain:
+18. KEBIJAKAN KERAHASIAAN KPI, GAJI & DATA KANDIDAT UNTUK ROLE LAIN (NON-SUPERADMIN & NON-HR):
+    - Jika pengguna BUKAN Superadmin dan BUKAN HR (seperti Sales, Engineer, Stocklist, atau Staff) bertanya mengenai KPI orang lain, rekap KPI tim, informasi gaji/bonus/THP karyawan lain, ATAU data pelamar kerja / CV kandidat rekrutmen:
       Anda WAJIB MENOLAK secara sopan dan tegas:
-      "Mohon maaf **${userName}**, data evaluasi KPI, rekapitulasi kinerja tim, dan informasi gaji/payroll bersifat rahasia dan hanya dapat diakses oleh peran Superadmin dan HR. Silakan tanyakan informasi operasional lain sesuai wewenang peran Anda."
+      "Mohon maaf **${userName}**, data evaluasi KPI, gaji/payroll, serta berkas CV pelamar kerja (Kandidat) bersifat rahasia dan hanya dapat diakses oleh peran Superadmin dan HR. Silakan tanyakan informasi operasional lain sesuai wewenang peran Anda."
 
 --- DATA SUMBER BISNIS (HANYA GUNAKAN DATA DI BAWAH INI) ---
 ${dataDigest}
@@ -2349,6 +2441,33 @@ export const generateSmartDynamicFallback = (query: string, ctx: PancaAIContext)
     if (isCrmQuery) {
       return `Mohon maaf **${userName}**, sebagai akun Engineer Anda tidak memiliki hak akses untuk memeriksa data komersial CRM (transaksi penjualan, omzet, pelanggan, penawaran, maupun harga/stok penjualan). Kapasitas Anda dikhususkan untuk tugas pengerjaan (Task App), dokumen teknis, forum Q&A, serta solusi sensor & keselamatan gedung (pancaprimawijaya.id/sensor & sensorgempa.com).`;
     }
+  }
+
+  // Candidate / Recruitment query guard & dynamic fallback
+  const isCandidateAsk = /\b(kandidat|pelamar|rekrutmen|rekruitmen|lamaran|cv|resume|interview|pelamar kerja|lowongan)\b/i.test(lower);
+  if (isCandidateAsk) {
+    const isSuperOrHR = !ctx.currentUser ||
+      userRole.includes('admin') ||
+      userRole === 'hr' ||
+      userRole === 'hrd' ||
+      userRole.includes('human resource') ||
+      ctx.currentUser?.username?.toLowerCase() === 'superadmin';
+    if (!isSuperOrHR) {
+      return `Mohon maaf **${userName}**, data pelamar kerja, berkas CV PDF kandidat, dan proses rekrutmen bersifat rahasia dan hanya dapat diakses oleh peran Superadmin dan HR.`;
+    }
+    const cands = ctx.candidateData?.candidates || readLocalCandidateCache().candidates || [];
+    const folds = ctx.candidateData?.folders || readLocalCandidateCache().folders || [];
+    if (cands.length === 0) {
+      return `### Rekap Data Kandidat (HR)\n\nSaat ini belum ada CV PDF kandidat yang tercatat di modul **HR → Kandidat** (${folds.length} folder tersedia). Silakan unggah PDF manual atau tarik dari folder Google Drive di menu tersebut.`;
+    }
+    const fMap: Record<string, string> = {};
+    folds.forEach(f => { fMap[f.id] = f.name; });
+    let res = `### Rekap Data Kandidat & Hasil Ekstraksi CV PDF\n\n- **Total Folder Posisi**: ${folds.length} folder\n- **Total CV Kandidat**: ${cands.length} pelamar (${cands.filter(c => c.aiStatus === 'done').length} teranalisa AI)\n\n`;
+    res += `| Nama Kandidat | Posisi / Folder | Pendidikan | Pengalaman | Keahlian Utama | Status |\n|---|---|---|---|---|---|\n`;
+    cands.slice(0, 20).forEach(c => {
+      res += `| **${c.namaKandidat}** | ${fMap[c.folderId] || c.posisiDilamar || '-'} | ${c.pendidikan || '-'} | ${c.pengalamanTahun || '-'} | ${(c.skills || []).slice(0, 4).join(', ') || '-'} | ${c.statusRekrutmen} |\n`;
+    });
+    return res;
   }
 
   // Greetings check

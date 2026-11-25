@@ -26,6 +26,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import TaskApp from './task/App';
 import KPIModule from './src/components/KPIModule';
+import CandidateModule from './src/components/CandidateModule';
 import { GeminiAIAssistant } from './src/components/GeminiAIAssistant';
 import { PancaMobileApp } from './src/components/panca-app/PancaMobileApp';
 import { SharedPostView } from './task/components/SharedPostView';
@@ -447,7 +448,8 @@ const MENU_STRUCTURE = [
     items: [
       { label: 'Employees', id: 'Employees' },
       { label: 'Skills', id: 'Skills' },
-      { label: 'KPI', id: 'KPI' }
+      { label: 'KPI', id: 'KPI' },
+      { label: 'Kandidat', id: 'Kandidat' }
     ]
   },
   { 
@@ -517,6 +519,7 @@ const ROLE_TEMPLATES: Record<string, { id: string; canView: boolean; canEdit: bo
         { id: 'Employees', canView: true, canEdit: true },
         { id: 'Skills', canView: true, canEdit: true },
         { id: 'KPI', canView: true, canEdit: true },
+        { id: 'Kandidat', canView: true, canEdit: true },
         { id: 'Upload Data', canView: true, canEdit: true }
     ],
     'sales': [
@@ -568,7 +571,8 @@ const ROLE_TEMPLATES: Record<string, { id: string; canView: boolean; canEdit: bo
     'hr': [
         { id: 'Employees', canView: true, canEdit: true },
         { id: 'Skills', canView: true, canEdit: true },
-        { id: 'KPI', canView: true, canEdit: true }
+        { id: 'KPI', canView: true, canEdit: true },
+        { id: 'Kandidat', canView: true, canEdit: true }
     ],
     'engineer': [
         { id: 'Dashboard', canView: true, canEdit: false },
@@ -5358,7 +5362,7 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
           {/* Main Area */}
           <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
              {/* Subheader / Filter Bar */}
-             {activeView !== 'Dashboard' && activeView !== 'Tutorial' && activeView !== 'Log User' && activeView !== 'Perusahaan' && activeView !== 'AI Assistant' && activeView !== 'Task Management' && activeView !== 'KPI' && !['WA Chat', 'WA Setting AI', 'WA Perangkat', 'WhatsApp'].includes(activeView) && (
+             {activeView !== 'Dashboard' && activeView !== 'Tutorial' && activeView !== 'Log User' && activeView !== 'Perusahaan' && activeView !== 'AI Assistant' && activeView !== 'Task Management' && activeView !== 'KPI' && activeView !== 'Kandidat' && !['WA Chat', 'WA Setting AI', 'WA Perangkat', 'WhatsApp'].includes(activeView) && (
                 <div className="bg-card/70 backdrop-blur-xs border-b border-border px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
                     <div className="flex items-center gap-3 flex-1 min-w-[200px]">
                         <div className="relative flex-1 max-w-sm">
@@ -7260,6 +7264,11 @@ const DUMMY_PURCHASE_ORDERS: PurchaseOrder[] = [];
                           currentUser={currentUser}
                           activeCompanyId={activeCompanyId}
                           onUpdateEmployees={(updated: any) => setEmployees(updated)}
+                      />
+                  ) : activeView === 'Kandidat' && (currentUser?.role === 'superadmin' || currentUser?.role === 'hr') ? (
+                      <CandidateModule
+                          currentUser={currentUser}
+                          activeCompanyId={activeCompanyId}
                       />
                   ) : (
                   /* LIST / TABLE VIEW */

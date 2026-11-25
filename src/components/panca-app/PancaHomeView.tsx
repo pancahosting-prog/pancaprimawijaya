@@ -108,6 +108,8 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
   const isStocklist = userRole === 'stocklist' || userRole === 'purchasing' || userRole === 'gudang';
   const isSalesOrAdmin = (isSuperAdmin || userRole === 'sales') && !isStocklist;
 
+  const isHRRole = userRole === 'hr' || userRole === 'hrd' || userRole.includes('human resource');
+
   const tindakanCepat = isStocklist ? [
     { label: '📦 Tambah Stock', icon: Package, prompt: 'tambah stock' },
     { label: '🔍 Cek Stock', icon: Search, prompt: 'cek stock' },
@@ -123,11 +125,17 @@ export const PancaHomeView: React.FC<PancaHomeViewProps> = ({
     { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
     { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
     { label: '📊 Analisa Pekerjaan', icon: Target, prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
+    ...(isSuperAdmin ? [{ label: '👥 Screening Kandidat', icon: Award, prompt: 'Rekap data kandidat dan rekomendasikan pelamar terbaik berdasarkan isi CV PDF.' }] : []),
   ] : userRole === 'engineer' ? [
     { label: '📁 Knowledge Project', icon: FolderKanban, prompt: 'buka database project', onClick: onOpenProject },
     { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
     { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
     { label: '📊 Analisa Pekerjaan', icon: Target, prompt: 'Analisa pekerjaan saya, berikan urutan prioritas pengerjaan hari ini, tips efisiensi, dan langkah penyelesaian.' },
+  ] : isHRRole ? [
+    { label: '👥 Screening Kandidat', icon: Award, prompt: 'Rekap data kandidat dan rekomendasikan pelamar terbaik berdasarkan isi CV PDF.' },
+    { label: '📊 Rekap KPI', icon: TrendingUp, prompt: 'Tampilkan rekapitulasi KPI & performa karyawan terbaru.' },
+    { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
+    { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },
   ] : [
     { label: '➕ Tugas Baru', icon: FileEdit, prompt: 'tugas baru' },
     { label: '🔄 Update Task', icon: Zap, prompt: 'update task' },

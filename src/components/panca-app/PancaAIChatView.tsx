@@ -19,6 +19,7 @@ import { safeSetLocalStorage, getApiUrl } from '../../lib/apiUtils';
 import TaskModal from '../../../task/components/TaskModal';
 import DayTaskPicker from '../../../task/components/DayTaskPicker';
 import { loadAllKPIDataFromSupabase, KPIMasterCloudData } from '../../lib/kpiSupabaseSync';
+import { loadCandidateDataFromSupabase, CandidateFolder, CandidateRecord } from '../../lib/candidateSync';
 
 export interface DraftData {
   type: 'customer' | 'transaction' | 'penawaran';
@@ -328,6 +329,11 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     return null;
   });
 
+  const [candidateMasterData, setCandidateMasterData] = useState<{
+    folders: CandidateFolder[];
+    candidates: CandidateRecord[];
+  } | null>(null);
+
   useEffect(() => {
     let isMounted = true;
     loadAllKPIDataFromSupabase().then(res => {
@@ -337,8 +343,21 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
     }).catch(err => {
       console.warn('[PancaAIChatView] KPI sync notice:', err);
     });
+
+    const roleLow = (currentUser?.role || '').toLowerCase();
+    const isHROrSuper = isSuperAdmin || roleLow === 'hr' || roleLow === 'hrd' || roleLow.includes('human resource');
+    if (isHROrSuper) {
+      loadCandidateDataFromSupabase()
+        .then(res => {
+          if (isMounted) {
+            setCandidateMasterData({ folders: res.folders, candidates: res.candidates });
+          }
+        })
+        .catch(() => {});
+    }
+
     return () => { isMounted = false; };
-  }, []);
+  }, [isSuperAdmin, currentUser?.role]);
 
   // Live Database Products: combines props, LocalStorage, and direct Supabase database fetch
   const [effectiveProducts, setEffectiveProducts] = useState<any[]>(() => {
@@ -1576,7 +1595,8 @@ export const PancaAIChatView: React.FC<PancaAIChatViewProps> = ({
       taskAppData: latestTaskAppData,
       rolePermissions,
       taskAppDataExt: { qaQuestions },
-      kpiData: kpiMasterData || undefined
+      kpiData: kpiMasterData || undefined,
+      candidateData: (isSuperAdmin || isHRUser) ? (candidateMasterData || undefined) : undefined
     };
 
     try {
