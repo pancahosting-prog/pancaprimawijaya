@@ -54,6 +54,30 @@ const formatBytes = (bytes?: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 };
 
+const formatWhatsAppUrl = (rawPhone?: string): string | null => {
+  if (!rawPhone) return null;
+  const primarySegment = rawPhone.split(/[\/,;\n|]/)[0] || rawPhone;
+  const digits = primarySegment.replace(/\D/g, '');
+  if (digits.length < 6) return null;
+  let normalized = digits;
+  if (normalized.startsWith('620')) {
+    normalized = `62${normalized.slice(3)}`;
+  } else if (normalized.startsWith('62')) {
+    normalized = normalized;
+  } else if (normalized.startsWith('0')) {
+    normalized = `62${normalized.slice(1)}`;
+  } else {
+    normalized = `62${normalized}`;
+  }
+  return `https://wa.me/${normalized}`;
+};
+
+const formatMailtoUrl = (rawEmail?: string): string | null => {
+  if (!rawEmail) return null;
+  const match = rawEmail.trim().match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? `mailto:${match[0]}` : null;
+};
+
 const fileToBase64Pure = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1626,19 +1650,38 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
       )}
 
       {/* Modal: Candidate Detail & AI Extracted Profile + ImageKit PDF Viewer */}
-      {selectedCandidate && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-border flex flex-wrap items-center justify-between gap-3 shrink-0">
-              <div className="min-w-0 flex-1">
-                <h3 className="text-base font-bold truncate">{selectedCandidate.namaKandidat}</h3>
-                <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-2 mt-0.5">
-                  <span>{selectedCandidate.posisiDilamar || selectedFolder?.name || 'Kandidat'}</span>
-                  <span aria-hidden="true">·</span>
-                  <span className="truncate max-w-[180px] sm:max-w-none">File: {selectedCandidate.fileName}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>Status: {selectedCandidate.statusRekrutmen}</span>
+      {selectedCandidate && (() => {
+        const waUrl = formatWhatsAppUrl(selectedCandidate.noHp);
+        const mailtoUrl = formatMailtoUrl(selectedCandidate.email);
+        return (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="bg-card border border-border rounded-xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-border flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 shrink-0">
+              <div className="flex items-start justify-between gap-2 min-w-0 flex-1">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-base font-bold leading-snug break-words text-foreground">
+                    {selectedCandidate.namaKandidat}
+                  </h3>
+                  <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                    <span className="font-medium text-foreground/80">
+                      {selectedCandidate.posisiDilamar || selectedFolder?.name || 'Kandidat'}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>Status: {selectedCandidate.statusRekrutmen}</span>
+                    <span aria-hidden="true" className="hidden sm:inline">·</span>
+                    <span className="w-full sm:w-auto break-all text-[11px] sm:text-xs">
+                      File: {selectedCandidate.fileName}
+                    </span>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCandidateId(null)}
+                  aria-label="Tutup detail kandidat"
+                  className="lg:hidden p-1.5 -mr-1 -mt-0.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
+                >
+                  <X size={18} />
+                </button>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
@@ -1650,7 +1693,7 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
                       selectedFolder?.name || selectedCandidate.posisiDilamar || 'Umum'
                     )
                   }
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer disabled:opacity-50"
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer disabled:opacity-50"
                 >
                   {analyzingIds[selectedCandidate.id] ? (
                     <Loader2 size={13} className="animate-spin" />
@@ -1663,36 +1706,59 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
                   href={selectedCandidate.pdfUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white"
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white"
                 >
                   <ExternalLink size={13} />
-                  <span>Buka PDF Penuh</span>
+                  <span className="lg:hidden">Lihat CV (PDF)</span>
+                  <span className="hidden lg:inline">Buka PDF Penuh</span>
                 </a>
                 <button
                   type="button"
                   onClick={() => setSelectedCandidateId(null)}
-                  className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                  aria-label="Tutup detail kandidat"
+                  className="hidden lg:inline-flex p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
                 >
                   <X size={16} />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-border text-xs">
+            <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 lg:divide-x divide-border text-xs">
               {/* Extracted AI Info & HR Notes */}
-              <div className="lg:col-span-6 p-5 space-y-4 overflow-y-auto">
+              <div className="lg:col-span-6 p-4 sm:p-5 space-y-4 lg:overflow-y-auto">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-0.5">
                     <div className="text-[11px] text-muted-foreground flex items-center gap-1">
                       <Mail size={12} /> Email
                     </div>
-                    <div className="font-medium break-all">{selectedCandidate.email || '-'}</div>
+                    {mailtoUrl ? (
+                      <a
+                        href={mailtoUrl}
+                        className="font-medium break-all text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+                      >
+                        <span>{selectedCandidate.email}</span>
+                      </a>
+                    ) : (
+                      <div className="font-medium break-all">{selectedCandidate.email || '-'}</div>
+                    )}
                   </div>
                   <div className="space-y-0.5">
                     <div className="text-[11px] text-muted-foreground flex items-center gap-1">
                       <Phone size={12} /> No. HP / WhatsApp
                     </div>
-                    <div className="font-medium">{selectedCandidate.noHp || '-'}</div>
+                    {waUrl ? (
+                      <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1"
+                      >
+                        <span>{selectedCandidate.noHp}</span>
+                        <ExternalLink size={11} className="shrink-0" />
+                      </a>
+                    ) : (
+                      <div className="font-medium">{selectedCandidate.noHp || '-'}</div>
+                    )}
                   </div>
                   <div className="space-y-0.5">
                     <div className="text-[11px] text-muted-foreground flex items-center gap-1">
@@ -1797,8 +1863,8 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
                 </div>
               </div>
 
-              {/* Embedded ImageKit PDF Viewer */}
-              <div className="lg:col-span-6 bg-muted/20 flex flex-col min-h-[380px]">
+              {/* Embedded ImageKit PDF Viewer (Desktop only - mobile uses direct Lihat CV button) */}
+              <div className="hidden lg:flex lg:col-span-6 bg-muted/20 flex-col min-h-[380px]">
                 <div className="px-4 py-2 border-b border-border text-[11px] text-muted-foreground flex items-center justify-between">
                   <span>Pratinjau Dokumen PDF (ImageKit)</span>
                   {selectedCandidate.driveFileUrl && (
@@ -1821,7 +1887,8 @@ export const CandidateModule: React.FC<CandidateModuleProps> = ({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Modal: ImageKit Configuration (Superadmin only) */}
       {isSuperadmin && showIkModal && (
